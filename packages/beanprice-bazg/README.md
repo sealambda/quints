@@ -54,4 +54,4 @@ BAZG_LIVE=1 uv run pytest     # also runs the live smoke test
 
 ## License
 
-MIT
+GPL-2.0-only
