@@ -67,9 +67,9 @@ LABELS = {
         "vat": "IVA",
         "rounding": "Redondeo",
         "grand_total": "Total a pagar",
-        "payment_to": "A pagar",
+        "payment_to": "A pagar a",
         "reference": "Referencia",
-        "terms": "Pagadero en un plazo de {days} días netos.",
+        "terms": "A pagar en un plazo de {days} días netos.",
         "export_note": "No sujeto al IVA suizo: lugar de la prestación en el "
         "extranjero (art. 8 apdo. 1 de la Ley suiza del IVA).",
         "reverse_charge": "Inversión del sujeto pasivo — el IVA debe ser "

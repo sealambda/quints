@@ -337,7 +337,7 @@ def test_labels_all_languages_share_the_same_keys():
 def test_spanish_terms_formats_day_count():
     from quints.invoice.labels import labels
 
-    assert labels("es")["terms"].format(days=30) == "Pagadero en un plazo de 30 días netos."
+    assert labels("es")["terms"].format(days=30) == "A pagar en un plazo de 30 días netos."
 
 
 def _invoice(**over: object) -> Invoice:
