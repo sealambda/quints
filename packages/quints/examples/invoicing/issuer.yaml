@@ -1,0 +1,12 @@
+# Illustrative issuer for the example project — NOT emitted by `quints init`.
+# It's demo input for `quints invoice`; edit for your own entity.
+name: Example GmbH
+address:
+  - Beispielstrasse 1
+  - 8000 Zürich
+vat_id: CHE-267.359.056 MWST
+email: billing@example.ch
+bank:
+  CHF:
+    # QR-IBAN (QR-IID variant) — required for a Swiss QR-bill with a QRR reference.
+    qr_iban: CH44 3199 9123 0008 8901 2

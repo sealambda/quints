@@ -1,0 +1,75 @@
+{1:F01UBSWCHZHX80A0000000000}{2:I940X           N}{3:{108:240101/261231}}{4:
+:20:09999999999999
+:25:CH9300762011623852957E
+:28C:192/1
+:60F:C240101CHF0,
+:61:2603040304C20000,NTRFNONREF//9902063AR6387321
+credit
+:86:Z04?Muster GmbH
+credit
+:61:2603050305D560,NTRFNONREF//6163064TO7280925
+multi e-banking order
+:86:Z45?Kantonale Verwaltung
+multi e-banking order
+:61:2603310331D0,NCHGNONREF//AM01590HJ0121653
+Balance closing of service prices
+:86:Y92?Balance closing of service prices
+:61:2604010403D24,13NTRFNONREF//9930593BN6148219
+Debit card payment
+:86:DE1?Google Workspace muster
+00000000-0 03/29 Debit card payment
+:61:2604080408C5691,NTRFNONREF//0630098TO1457669
+e-banking credit
+:86:Z46?Acme AG
+e-banking credit
+:61:2604300430C4075,84NTRFNONREF//0130120TP1382853
+Credit (Instant Payment)
+:86:Y6B?Acme AG
+Credit (Instant Payment)
+:61:2604300430D0,NCHGNONREF//AM01620HJ0122036
+Balance closing of service prices
+:86:Y92?Balance closing of service prices
+:61:2605010504D33,05NTRFNONREF//9930623BN9527826
+Debit card payment
+:86:DE1?Google Workspace muster
+00000000-0 03/29 Debit card payment
+:61:2605050507D25,NTRFNONREF//9930627BN5459449
+Debit card payment
+:86:DE1?Google CLOUD 9BK6JC
+00000000-0 03/29 Debit card payment
+:61:2605130515D40,86NTRFNONREF//9930635BN7487612
+Debit card payment
+:86:DE1?PIXELTOOLS INC.
+00000000-0 03/29 Debit card payment
+:61:2605310529D0,NCHGNONREF//AM01649HJ0122549
+Balance closing of service prices
+:86:Y92?Balance closing of service prices
+:61:2605290529D398,08NTRFNONREF//8063149TO7091906
+multi e-banking order
+:86:Z45?Eidgenössische Steuerverwaltung
+multi e-banking order
+:61:2606020602C2107,NTRFNONREF//0130153TJ8431751
+e-banking credit
+:86:Z46?Acme AG
+e-banking credit
+:61:2606010603D54,48NTRFNONREF//9930654BN5231169
+Debit card payment
+:86:DE1?Google Workspace muster
+00000000-0 03/29 Debit card payment
+:61:2606180622D269,28NTRFNONREF//9930671BN0442131
+Debit card payment
+:86:DE1?BKG*BOOKING.COM FLIGHT
+00000000-0 03/29 Debit card payment
+:61:2606300630D0,NCHGNONREF//AM01681HJ0123446
+Balance closing of service prices
+:86:Y92?Balance closing of service prices
+:61:2607010703D7,34NTRFNONREF//9930684BN1183885
+Debit card payment
+:86:DE1?GOOGLE *SVCSmuster.
+00000000-0 03/29 Debit card payment
+:61:2607010703D54,48NTRFNONREF//9930684BN1091558
+Debit card payment
+:86:DE1?Google Workspace muster
+00000000-0 03/29 Debit card payment
+:62F:C261231CHF30407,14
+-}{5:{CHK:000000000000}}

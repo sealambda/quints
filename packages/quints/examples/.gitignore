@@ -2,3 +2,4 @@
 /staging/
 .env
 __pycache__/
+*.pdf

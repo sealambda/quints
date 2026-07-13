@@ -405,6 +405,7 @@ def _gitignore() -> str:
             "/staging/",
             ".env",
             "__pycache__/",
+            "*.pdf",  # rendered invoices/statements — regenerate from source
             "",
         ]
     )

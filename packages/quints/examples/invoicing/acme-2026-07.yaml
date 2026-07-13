@@ -1,0 +1,19 @@
+# Illustrative invoice for the example project — NOT emitted by `quints init`.
+# It ties to the ^INV2026014 booking in main.bean (net 1000 + 8.1% VAT = 1081),
+# so `quints invoice … --verify` reconciles the PDF against the ledger.
+number: INV2026014
+kind: domestic
+currency: CHF
+issue_date: 2026-07-02
+supply: Juli 2026
+customer:
+  name: Acme AG
+  address:
+    - Bahnhofstrasse 1
+    - 8001 Zürich
+items:
+  - description: Consulting — July
+    quantity: 1
+    unit_price: 1000.00
+    unit: Pauschal
+locale: de_CH

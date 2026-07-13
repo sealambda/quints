@@ -11,9 +11,9 @@ provide.
 
 ## Install
 
-```bash
-uv add beanprice-bazg          # or: pip install beanprice-bazg
-```
+This package is developed inside the [quints](https://github.com/sealambda/quints)
+monorepo and isn't published to PyPI separately (only `quints` is). Use it from
+a clone of the repo, or vendor `src/beanprice_bazg/` into your own project.
 
 ## Usage
 

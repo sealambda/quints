@@ -4,8 +4,104 @@ Plain-text accounting for Swiss micro-companies, on top of
 [beancount](https://github.com/beancount/beancount) and
 [Fava](https://github.com/beancount/fava).
 
-This monorepo holds the `quints` CLI and the standalone building blocks it is
-made of — each useful on its own in any beancount setup:
+Swiss VAT (MWST) returns, Bezugsteuer, QR-bill invoicing, statutory KMU
+statements, and official BAZG FX rates — the things a Swiss GmbH actually has
+to do, on a ledger you own as text. There's no incumbent for this niche, and
+`quints` is built to be **driven by an AI coding agent** (Claude Code, Codex,
+…): it's a deterministic CLI with machine-readable output, so the agent
+proposes bookings and `quints` checks and reports on them — it never calls a
+model itself.
+
+## Install
+
+```bash
+uv tool install quints        # or: pipx install quints  /  pip install quints
+quints --help
+```
+
+Needs Python 3.10+ (uv installs it for you if missing). Typst — for the PDFs —
+and everything else come bundled; nothing more to install.
+
+## Quick start
+
+Scaffold a project with a sample quarter already booked, and run against it:
+
+```bash
+quints init my-books --samples
+cd my-books
+quints mwst -q 2026-Q3
+```
+
+`quints init` writes a runnable project: a Swiss KMU chart of accounts (every
+account mapped to its Kontenrahmen code), a `quints.toml`, and an `AGENTS.md`
+that tells a coding agent how to extend the books and validate them with
+`quints check`. Drop `--samples` for empty books. Everything entity-specific
+(name, VAT registration, account names, importer rules) is configuration; VAT
+*rates* are law and ship date-ranged in code.
+
+## What it does — by the job
+
+Run these from your project directory; with `--samples` they work out of the box.
+
+### File your quarterly Swiss VAT (MWST)
+
+```bash
+quints mwst -q 2026-Q3    # Form-310 Ziffern, mapped to the ESTV return
+quints status             # VAT filed but not yet paid, with due dates
+```
+
+### See who owes you
+
+```bash
+quints receivables        # open invoices, aged by due date
+```
+
+### Year-end statements for your Treuhänder / auditor
+
+```bash
+quints report bilanz --at 2026-12-31             # balance sheet (OR Art. 959a)
+quints report erfolg --year 2026                 # income statement (OR Art. 959b)
+quints report statements --year 2026 --lang de   # both, as one PDF
+```
+
+### Keep FX rates right
+
+```bash
+quints prices sync                    # official BAZG/EZV daily CHF rates (needs network)
+quints fx revalue --at 2026-12-31     # year-end revaluation entry to paste (Art. 960 OR)
+```
+
+### Draft bank / PSP statements into a review area
+
+```bash
+quints import ubs <statement.mt940>   # → staging/, never straight into your books
+```
+
+Wise and Stripe importers exist too (`import wise` / `import stripe`, with
+`--fetch` to pull from their APIs). Drafts land in `staging/` flagged for the
+VAT decision + a linked document; nothing reaches your books until you review it.
+
+### Send a Swiss QR-bill invoice
+
+```bash
+quints invoice <invoice.yaml>         # QR-bill PDF, cross-checked against the ledger
+```
+
+Renders a QR-bill PDF (domestic or export / reverse-charge) and reconciles the
+total against the matching booking in your ledger, so an invoice can't silently
+diverge from your books.
+
+> **Ready-to-run samples:** the repo's
+> [`packages/quints/examples/`](packages/quints/examples) ships a working
+> `invoicing/` and `statements/` set. Clone the repo, `cd` in, and try
+> `quints invoice invoicing/acme-2026-07.yaml` and
+> `quints import ubs statements/ubs-2026.mt940`.
+
+## The building blocks
+
+`quints` is assembled from standalone distributions, each useful on its own in
+any beancount setup. They live in this repo; **`quints` is the one published to
+PyPI** — the rest are vendored here.
 
 | Package | What it does |
 |---|---|
@@ -15,52 +111,15 @@ made of — each useful on its own in any beancount setup:
 | [`beangulp-stripe`](packages/beangulp-stripe) | beangulp importer for Stripe balance transactions, with a thin API client |
 | [`beanprice-bazg`](packages/beanprice-bazg) | beanprice source for official Swiss BAZG/EZV daily FX rates |
 
-## Quick start
-
-```bash
-uv add quints          # or: pip install quints
-quints init my-books   # scaffold a project (chart of accounts, quints.toml)
-cd my-books
-```
-
-`quints init` asks a few questions and writes a runnable project: a Swiss KMU
-chart of accounts (every account mapped to its Kontenrahmen code), a
-`quints.toml`, and an `AGENTS.md` so an AI agent (Claude Code, Codex, …) knows
-how to extend the books. `quints` itself is fully deterministic — the agent
-drives it, it never calls a model. Add `--samples` for a demo quarter to run
-the reports against immediately.
-
-Everything entity-specific (name, VAT registration, account names, importer
-rules) is configuration; VAT rates are law and ship date-ranged in code.
-
-```bash
-quints check                       # validate the ledger (bean-check + KMU mapping)
-quints mwst -q 2026-Q3             # MWST report, ESTV Ziffer mapping
-quints status                      # what's owed, what's due
-quints import ubs st.mt940         # draft statement activity into staging/
-quints report statements --year 2026 --lang de   # Bilanz + Erfolgsrechnung PDF
-```
-
-### Take it for a test drive
-
-[`packages/quints/examples`](packages/quints/examples) is a complete sample
-project (regenerated by `quints init … --samples`, kept in sync by the tests):
-
-```bash
-cd packages/quints/examples
-uv run quints mwst -q 2026-Q3
-uv run quints report erfolg --year 2026
-```
-
 ## Development
 
 ```bash
-uv sync                # installs all workspace packages, editable
-uv run pytest packages
+git clone https://github.com/sealambda/quints
+cd quints
+uv sync
+make check     # ruff, basedpyright, import-linter, deptry, vulture, pytest
 ```
 
-## Licensing
-
-Everything is GPL-2.0-only, matching beancount/beangulp/beanprice. (AGPL is
-not an option here: GPL-2.0-only code cannot be combined with any v3-family
-license.) See each package's LICENSE file.
+`make check` is the whole quality gate; CI runs exactly it. Pushing a `vX.Y.Z`
+tag builds and publishes `quints` to PyPI (trusted publishing). See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the architecture and conventions.
