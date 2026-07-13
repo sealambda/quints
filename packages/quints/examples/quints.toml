@@ -1,71 +1,51 @@
-# quints.toml — everything entity-specific lives here, next to your main.bean.
-# Defaults (shown commented) assume a Swiss GmbH with CH:GmbH-namespaced
-# accounts; uncomment and adjust what differs. VAT *rates* are law, not
-# configuration — they ship date-ranged in quints.ledger.VAT_RATES.
+# quints.toml — everything entity-specific lives here, next to main.bean.
+# Account names below are the built-in defaults (CH:GmbH namespacing);
+# uncomment and edit in quints.toml + main.bean together to change them.
 
 [entity]
 name = "Example GmbH"
 vat_method = "effective"            # "saldo" is not supported yet
-vat_registered_since = 2026-01-01   # clamps VAT reports: earlier periods are pre-liability
+vat_registered_since = 2026-01-01   # earlier periods are pre-liability
 operating_currency = "CHF"
 
 [ledger]
 main = "main.bean"
 prices = "prices.bean"
 
-[accounts]
-# input_vat = "Assets:CH:GmbH:Tax:InputVAT"
-# output_vat = "Liabilities:CH:GmbH:Tax:OutputVAT"
-# bezugsteuer = "Liabilities:CH:GmbH:Tax:Bezugsteuer"
-# payable_vat = "Liabilities:CH:GmbH:Tax:PayableVAT"
-# income_prefix = "Income:CH:GmbH"
-# export_marker = ":Export"         # income sub-account marker → Ziffer 221
-# entity_marker = ":CH:GmbH:"       # scopes KMU statements and FX revaluation
-# fx_gain = "Income:CH:GmbH:FX:CurrencyGain"
-# fx_loss = "Expenses:CH:GmbH:FX:CurrencyLoss"
-# receivable = "Assets:CH:GmbH:Receivable:Trade"
-# rounding_income = "Income:CH:GmbH:Rounding"
-# income_domestic = "Income:CH:GmbH:Consulting:External:Domestic"
-# income_export = "Income:CH:GmbH:Consulting:External:Export"
-
 [report]
-language = "en"                     # or "de"; --lang overrides per run
+language = "en"                     # or "de"; --lang overrides
 
-# ── statement importers — omit a section and that importer is off ────────────
-# rules: [payee regex, counter account, flag]; '*' = complete as drafted,
-# '!' = still needs a VAT decision + linked document before your books.
-
+# MT940 statements → staging/. '*' = booked as drafted, '!' = still
+# needs a VAT decision + linked document before it reaches your books.
 [import.ubs]
 account = "Assets:CH:GmbH:Current:UBS:CHF"
-iban = "CH9300762011623852957"      # your IBAN, as it appears in the MT940 :25: field
+iban = "CH9300762011623852957"   # your IBAN, as in the MT940 :25: field
 rules = [
     ['\bacme\b', "Assets:CH:GmbH:Receivable:Trade", "*"],
-    ['steuerverwaltung|\bestv\b', "Liabilities:CH:GmbH:Tax:PayableVAT", "*"],
 ]
 
+# Fetching (`quints import wise --fetch`) needs QUINTS_WISE_API_TOKEN
+# (and QUINTS_WISE_PRIVATE_KEY for SCA-protected profiles) in .env.
 [import.wise]
-holder = "Example GmbH"             # businessName filter, for multi-profile tokens
 fees_account = "Expenses:CH:GmbH:BankFees:Wise"
 rules = [
     ["cloudflare", "Expenses:CH:GmbH:IT:Hosting", "!"],
 ]
-# fetching (`quints import wise --fetch`) needs QUINTS_WISE_API_TOKEN and, for
-# SCA-protected profiles, QUINTS_WISE_PRIVATE_KEY in .env
 
 [import.wise.accounts]
 CHF = "Assets:CH:GmbH:Current:Wise:CHF"
 EUR = "Assets:CH:GmbH:Current:Wise:EUR"
 USD = "Assets:CH:GmbH:Current:Wise:USD"
 
+# Fetching needs QUINTS_STRIPE_API_KEY in .env (a restricted key with
+# Balance transaction sources: Read and Charges: Read).
 [import.stripe]
-account_id = "acct_XXXXXXXXXXXX"    # guard: refuse to fetch with a key for another account
+account_id = "acct_XXXXXXXXXXXX"   # guard: refuse a key for another account
 fees_account = "Expenses:CH:GmbH:BankFees:Stripe"
 tax_account = "Assets:CH:GmbH:Tax:InputVAT"   # VAT inside Stripe's monthly fee debits
 rules = [
     ['\bpayout\b', "Assets:CH:GmbH:Current:Wise:EUR", "*"],
 ]
-# fetching needs QUINTS_STRIPE_API_KEY in .env — a restricted key with
-# Balance transaction sources: Read and Charges: Read
 
 [import.stripe.accounts]
 EUR = "Assets:CH:GmbH:Current:Stripe:EUR"

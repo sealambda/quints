@@ -1,0 +1,5 @@
+; FX rates (CHF per unit). Populate with `quints prices sync`
+; (official BAZG/EZV daily rates).
+
+2026-07-01 price EUR 0.93 CHF
+2026-08-01 price EUR 0.94 CHF

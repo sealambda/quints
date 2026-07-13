@@ -1,0 +1,4 @@
+# quints working directories
+/staging/
+.env
+__pycache__/

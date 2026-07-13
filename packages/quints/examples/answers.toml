@@ -1,0 +1,16 @@
+# Answer-file for `quints init` — regenerates this examples/ project.
+#
+#   quints init packages/quints/examples \
+#       --answers packages/quints/examples/answers.toml --force
+#
+# The generated files are committed so a fresh clone runs immediately; the
+# tests assert init still reproduces them byte-for-byte (so the example is
+# never hand-maintained) and that the reporting commands agree on the numbers.
+
+entity_name = "Example GmbH"
+vat_method = "effective"
+vat_registered_since = 2026-01-01
+operating_currency = "CHF"
+report_language = "en"
+importers = ["ubs", "wise", "stripe"]
+include_samples = true

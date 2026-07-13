@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date as Date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -19,6 +20,9 @@ from . import (
 )
 from . import (
     inbox as inbox_mod,
+)
+from . import (
+    init as init_mod,
 )
 from . import (
     kmu as kmu_mod,
@@ -789,6 +793,90 @@ def schema(
         path = out / f"{name}.schema.json"
         path.write_text(_json.dumps(mdl.model_json_schema(), indent=2) + "\n")
         ui.console.print(f"[ok]Wrote[/] {path}")
+
+
+@app.command()
+def init(
+    directory: Path = typer.Argument(
+        Path("."), help="Target project directory (created if missing)."
+    ),
+    name: str | None = typer.Option(None, "--name", help="Entity name, e.g. 'Acme GmbH'."),
+    lang: str | None = typer.Option(None, "--lang", "-l", help="Report language: en or de."),
+    importers: str | None = typer.Option(
+        None, "--importers", help="Comma-separated: ubs, wise, stripe (default: none)."
+    ),
+    samples: bool = typer.Option(
+        False, "--samples", help="Include a demo quarter of transactions."
+    ),
+    answers_file: Path | None = typer.Option(
+        None, "--answers", help="TOML answer-file for non-interactive scaffolding."
+    ),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing files."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip prompts; accept defaults."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+):
+    """Scaffold a new quints project (chart of accounts, quints.toml, AGENTS.md).
+
+    Deterministic: the same answers always produce the same files. Run
+    interactively, or feed a TOML answer-file with --answers for CI/repeatable
+    setups."""
+    if answers_file is not None:
+        if not answers_file.exists():
+            typer.secho(f"ERROR: answer-file not found: {answers_file}", fg="red", err=True)
+            raise typer.Exit(1)
+        answers = init_mod.load_answers(answers_file)
+    else:
+        answers = init_mod.Answers()
+
+    interactive = answers_file is None and not yes
+    if name is not None:
+        answers = replace(answers, entity_name=name)
+    elif interactive:
+        answers = replace(
+            answers, entity_name=typer.prompt("Entity name", default=answers.entity_name)
+        )
+    if lang is not None:
+        answers = replace(answers, report_language=lang)
+    elif interactive:
+        answers = replace(
+            answers,
+            report_language=typer.prompt(
+                "Report language (en/de)", default=answers.report_language
+            ),
+        )
+    if importers is not None:
+        answers = replace(
+            answers, importers=tuple(i.strip() for i in importers.split(",") if i.strip())
+        )
+    if samples:
+        answers = replace(answers, include_samples=True)
+
+    try:
+        files = init_mod.plan(answers)
+    except init_mod.InitError as e:
+        typer.secho(f"ERROR: {e}", fg="red", err=True)
+        raise typer.Exit(1) from None
+    result = init_mod.write(directory, files, force=force)
+
+    if as_json:
+        _json_out(
+            {
+                "directory": str(directory),
+                "entity": answers.entity_name,
+                "written": [str(p) for p in result.written],
+                "skipped": [str(p) for p in result.skipped],
+            }
+        )
+        return
+    for path in result.written:
+        ui.console.print(f"[ok]created[/] {path}")
+    for path in result.skipped:
+        ui.console.print(f"[warn]exists, skipped[/] {path} (use --force to overwrite)")
+    if result.written and not result.skipped:
+        ui.console.print(
+            f"\nScaffolded [b]{answers.entity_name}[/] in {directory}. "
+            "Next: [b]quints check[/] then [b]quints mwst -q 2026-Q3[/]."
+        )
 
 
 def main() -> None:
