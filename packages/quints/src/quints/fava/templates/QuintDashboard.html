@@ -1,0 +1,85 @@
+{% set liabilities, unlinked, vat_total, today = extension.vat_status() %}
+{% set open_invoices = extension.open_receivables() %}
+{% set staging = extension.staging() %}
+{% set inbox = extension.inbox() %}
+
+<div class="left">
+
+  <h3>VAT outstanding · {{ today }}</h3>
+  {% if not liabilities and not unlinked %}
+    <p>Nothing outstanding — all filed VAT is paid. ✓</p>
+  {% else %}
+    <table is="sortable-table">
+      <thead>
+        <tr><th data-sort="string">Period</th><th data-sort="num">Owed CHF</th>
+            <th data-sort="string">Due</th><th data-sort="num">Days left</th></tr>
+      </thead>
+      <tbody>
+        {% for l in liabilities %}
+        <tr>
+          <td>{{ l.period }}</td>
+          <td class="num">{{ l.owed }}</td>
+          <td>{{ l.due or "—" }}</td>
+          <td class="num">{{ l.days_left if l.days_left is not none else "—" }}</td>
+        </tr>
+        {% endfor %}
+        {% if unlinked %}
+        <tr><td>(unlinked)</td><td class="num">{{ unlinked }}</td><td>—</td><td></td></tr>
+        {% endif %}
+      </tbody>
+      <tfoot><tr><td>Total</td><td class="num">{{ vat_total }}</td><td></td><td></td></tr></tfoot>
+    </table>
+  {% endif %}
+
+  <h3>Open receivables</h3>
+  {% if not open_invoices %}
+    <p>Nothing open — every invoice is settled. ✓</p>
+  {% else %}
+    <table is="sortable-table">
+      <thead>
+        <tr><th data-sort="string">Invoice</th><th data-sort="string">Payee</th>
+            <th data-sort="string">Date</th><th data-sort="num">Age (d)</th>
+            <th data-sort="num">Open</th></tr>
+      </thead>
+      <tbody>
+        {% for o in open_invoices %}
+        <tr>
+          <td>{{ o.number }}</td>
+          <td>{{ o.payee }}</td>
+          <td>{{ o.invoice_date }}</td>
+          <td class="num"{% if o.age_days > 30 %} style="color: var(--budget-negative)"{% endif %}>{{ o.age_days }}</td>
+          <td class="num">{{ o.open_amount }} {{ o.currency }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  <h3>Review queue</h3>
+  {% if not staging and not inbox %}
+    <p>Inbox and staging are empty. ✓</p>
+  {% else %}
+    {% if staging %}
+      <table>
+        <thead><tr><th>Staging file</th><th>Drafts</th><th>Needs decision (!)</th></tr></thead>
+        <tbody>
+          {% for name, total, flagged in staging %}
+          <tr><td>{{ name }}</td><td class="num">{{ total }}</td><td class="num">{{ flagged }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+    {% if inbox %}
+      <p>Inbox — {{ inbox | length }} document(s):</p>
+      <ul>
+        {% for d in inbox %}
+        <li>{{ d.name }}
+          {%- if d.duplicate_of %} — duplicate of {{ d.duplicate_of }}
+          {%- elif d.linked %} — already linked in ledger
+          {%- endif %}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% endif %}
+
+</div>

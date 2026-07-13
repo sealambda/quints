@@ -1,0 +1,69 @@
+{
+  "accountHolder": {"type": "BUSINESS", "businessName": "Test GmbH"},
+  "issuer": {"name": "Wise Europe SA"},
+  "transactions": [
+    {
+      "type": "DEBIT",
+      "date": "2026-07-03T09:12:41.000Z",
+      "amount": {"value": -1.76, "currency": "EUR", "zero": false},
+      "totalFees": {"value": 0.00, "currency": "EUR", "zero": true},
+      "details": {
+        "type": "CARD",
+        "description": "Card transaction of 2.00 USD issued by Cloudflare",
+        "amount": {"value": 2.00, "currency": "USD"},
+        "merchant": {"name": "Cloudflare", "country": "US", "category": "Computer Network Services"}
+      },
+      "exchangeDetails": {"forAmount": {"value": 2.00, "currency": "USD"}},
+      "runningBalance": {"value": 6494.98, "currency": "EUR"},
+      "referenceNumber": "CARD-1000001"
+    },
+    {
+      "type": "CREDIT",
+      "date": "2026-07-06T14:02:11.000Z",
+      "amount": {"value": 878.48, "currency": "EUR", "zero": false},
+      "totalFees": {"value": 0.00, "currency": "EUR", "zero": true},
+      "details": {
+        "type": "TRANSFER",
+        "description": "Received money from Acme OU with reference ACM202606",
+        "senderName": "Acme OU",
+        "paymentReference": "ACM202606"
+      },
+      "exchangeDetails": null,
+      "runningBalance": {"value": 7373.46, "currency": "EUR"},
+      "referenceNumber": "TRANSFER-2000002"
+    },
+    {
+      "type": "DEBIT",
+      "date": "2026-07-08T08:30:00.000Z",
+      "amount": {"value": -100.00, "currency": "EUR", "zero": false},
+      "totalFees": {"value": 0.47, "currency": "EUR", "zero": false},
+      "details": {
+        "type": "CONVERSION",
+        "description": "Converted 100.00 EUR to 107.20 USD",
+        "sourceAmount": {"value": 100.00, "currency": "EUR"},
+        "targetAmount": {"value": 107.20, "currency": "USD"},
+        "rate": 1.0771
+      },
+      "exchangeDetails": null,
+      "runningBalance": {"value": 7273.46, "currency": "EUR"},
+      "referenceNumber": "CONVERSION-3000003"
+    },
+    {
+      "type": "DEBIT",
+      "date": "2026-07-09T00:00:00.000Z",
+      "amount": {"value": 0.00, "currency": "EUR", "zero": true},
+      "totalFees": {"value": 0.00, "currency": "EUR", "zero": true},
+      "details": {"type": "UNKNOWN", "description": "Zero-value adjustment"},
+      "exchangeDetails": null,
+      "runningBalance": {"value": 7273.46, "currency": "EUR"},
+      "referenceNumber": "ADJUSTMENT-4000004"
+    }
+  ],
+  "endOfStatementBalance": {"value": 7273.46, "currency": "EUR"},
+  "query": {
+    "intervalStart": "2026-07-01T00:00:00.000Z",
+    "intervalEnd": "2026-07-10T23:59:59.999Z",
+    "currency": "EUR",
+    "accountId": 10000001
+  }
+}

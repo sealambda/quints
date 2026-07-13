@@ -1,0 +1,18 @@
+{1:F01TESTBANKXXXX0000000000}{2:I940X           N}{3:{108:260101/260131}}{4:
+:20:TEST0001
+:25:CH9300762011623852957
+:28C:1/1
+:60F:C260101CHF100,
+:61:2601050105D25,50NTRFNONREF//REF001
+Debit card payment
+:86:DE1?ACME Hosting Inc
+card 123 Debit card payment
+:61:2601100110C200,NTRFNONREF//REF002
+e-banking credit
+:86:Z46?Client AG
+e-banking credit
+:61:2601310131D0,NCHGNONREF//REF003
+Balance closing of service prices
+:86:Y92?Balance closing of service prices
+:62F:C260131CHF274,50
+-}{5:{CHK:000000000000}}

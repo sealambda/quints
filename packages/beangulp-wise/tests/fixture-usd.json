@@ -1,0 +1,29 @@
+{
+  "accountHolder": {"type": "BUSINESS", "businessName": "Test GmbH"},
+  "issuer": {"name": "Wise Europe SA"},
+  "transactions": [
+    {
+      "type": "CREDIT",
+      "date": "2026-07-08T08:30:00.000Z",
+      "amount": {"value": 107.20, "currency": "USD", "zero": false},
+      "totalFees": {"value": 0.00, "currency": "USD", "zero": true},
+      "details": {
+        "type": "CONVERSION",
+        "description": "Converted 100.00 EUR to 107.20 USD",
+        "sourceAmount": {"value": 100.00, "currency": "EUR"},
+        "targetAmount": {"value": 107.20, "currency": "USD"},
+        "rate": 1.0771
+      },
+      "exchangeDetails": null,
+      "runningBalance": {"value": 107.20, "currency": "USD"},
+      "referenceNumber": "CONVERSION-3000003"
+    }
+  ],
+  "endOfStatementBalance": {"value": 107.20, "currency": "USD"},
+  "query": {
+    "intervalStart": "2026-07-01T00:00:00.000Z",
+    "intervalEnd": "2026-07-10T23:59:59.999Z",
+    "currency": "USD",
+    "accountId": 10000002
+  }
+}
