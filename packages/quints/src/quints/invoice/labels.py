@@ -1,8 +1,10 @@
 """Localized labels for the invoice template.
 
 Adding a language = add one entry to `LABELS` with the full key set (a test
-enforces key parity, and `Invoice.language` validates against these keys, so a
-new language is accepted the moment it is defined here — no other file to touch).
+enforces key parity, and `Invoice.locale` validates its language subtag against
+these keys, so a new language is accepted the moment it is defined here — no
+other file to touch; the matching CLDR locale, e.g. `es_ES`, gives Babel the
+number/date formatting for free).
 
 The legally load-bearing strings — `terms`, `export_note`, `reverse_charge` —
 should be reviewed by a native/legal speaker before an entry ships.
@@ -65,7 +67,7 @@ LABELS = {
         "vat": "IVA",
         "rounding": "Redondeo",
         "grand_total": "Total a pagar",
-        "payment_to": "Pagadero a",
+        "payment_to": "A pagar",
         "reference": "Referencia",
         "terms": "Pagadero en un plazo de {days} días netos.",
         "export_note": "No sujeto al IVA suizo: lugar de la prestación en el "
@@ -77,6 +79,6 @@ LABELS = {
 
 
 def labels(language: str) -> dict:
-    """Label set for `language`. `Invoice.language` is validated against
-    `LABELS` at load, so the fallback only guards direct/programmatic callers."""
+    """Label set for `language` (a locale's language subtag). `Invoice.locale`
+    is validated at load, so the fallback only guards programmatic callers."""
     return LABELS.get(language, LABELS["de"])

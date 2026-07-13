@@ -55,7 +55,16 @@ def _domestic():
 
 
 def test_money():
-    assert money(Decimal("5059.1")) == "5'059.10"
+    assert money(Decimal("5059.1")) == "5'059.10"  # default de_CH
+    assert money(Decimal("5059.1"), "es_ES") == "5.059,10"
+    assert money(Decimal("5059.1"), "en") == "5,059.10"
+
+
+def test_number_is_locale_aware():
+    from quints.invoice.model import number
+
+    assert number(Decimal("2.5"), "es_ES") == "2,5"
+    assert number(Decimal("8.1"), "de_CH") == "8.1"
 
 
 def test_compute_domestic_matches_ledger():
@@ -331,26 +340,64 @@ def test_spanish_terms_formats_day_count():
     assert labels("es")["terms"].format(days=30) == "Pagadero en un plazo de 30 días netos."
 
 
-def test_invoice_rejects_unknown_language():
-    with pytest.raises(ValueError, match="unsupported invoice language"):
-        Invoice(
-            number="X1",
-            kind="domestic",
-            currency="CHF",
-            issue_date=date(2026, 7, 2),
-            customer=Party(name="ACME AG", address=["Bahnhofstrasse 1", "8000 Zürich"]),
-            items=[LineItem(description="Work", quantity=Decimal("1"), unit_price=Decimal("100"))],
-            language="fr",
-        )
+def _invoice(**over: object) -> Invoice:
+    # model_validate takes a mapping (not typed kwargs), so a test can pass an
+    # invalid key like a legacy `language` and exercise the validators.
+    base: dict[str, object] = {
+        "number": "X1",
+        "kind": "domestic",
+        "currency": "CHF",
+        "issue_date": date(2026, 7, 2),
+        "customer": Party(name="ACME AG", address=["Bahnhofstrasse 1", "8000 Zürich"]),
+        "items": [LineItem(description="Work", quantity=Decimal("1"), unit_price=Decimal("100"))],
+    }
+    base.update(over)
+    return Invoice.model_validate(base)
+
+
+def test_invoice_rejects_unknown_locale():
+    with pytest.raises(ValueError, match="unknown locale"):
+        _invoice(locale="es_CH")  # not a CLDR locale
+
+
+def test_invoice_rejects_locale_without_labels():
+    with pytest.raises(ValueError, match="no invoice labels"):
+        _invoice(locale="fr_FR")  # real locale, no fr labels
+
+
+def test_invoice_rejects_legacy_language_key():
+    with pytest.raises(ValueError, match="`language` is replaced by `locale`"):
+        _invoice(language="es")
+
+
+def test_locale_exposes_label_language():
+    assert _invoice(locale="es_ES").language == "es"
+
+
+def test_render_spanish_formats_numbers_and_dates():
+    # es_ES: comma decimal, dotted thousands, Spanish medium date.
+    from quints.invoice.model import compute
+    from quints.invoice.render import build_context
+
+    inv = _invoice(
+        locale="es_ES",
+        items=[
+            LineItem(description="Trabajo", quantity=Decimal("2.5"), unit_price=Decimal("1000"))
+        ],
+    )
+    ctx = build_context(inv, ISSUER, compute(inv), {"type": "qrbill"})
+    assert ctx["invoice"]["issue_date"] == "2 jul 2026"
+    assert ctx["items"][0]["quantity"] == "2,5"
+    assert ctx["items"][0]["unit_price"] == "1.000,00"
+    assert ctx["totals"]["vat_rate"] == "8,1"
+    assert ctx["totals"]["grand_total"] == "2.702,50"  # 2500 + 8.1% VAT = 2702.50
 
 
 def test_render_spanish_from_swiss_issuer(tmp_path: Path):
-    # es + CH issuer would form the locale es_CH, which Babel does not know —
-    # the date formatter must fall back rather than crash the render.
     from quints.invoice import render
 
     inv = _domestic()
-    inv.language = "es"
+    inv.locale = "es_ES"
     out = tmp_path / "inv-es.pdf"
     path, _totals, _payload = render.render(inv, ISSUER, out)
     assert path.exists() and out.read_bytes()[:5] == b"%PDF-"

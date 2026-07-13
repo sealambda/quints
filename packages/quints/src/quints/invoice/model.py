@@ -13,7 +13,7 @@ import sys
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, RootModel, field_validator, model_validator
@@ -24,9 +24,25 @@ else:  # pragma: no cover
     import tomli as tomllib
 
 
-def money(v: Decimal) -> str:
-    """Swiss-formatted amount: 1'234.50 (apostrophe thousands, 2 decimals)."""
-    return f"{v:,.2f}".replace(",", "'")
+def money(v: Decimal, locale: str = "de_CH") -> str:
+    """Amount formatted for `locale`, always two decimals.
+
+    de_CH → 5'059.10, en → 5,059.10, es_ES → 5.059,10. CLDR types the Swiss
+    group separator as U+2019/U+02BC; we normalise it to a plain ASCII
+    apostrophe — how Swiss invoices are typeset, and a stable copy-paste."""
+    from babel.numbers import format_decimal
+
+    s = format_decimal(v, format="#,##0.00", locale=locale)
+    return s.replace("’", "'").replace("ʼ", "'")
+
+
+def number(v: Decimal, locale: str = "de_CH") -> str:
+    """A bare decimal for `locale`, trailing zeros trimmed (quantities, rates).
+
+    es_ES → 2,5 / 8,1; de_CH → 2.5 / 8.1."""
+    from babel.numbers import format_decimal
+
+    return format_decimal(v, locale=locale)
 
 
 def round_step(v: Decimal, step: Decimal) -> Decimal:
@@ -153,7 +169,7 @@ class Invoice(BaseModel):
     customer: str | Party  # str → key into the customer registry
     items: list[LineItem] = Field(min_length=1)
     supply: str = ""
-    language: str = "de"
+    locale: str = "de_CH"  # CLDR locale for labels + number/date formatting
     vat: VatBlock = Field(default_factory=VatBlock)
     reference: str | None = None
     notes: list[str] = Field(default_factory=list)
@@ -164,16 +180,39 @@ class Invoice(BaseModel):
     # for customers outside a reverse-charge regime (e.g. US) to drop the note.
     reverse_charge: bool | None = None
 
-    @field_validator("language")
+    @model_validator(mode="before")
     @classmethod
-    def _known_language(cls, v: str) -> str:
+    def _reject_legacy_language(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "language" in data:
+            raise ValueError(
+                "`language` is replaced by `locale` — use a full CLDR locale, "
+                "e.g. locale: es_ES (Spanish/Spain), de_CH, or en"
+            )
+        return data
+
+    @field_validator("locale")
+    @classmethod
+    def _known_locale(cls, v: str) -> str:
+        from babel import Locale, UnknownLocaleError
+
         from .labels import LABELS
 
-        if v not in LABELS:
+        try:
+            Locale.parse(v)
+        except (ValueError, UnknownLocaleError) as e:
+            raise ValueError(f"unknown locale {v!r} (e.g. de_CH, en, es_ES)") from e
+        lang = v.split("_")[0]
+        if lang not in LABELS:
             raise ValueError(
-                f"unsupported invoice language {v!r} (available: {', '.join(sorted(LABELS))})"
+                f"no invoice labels for language {lang!r} of locale {v!r} "
+                f"(available: {', '.join(sorted(LABELS))})"
             )
         return v
+
+    @property
+    def language(self) -> str:
+        """The label language: the locale's language subtag (es_ES → es)."""
+        return self.locale.split("_")[0]
 
     @property
     def vat_rate(self) -> Decimal:

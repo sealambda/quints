@@ -9,12 +9,11 @@ from datetime import date
 from pathlib import Path
 
 import typst
-from babel import UnknownLocaleError
 from babel.dates import format_date
 
 from . import qr
 from .labels import labels as get_labels
-from .model import Invoice, Issuer, Totals, compute, make_scor, money
+from .model import Invoice, Issuer, Totals, compute, make_scor, money, number
 
 TEMPLATE = Path(__file__).parent / "template.typ"
 
@@ -24,17 +23,10 @@ def _fmt_iban(iban: str) -> str:
     return " ".join(s[i : i + 4] for i in range(0, len(s), 4))
 
 
-def _fmt_date(d: date, language: str, country: str) -> str:
-    """CLDR medium date for the invoice locale (e.g. de_CH → 02.07.2026).
-
-    Falls back to the bare language, then English, when the language/country
-    combo is not a known CLDR locale (e.g. es_CH is undefined in Babel)."""
-    for locale in (f"{language}_{country}", language, "en"):
-        try:
-            return format_date(d, format="medium", locale=locale)
-        except UnknownLocaleError:
-            continue
-    return d.isoformat()  # pragma: no cover — 'en' above always resolves
+def _fmt_date(d: date, locale: str) -> str:
+    """CLDR medium date for the invoice locale (de_CH → 02.07.2026,
+    es_ES → 2 jul 2026). The locale is validated on the model, so it resolves."""
+    return format_date(d, format="medium", locale=locale)
 
 
 def build_context(
@@ -64,27 +56,27 @@ def build_context(
         "invoice": {
             "number": inv.number,
             "supply": inv.supply,
-            "issue_date": _fmt_date(inv.issue_date, inv.language, issuer.country),
+            "issue_date": _fmt_date(inv.issue_date, inv.locale),
         },
         "terms": (lbl["terms"].format(days=inv.terms_days) if inv.terms_days is not None else None),
         "items": [
             {
                 "pos": i + 1,
                 "description": it.description,
-                "quantity": f"{it.quantity:g}",
+                "quantity": number(it.quantity, inv.locale),
                 "unit": it.unit,
-                "unit_price": money(it.unit_price),
-                "total": money(it.total),
+                "unit_price": money(it.unit_price, inv.locale),
+                "total": money(it.total, inv.locale),
             }
             for i, it in enumerate(inv.items)
         ],
         "totals": {
-            "subtotal": money(totals.subtotal),
-            "vat_rate": f"{totals.vat_rate:g}",
-            "vat_amount": money(totals.vat_amount),
-            "rounding": money(totals.rounding),
+            "subtotal": money(totals.subtotal, inv.locale),
+            "vat_rate": number(totals.vat_rate, inv.locale),
+            "vat_amount": money(totals.vat_amount, inv.locale),
+            "rounding": money(totals.rounding, inv.locale),
             "show_rounding": totals.rounding != 0,
-            "grand_total": money(totals.grand_total),
+            "grand_total": money(totals.grand_total, inv.locale),
             "export": inv.kind == "export",
         },
         "payment": payment,
