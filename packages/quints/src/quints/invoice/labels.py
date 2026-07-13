@@ -1,4 +1,12 @@
-"""Localized labels for the invoice template (German / English)."""
+"""Localized labels for the invoice template.
+
+Adding a language = add one entry to `LABELS` with the full key set (a test
+enforces key parity, and `Invoice.language` validates against these keys, so a
+new language is accepted the moment it is defined here — no other file to touch).
+
+The legally load-bearing strings — `terms`, `export_note`, `reverse_charge` —
+should be reviewed by a native/legal speaker before an entry ships.
+`terms` MUST keep the literal `{days}` placeholder (`render` calls `.format`)."""
 
 LABELS = {
     "de": {
@@ -43,8 +51,32 @@ LABELS = {
         "(Art. 8 para. 1 Swiss VAT Act).",
         "reverse_charge": "Reverse charge — VAT to be accounted for by the recipient.",
     },
+    "es": {
+        "invoice": "Factura",
+        "invoice_no": "N.º de factura",
+        "date": "Fecha de factura",
+        "supply": "Periodo de servicio",
+        "pos": "N.º",
+        "description": "Descripción",
+        "qty": "Cantidad",
+        "unit_price": "Precio",
+        "line_total": "Total",
+        "subtotal": "Subtotal",
+        "vat": "IVA",
+        "rounding": "Redondeo",
+        "grand_total": "Total a pagar",
+        "payment_to": "Pagadero a",
+        "reference": "Referencia",
+        "terms": "Pagadero en un plazo de {days} días netos.",
+        "export_note": "No sujeto al IVA suizo: lugar de la prestación en el "
+        "extranjero (art. 8 apdo. 1 de la Ley suiza del IVA).",
+        "reverse_charge": "Inversión del sujeto pasivo — el IVA debe ser "
+        "liquidado por el destinatario.",
+    },
 }
 
 
 def labels(language: str) -> dict:
+    """Label set for `language`. `Invoice.language` is validated against
+    `LABELS` at load, so the fallback only guards direct/programmatic callers."""
     return LABELS.get(language, LABELS["de"])

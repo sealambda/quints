@@ -164,6 +164,17 @@ class Invoice(BaseModel):
     # for customers outside a reverse-charge regime (e.g. US) to drop the note.
     reverse_charge: bool | None = None
 
+    @field_validator("language")
+    @classmethod
+    def _known_language(cls, v: str) -> str:
+        from .labels import LABELS
+
+        if v not in LABELS:
+            raise ValueError(
+                f"unsupported invoice language {v!r} (available: {', '.join(sorted(LABELS))})"
+            )
+        return v
+
     @property
     def vat_rate(self) -> Decimal:
         return self.vat.rate

@@ -2,6 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -310,6 +311,49 @@ def test_render_produces_pdf(tmp_path):
     _path, totals, payload = render.render(_domestic(), ISSUER, out)
     assert out.exists() and out.read_bytes()[:5] == b"%PDF-"
     assert payload.startswith("SPC") and totals.grand_total == Decimal("5059.10")
+
+
+# ── localization ──────────────────────────────────────────────────────────────
+
+
+def test_labels_all_languages_share_the_same_keys():
+    from quints.invoice.labels import LABELS
+
+    reference = set(LABELS["de"])
+    for lang, lbl in LABELS.items():
+        assert set(lbl) == reference, f"{lang} label keys diverge from de"
+        assert "{days}" in lbl["terms"], f"{lang} terms dropped the {{days}} placeholder"
+
+
+def test_spanish_terms_formats_day_count():
+    from quints.invoice.labels import labels
+
+    assert labels("es")["terms"].format(days=30) == "Pagadero en un plazo de 30 días netos."
+
+
+def test_invoice_rejects_unknown_language():
+    with pytest.raises(ValueError, match="unsupported invoice language"):
+        Invoice(
+            number="X1",
+            kind="domestic",
+            currency="CHF",
+            issue_date=date(2026, 7, 2),
+            customer=Party(name="ACME AG", address=["Bahnhofstrasse 1", "8000 Zürich"]),
+            items=[LineItem(description="Work", quantity=Decimal("1"), unit_price=Decimal("100"))],
+            language="fr",
+        )
+
+
+def test_render_spanish_from_swiss_issuer(tmp_path: Path):
+    # es + CH issuer would form the locale es_CH, which Babel does not know —
+    # the date formatter must fall back rather than crash the render.
+    from quints.invoice import render
+
+    inv = _domestic()
+    inv.language = "es"
+    out = tmp_path / "inv-es.pdf"
+    path, _totals, _payload = render.render(inv, ISSUER, out)
+    assert path.exists() and out.read_bytes()[:5] == b"%PDF-"
 
 
 def test_render_embeds_bundled_font(tmp_path):

@@ -9,6 +9,7 @@ from datetime import date
 from pathlib import Path
 
 import typst
+from babel import UnknownLocaleError
 from babel.dates import format_date
 
 from . import qr
@@ -24,8 +25,16 @@ def _fmt_iban(iban: str) -> str:
 
 
 def _fmt_date(d: date, language: str, country: str) -> str:
-    """CLDR medium date for the invoice locale (e.g. de_CH → 02.07.2026)."""
-    return format_date(d, format="medium", locale=f"{language}_{country}")
+    """CLDR medium date for the invoice locale (e.g. de_CH → 02.07.2026).
+
+    Falls back to the bare language, then English, when the language/country
+    combo is not a known CLDR locale (e.g. es_CH is undefined in Babel)."""
+    for locale in (f"{language}_{country}", language, "en"):
+        try:
+            return format_date(d, format="medium", locale=locale)
+        except UnknownLocaleError:
+            continue
+    return d.isoformat()  # pragma: no cover — 'en' above always resolves
 
 
 def build_context(
