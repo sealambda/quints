@@ -84,9 +84,7 @@ def test_series_dedupes_by_actual_rate_date(monkeypatch):
         return WEEKEND_XML
 
     monkeypatch.setattr(bazg, "_http_get", fake)
-    series = bazg.Source().get_prices_series(
-        "USD", datetime(2026, 6, 5), datetime(2026, 6, 7)
-    )
+    series = bazg.Source().get_prices_series("USD", datetime(2026, 6, 5), datetime(2026, 6, 7))
     assert len(series) == 1
     assert series[0].time == datetime(2026, 6, 5, tzinfo=timezone.utc)
 

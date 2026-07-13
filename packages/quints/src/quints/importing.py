@@ -27,16 +27,16 @@ import os
 import re
 from dataclasses import dataclass, field
 from datetime import date as TodayDate
-from decimal import Decimal
 from pathlib import Path
 
 from beancount.core import data
 from beancount.parser import printer
+
 from beangulp_mt940 import Importer as Mt940Importer
 from beangulp_stripe import Importer as StripeImporter
 from beangulp_stripe import StripeClient, StripeError
 from beangulp_wise import Importer as WiseImporter
-from beangulp_wise import ScaChallenge, WiseClient, WiseError, merge_conversions
+from beangulp_wise import ScaChallenge, WiseClient, merge_conversions
 
 from . import config, ledger
 from . import receivables as recv_mod
@@ -57,6 +57,7 @@ def _require(section, name: str, *keys: str):
 
 # Rule flags: '*' = clearing legs that are complete as drafted; '!' = direct
 # expenses that still need a VAT decision and a linked document before books/.
+
 
 def ubs_importer(cfg: config.Config | None = None) -> Mt940Importer:
     s = _require((cfg or config.get()).import_ubs, "ubs", "iban")
@@ -94,14 +95,15 @@ def stripe_importer(cfg: config.Config | None = None) -> StripeImporter:
 
 # ── shared pipeline ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class ImportResult:
     source: str
     out_path: Path | None = None
-    drafts: list = field(default_factory=list)          # Transactions written to staging
-    balances: list = field(default_factory=list)        # closing-balance assertions
-    skipped_ref: int = 0                                 # deduped by reference metadata
-    legacy_matches: list = field(default_factory=list)   # (draft, booked date) pairs
+    drafts: list = field(default_factory=list)  # Transactions written to staging
+    balances: list = field(default_factory=list)  # closing-balance assertions
+    skipped_ref: int = 0  # deduped by reference metadata
+    legacy_matches: list = field(default_factory=list)  # (draft, booked date) pairs
     receivable_matches: list = field(default_factory=list)  # (invoice number, draft)
 
 
@@ -126,8 +128,10 @@ def _split(result: ImportResult, extracted, pool) -> None:
         cash = entry.postings[0]
         match = next(
             (
-                (d, n, a) for d, n, a in pool
-                if a == cash.account and n == cash.units.number
+                (d, n, a)
+                for d, n, a in pool
+                if a == cash.account
+                and n == cash.units.number
                 and abs((d - entry.date).days) <= LEGACY_WINDOW_DAYS
             ),
             None,
@@ -197,7 +201,9 @@ def _write_staging(result: ImportResult, out_dir: Path, source: str) -> None:
 
 
 def run_ubs(
-    statement: Path, ledger_path: Path, out_dir: Path = DEFAULT_STAGING,
+    statement: Path,
+    ledger_path: Path,
+    out_dir: Path = DEFAULT_STAGING,
     cfg: config.Config | None = None,
 ) -> ImportResult:
     cfg = cfg or config.get()
@@ -218,7 +224,9 @@ def run_ubs(
 
 
 def run_wise(
-    statements: list[Path], ledger_path: Path, out_dir: Path = DEFAULT_STAGING,
+    statements: list[Path],
+    ledger_path: Path,
+    out_dir: Path = DEFAULT_STAGING,
     cfg: config.Config | None = None,
 ) -> ImportResult:
     cfg = cfg or config.get()
@@ -232,7 +240,7 @@ def run_wise(
             )
 
     existing, _ = ledger.load_entries(ledger_path)
-    raw: list = []       # without ledger dedup, to count reference skips
+    raw: list = []  # without ledger dedup, to count reference skips
     deduped: list = []
     for statement in statements:
         raw += importer.extract(str(statement), existing=[])
@@ -247,7 +255,9 @@ def run_wise(
 
 
 def run_stripe(
-    statements: list[Path], ledger_path: Path, out_dir: Path = DEFAULT_STAGING,
+    statements: list[Path],
+    ledger_path: Path,
+    out_dir: Path = DEFAULT_STAGING,
     cfg: config.Config | None = None,
 ) -> ImportResult:
     cfg = cfg or config.get()
@@ -261,7 +271,7 @@ def run_stripe(
             )
 
     existing, _ = ledger.load_entries(ledger_path)
-    raw: list = []       # without ledger dedup, to count reference skips
+    raw: list = []  # without ledger dedup, to count reference skips
     deduped: list = []
     for statement in statements:
         raw += importer.extract(str(statement), existing=[])
@@ -280,7 +290,9 @@ def _txn_count(entries) -> int:
 
 
 def fetch_wise(
-    interval_start: str, interval_end: str, out_dir: Path = DEFAULT_STAGING,
+    interval_start: str,
+    interval_end: str,
+    out_dir: Path = DEFAULT_STAGING,
     cfg: config.Config | None = None,
 ) -> list[Path]:
     """Download one statement.json per currency balance into ``out_dir``."""
@@ -316,7 +328,9 @@ def fetch_wise(
 
 
 def fetch_stripe(
-    interval_start: str, interval_end: str, out_dir: Path = DEFAULT_STAGING,
+    interval_start: str,
+    interval_end: str,
+    out_dir: Path = DEFAULT_STAGING,
     cfg: config.Config | None = None,
 ) -> list[Path]:
     """Download balance transactions (+ balance snapshot) into ``out_dir``.

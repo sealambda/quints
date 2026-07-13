@@ -14,7 +14,7 @@ Enable in main.bean:  plugin "quints.plugins.kmu"
 from __future__ import annotations
 
 import re
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from beancount.core import data
 
@@ -30,7 +30,7 @@ class KmuError(NamedTuple):
     entry: data.Open
 
 
-def validate_kmu(entries, options_map, marker: str | None = None):
+def validate_kmu(entries: data.Entries, _options_map: dict[str, Any], marker: str | None = None):
     marker = marker or _ENTITY
     errors = []
     for entry in entries:
@@ -41,7 +41,7 @@ def validate_kmu(entries, options_map, marker: str | None = None):
             errors.append(
                 KmuError(
                     entry.meta,
-                    f'{entry.account} has no kmu: code — every CH:GmbH account '
+                    f"{entry.account} has no kmu: code — every CH:GmbH account "
                     f'must map to the KMU Kontenrahmen (e.g. kmu: "6570")',
                     entry,
                 )
@@ -50,7 +50,7 @@ def validate_kmu(entries, options_map, marker: str | None = None):
             errors.append(
                 KmuError(
                     entry.meta,
-                    f'{entry.account} has invalid kmu: {code!r} — expected a '
+                    f"{entry.account} has invalid kmu: {code!r} — expected a "
                     f'four-digit KMU account as a string, e.g. kmu: "6570"',
                     entry,
                 )

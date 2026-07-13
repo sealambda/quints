@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import date as Date, datetime, timedelta, timezone
+from datetime import date as Date
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from beanprice_bazg.bazg import Source

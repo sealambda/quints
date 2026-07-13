@@ -6,7 +6,7 @@ endpoints, so this stays deliberately small:
 
 - ``profiles()``                          — GET /v2/profiles
 - ``balances(profile_id)``                — GET /v4/profiles/{id}/balances?types=STANDARD
-- ``balance_statement(...)``              — GET /v1/profiles/{id}/balance-statements/{bid}/statement.json
+- ``balance_statement(...)``    — GET /v1/profiles/{id}/balance-statements/{bid}/statement.json
 
 Statement endpoints are protected by Strong Customer Authentication: the API
 answers 403 with a one-time token in the ``x-2fa-approval`` header, which must

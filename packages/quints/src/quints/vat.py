@@ -31,10 +31,7 @@ class VatPosting:
 
     def render(self) -> str:
         """The two lines you paste into the ledger (comment + posting)."""
-        return (
-            f"    ; {self.note}\n"
-            f"    {self.input_account:<38} {self.chf:>8} CHF"
-        )
+        return f"    ; {self.note}\n    {self.input_account:<38} {self.chf:>8} CHF"
 
     def render_bezugsteuer(self) -> str:
         """Reverse-charge posting pair (Bezugsteuer, Art. 45 ff. MWSTG).
@@ -53,7 +50,11 @@ class VatPosting:
 
 
 def convert(
-    amount: Decimal, currency: str, on: Date, price_map, net: bool = False,
+    amount: Decimal,
+    currency: str,
+    on: Date,
+    price_map,
+    net: bool = False,
     cfg: config.Config | None = None,
 ) -> VatPosting:
     """Convert a foreign VAT amount (or net price with ``net``) to a CHF posting.
@@ -70,13 +71,18 @@ def convert(
     src = f"BAZG {rate_date:%Y-%m-%d}" if rate_date else "?"
 
     if net:
-        note = (
-            f"{amount} {ccy} net → {foreign_vat} {ccy} VAT "
-            f"@ {Decimal(r):.5f} CHF/{ccy} ({src})"
-        )
+        note = f"{amount} {ccy} net → {foreign_vat} {ccy} VAT @ {Decimal(r):.5f} CHF/{ccy} ({src})"
     else:
         note = f"{foreign_vat} {ccy} @ {Decimal(r):.5f} CHF/{ccy} ({src})"
 
     cfg = cfg or config.get()
-    return VatPosting(chf, Decimal(r), rate_date, foreign_vat, ccy, note,
-                      input_account=cfg.input_vat, bezugsteuer_account=cfg.bezugsteuer)
+    return VatPosting(
+        chf,
+        Decimal(r),
+        rate_date,
+        foreign_vat,
+        ccy,
+        note,
+        input_account=cfg.input_vat,
+        bezugsteuer_account=cfg.bezugsteuer,
+    )

@@ -8,13 +8,24 @@ import pytest
 from quints import config
 from quints.invoice import draft, qr, verify
 from quints.invoice.model import (
-    BankAccount, Customer, CustomerRegistry, Invoice, Issuer, LineItem, Party,
-    compute, load_customers, load_invoice, make_qrr, make_scor, money,
+    BankAccount,
+    CustomerRegistry,
+    Invoice,
+    Issuer,
+    LineItem,
+    Party,
+    compute,
+    load_customers,
+    load_invoice,
+    make_qrr,
+    make_scor,
+    money,
     qrr_check_digit,
 )
 
 ISSUER = Issuer(
-    name="Muster GmbH", address=["Musterstrasse 1", "3000 Bern"],
+    name="Muster GmbH",
+    address=["Musterstrasse 1", "3000 Bern"],
     vat_id="CHE-267.359.056 MWST",
     bank={
         "CHF": BankAccount(qr_iban="CH44 3199 9123 0008 8901 2", bic="UBSWCHZH80A"),
@@ -25,11 +36,20 @@ ISSUER = Issuer(
 
 def _domestic():
     return Invoice(
-        number="ACME202606", kind="domestic", currency="CHF",
-        issue_date="2026-07-02", supply="Juni 2026",
+        number="ACME202606",
+        kind="domestic",
+        currency="CHF",
+        issue_date="2026-07-02",
+        supply="Juni 2026",
         customer=Party(name="ACME AG", address=["Bahnhofstrasse 1", "8000 Zürich"]),
-        items=[LineItem(description="Consulting", quantity=Decimal("1"),
-                        unit_price=Decimal("4680.00"), unit="Pauschal")],
+        items=[
+            LineItem(
+                description="Consulting",
+                quantity=Decimal("1"),
+                unit_price=Decimal("4680.00"),
+                unit="Pauschal",
+            )
+        ],
     )
 
 
@@ -47,12 +67,25 @@ def test_compute_domestic_matches_ledger():
 
 def test_compute_export_no_vat():
     inv = Invoice(
-        number="KEI202605", kind="export", currency="EUR",
-        issue_date="2026-06-17", supply="May 2026",
-        customer=Party(name="nordsoft", address=["Tornimäe tn 1", "15551 Tallinn"],
-                       country="EE", vat_id="EE102566484"),
-        items=[LineItem(description="Consulting", quantity=Decimal("1"),
-                        unit_price=Decimal("771.16"), unit="flat")],
+        number="KEI202605",
+        kind="export",
+        currency="EUR",
+        issue_date="2026-06-17",
+        supply="May 2026",
+        customer=Party(
+            name="nordsoft",
+            address=["Tornimäe tn 1", "15551 Tallinn"],
+            country="EE",
+            vat_id="EE102566484",
+        ),
+        items=[
+            LineItem(
+                description="Consulting",
+                quantity=Decimal("1"),
+                unit_price=Decimal("771.16"),
+                unit="flat",
+            )
+        ],
         round_5=False,
     )
     t = compute(inv)
@@ -81,16 +114,27 @@ def test_qr_payload_structure():
 
 # ── customer registry ─────────────────────────────────────────────────────────
 
+
 def test_registry_flat_and_versioned():
-    reg = CustomerRegistry.model_validate({
-        "acme": {"name": "ACME AG", "address": ["Bahnhofstrasse 1", "8000 Zürich"]},
-        "mover": {"versions": [
-            {"valid_from": "2025-01-01", "name": "Mover AG",
-             "address": ["Old Street 1", "8000 Zürich"]},
-            {"valid_from": "2026-06-01", "name": "Mover AG",
-             "address": ["New Street 2", "8400 Winterthur"]},
-        ]},
-    })
+    reg = CustomerRegistry.model_validate(
+        {
+            "acme": {"name": "ACME AG", "address": ["Bahnhofstrasse 1", "8000 Zürich"]},
+            "mover": {
+                "versions": [
+                    {
+                        "valid_from": "2025-01-01",
+                        "name": "Mover AG",
+                        "address": ["Old Street 1", "8000 Zürich"],
+                    },
+                    {
+                        "valid_from": "2026-06-01",
+                        "name": "Mover AG",
+                        "address": ["New Street 2", "8400 Winterthur"],
+                    },
+                ]
+            },
+        }
+    )
     assert reg.resolve("acme", date(2026, 7, 1)).name == "ACME AG"
     assert reg.resolve("mover", date(2026, 5, 31)).address[0] == "Old Street 1"
     assert reg.resolve("mover", date(2026, 6, 1)).address[0] == "New Street 2"
@@ -118,9 +162,9 @@ def test_load_invoice_resolves_customer_ref(tmp_path):
 def test_load_invoice_toml(tmp_path):
     (tmp_path / "inv.toml").write_text(
         'number = "X2"\nkind = "export"\ncurrency = "EUR"\n'
-        "issue_date = 2026-06-17\n\n[customer]\nname = \"nordsoft\"\n"
+        'issue_date = 2026-06-17\n\n[customer]\nname = "nordsoft"\n'
         'address = ["Tornimäe tn 1", "15551 Tallinn"]\ncountry = "EE"\n\n'
-        "[[items]]\ndescription = \"Consulting\"\nquantity = 1\nunit_price = 771.16\n"
+        '[[items]]\ndescription = "Consulting"\nquantity = 1\nunit_price = 771.16\n'
     )
     inv = load_invoice(tmp_path / "inv.toml")
     assert inv.currency == "EUR" and inv.issue_date == date(2026, 6, 17)
@@ -129,13 +173,17 @@ def test_load_invoice_toml(tmp_path):
 
 # ── ledger draft + cross-check ────────────────────────────────────────────────
 
+
 def test_draft_is_balanced_and_complete():
     cfg = config.Config()
     text = draft.build_draft(_domestic(), compute(_domestic()), cfg)
-    assert '^ACME202606' in text and 'invoice: "ACME202606"' in text
-    amounts = [Decimal(tok) for line in text.splitlines()
-               for tok in line.split() if tok.replace("-", "").replace(".", "").isdigit()
-               and "." in tok]
+    assert "^ACME202606" in text and 'invoice: "ACME202606"' in text
+    amounts = [
+        Decimal(tok)
+        for line in text.splitlines()
+        for tok in line.split()
+        if tok.replace("-", "").replace(".", "").isdigit() and "." in tok
+    ]
     assert sum(amounts) == Decimal("0")
     assert cfg.receivable in text and cfg.income_domestic in text
     assert cfg.output_vat in text and cfg.rounding_income in text
@@ -185,57 +233,68 @@ def test_cross_check_missing(tmp_path):
 
 # ── VAT-number validation + reverse charge ────────────────────────────────────
 
+
 def test_vat_id_checksums():
     from quints.invoice import vatid
-    vatid.validate("CHE-267.359.056 MWST", "CH")   # issuer UID
-    vatid.validate("EE102566484", "EE")            # Estonian KMKR
-    vatid.validate("123456788", "US")              # no US VAT regime → accepted
+
+    vatid.validate("CHE-267.359.056 MWST", "CH")  # issuer UID
+    vatid.validate("EE102566484", "EE")  # Estonian KMKR
+    vatid.validate("123456788", "US")  # no US VAT regime → accepted
     with pytest.raises(ValueError, match="invalid VAT number"):
-        vatid.validate("DE123456789", "DE")        # bad checksum
+        vatid.validate("DE123456789", "DE")  # bad checksum
     with pytest.raises(ValueError, match="invalid VAT number"):
         vatid.validate("CHE-274.485.075 MWST", "CH")  # one digit off
 
 
 def test_party_rejects_bad_vat_id():
     with pytest.raises(ValueError, match="invalid VAT number"):
-        Party(name="Bad AG", address=["Weg 1", "8000 Zürich"],
-              vat_id="CHE-111.111.111 MWST")
+        Party(name="Bad AG", address=["Weg 1", "8000 Zürich"], vat_id="CHE-111.111.111 MWST")
 
 
 def _export(**overrides):
-    kw = dict(
-        number="KEI202605", kind="export", currency="EUR",
-        issue_date="2026-06-17",
-        customer=Party(name="nordsoft", address=["Tornimäe tn 1", "15551 Tallinn"],
-                       country="EE", vat_id="EE102566484"),
-        items=[LineItem(description="Consulting", quantity=Decimal("1"),
-                        unit_price=Decimal("771.16"))],
-        round_5=False,
-    )
+    kw = {
+        "number": "KEI202605",
+        "kind": "export",
+        "currency": "EUR",
+        "issue_date": "2026-06-17",
+        "customer": Party(
+            name="nordsoft",
+            address=["Tornimäe tn 1", "15551 Tallinn"],
+            country="EE",
+            vat_id="EE102566484",
+        ),
+        "items": [
+            LineItem(description="Consulting", quantity=Decimal("1"), unit_price=Decimal("771.16"))
+        ],
+        "round_5": False,
+    }
     kw.update(overrides)
     return Invoice(**kw)
 
 
 def test_reverse_charge_requires_customer_vat(tmp_path):
     from quints.invoice import render
-    no_vat = Party(name="Acme Inc", address=["1 Main St", "94105 San Francisco"],
-                   country="US")
+
+    no_vat = Party(name="Acme Inc", address=["1 Main St", "94105 San Francisco"], country="US")
     with pytest.raises(ValueError, match="reverse charge"):
         render.render(_export(customer=no_vat), ISSUER, tmp_path / "x.pdf")
     # explicit opt-out for non-reverse-charge jurisdictions renders fine
-    path, _, _ = render.render(_export(customer=no_vat, reverse_charge=False),
-                               ISSUER, tmp_path / "y.pdf")
+    path, _, _ = render.render(
+        _export(customer=no_vat, reverse_charge=False), ISSUER, tmp_path / "y.pdf"
+    )
     assert path.exists()
 
 
 def test_reverse_charge_flag_in_context():
     from quints.invoice.render import build_context
+
     inv = _export()
     ctx = build_context(inv, ISSUER, compute(inv), {"type": "sepa"}, reverse_charge=True)
     assert ctx["reverse_charge"] is True
 
 
 # ── schema ────────────────────────────────────────────────────────────────────
+
 
 def test_json_schemas_expose_authoring_shape():
     s = Invoice.model_json_schema()
@@ -246,8 +305,9 @@ def test_json_schemas_expose_authoring_shape():
 
 def test_render_produces_pdf(tmp_path):
     from quints.invoice import render
+
     out = tmp_path / "inv.pdf"
-    path, totals, payload = render.render(_domestic(), ISSUER, out)
+    _path, totals, payload = render.render(_domestic(), ISSUER, out)
     assert out.exists() and out.read_bytes()[:5] == b"%PDF-"
     assert payload.startswith("SPC") and totals.grand_total == Decimal("5059.10")
 
@@ -265,9 +325,15 @@ def test_render_embeds_bundled_font(tmp_path):
     font_dir = P(__file__).parents[3] / "invoicing" / "fonts" / "mona-sans"
     if not font_dir.is_dir():
         pytest.skip("brand font assets not available (private ledger repo only)")
-    issuer = ISSUER.model_copy(update={"brand": Brand(
-        font="Mona Sans", font_display_stretch=125, font_dir=str(font_dir),
-    )})
+    issuer = ISSUER.model_copy(
+        update={
+            "brand": Brand(
+                font="Mona Sans",
+                font_display_stretch=125,
+                font_dir=str(font_dir),
+            )
+        }
+    )
     out = tmp_path / "inv.pdf"
     render.render(_domestic(), issuer, out)
     pdf = out.read_bytes()

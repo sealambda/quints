@@ -7,3 +7,5 @@ build/
 .pytest_cache/
 .ruff_cache/
 .env
+.DS_Store
+.claude/settings.local.json

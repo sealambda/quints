@@ -42,8 +42,8 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+from collections.abc import Sequence
 from decimal import Decimal
-from typing import Sequence
 
 import beangulp
 from beancount.core import data, flags
@@ -51,13 +51,30 @@ from beancount.core.amount import Amount
 
 from .client import StripeClient, StripeError  # re-export
 
-__all__ = ["Importer", "major_units", "StripeClient", "StripeError"]
+__all__ = ["Importer", "StripeClient", "StripeError", "major_units"]
 
 # Currencies whose minor unit is not 1/100 (Stripe docs: currencies guide).
 ZERO_DECIMAL = frozenset(
-    "bif clp djf gnf jpy kmf krw mga pyg rwf ugx vnd vuv xaf xof xpf".split()
+    [
+        "bif",
+        "clp",
+        "djf",
+        "gnf",
+        "jpy",
+        "kmf",
+        "krw",
+        "mga",
+        "pyg",
+        "rwf",
+        "ugx",
+        "vnd",
+        "vuv",
+        "xaf",
+        "xof",
+        "xpf",
+    ]
 )
-THREE_DECIMAL = frozenset("bhd jod kwd omr tnd".split())
+THREE_DECIMAL = frozenset(["bhd", "jod", "kwd", "omr", "tnd"])
 
 # Balance-transaction types whose counter leg IS the fee account.
 FEE_TYPES = frozenset({"stripe_fee"})
@@ -130,9 +147,7 @@ class Importer(beangulp.Importer):
         currencies = {(t.get("currency") or "").upper() for t in transactions}
         snapshot = document.get("balance") or {}
         for bucket in ("available", "pending"):
-            currencies |= {
-                (p.get("currency") or "").upper() for p in snapshot.get(bucket) or []
-            }
+            currencies |= {(p.get("currency") or "").upper() for p in snapshot.get(bucket) or []}
         if not currencies & self._accounts.keys():
             return None
         if self._account_id:
@@ -189,9 +204,7 @@ class Importer(beangulp.Importer):
             if ref:
                 meta[self._meta_key] = ref
 
-            postings = [
-                data.Posting(cash_account, Amount(net, currency), None, None, None, None)
-            ]
+            postings = [data.Posting(cash_account, Amount(net, currency), None, None, None, None)]
             if fee and self._fees_account:
                 # ``fee_details`` of type "tax" (VAT Stripe charges on its own
                 # fees) go to ``tax_account`` when configured; the rest is fees.
@@ -241,13 +254,17 @@ class Importer(beangulp.Importer):
                         flag = rule_flag
                         break
 
-            date = dt.datetime.fromtimestamp(
-                txn.get("created") or 0, tz=dt.timezone.utc
-            ).date()
+            date = dt.datetime.fromtimestamp(txn.get("created") or 0, tz=dt.timezone.utc).date()
             entries.append(
                 data.Transaction(
-                    meta, date, flag, payee, narration,
-                    data.EMPTY_SET, data.EMPTY_SET, postings,
+                    meta,
+                    date,
+                    flag,
+                    payee,
+                    narration,
+                    data.EMPTY_SET,
+                    data.EMPTY_SET,
+                    postings,
                 )
             )
 

@@ -6,6 +6,16 @@ on:
   pull_request:
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - run: uv sync --all-packages
+      - run: make static
+
   test:
     runs-on: ubuntu-latest
     strategy:

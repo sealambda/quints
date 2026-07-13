@@ -14,15 +14,15 @@ from .model import BankAccount, Invoice, Issuer, make_qrr, make_scor
 
 def _structured(name: str, lines, country: str) -> dict:
     """Parse free-form address lines into qrbill's structured address dict."""
-    lines = [l.strip() for l in lines if l and l.strip()]
+    lines = [ln.strip() for ln in lines if ln and ln.strip()]
     street = house = pcode = city = ""
     postal_idx = None
-    for i, l in enumerate(lines):
-        m = re.match(r"^([A-Za-z]{0,3}[- ]?\d{3,6})\s+(.+)$", l)  # e.g. "3000 Bern"
+    for i, ln in enumerate(lines):
+        m = re.match(r"^([A-Za-z]{0,3}[- ]?\d{3,6})\s+(.+)$", ln)  # e.g. "3000 Bern"
         if m:
             pcode, city, postal_idx = m.group(1), m.group(2), i
             break
-    street_lines = [l for i, l in enumerate(lines) if i != postal_idx]
+    street_lines = [ln for i, ln in enumerate(lines) if i != postal_idx]
     if street_lines:
         m = re.match(r"^(.*?)[\s,]+(\d+\w*)$", street_lines[0])  # split trailing house no
         street, house = (m.group(1), m.group(2)) if m else (street_lines[0], "")
@@ -40,12 +40,11 @@ def reference_for(inv: Invoice, account: BankAccount) -> str | None:
     if inv.reference:
         return inv.reference
     if account.qr_iban:
-        return make_qrr(inv.number)   # QRR — mandatory with a QR-IBAN
-    return make_scor(inv.number)      # SCOR (ISO 11649) with a regular IBAN
+        return make_qrr(inv.number)  # QRR — mandatory with a QR-IBAN
+    return make_scor(inv.number)  # SCOR (ISO 11649) with a regular IBAN
 
 
-def build_bill(inv: Invoice, issuer: Issuer, account: BankAccount,
-               grand: Decimal) -> QRBill:
+def build_bill(inv: Invoice, issuer: Issuer, account: BankAccount, grand: Decimal) -> QRBill:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         return QRBill(

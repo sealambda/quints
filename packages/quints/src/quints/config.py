@@ -34,22 +34,22 @@ class UbsImport:
     """[import.ubs] — MT940 statements for one CHF bank account."""
 
     account: str = "Assets:CH:GmbH:Current:UBS:CHF"
-    iban: str | None = None                 # required to identify statements
+    iban: str | None = None  # required to identify statements
     currency: str = "CHF"
-    rules: tuple[tuple[str, str, str], ...] = ()   # (payee regex, account, flag)
+    rules: tuple[tuple[str, str, str], ...] = ()  # (payee regex, account, flag)
 
 
 @dataclass(frozen=True)
 class WiseImport:
     """[import.wise] — Wise balance statements, one account per currency."""
 
-    accounts: tuple[tuple[str, str], ...] = (      # (currency, account)
+    accounts: tuple[tuple[str, str], ...] = (  # (currency, account)
         ("CHF", "Assets:CH:GmbH:Current:Wise:CHF"),
         ("EUR", "Assets:CH:GmbH:Current:Wise:EUR"),
         ("USD", "Assets:CH:GmbH:Current:Wise:USD"),
     )
     fees_account: str = "Expenses:CH:GmbH:BankFees:Wise"
-    holder: str | None = None               # businessName filter (multi-profile tokens)
+    holder: str | None = None  # businessName filter (multi-profile tokens)
     rules: tuple[tuple[str, str, str], ...] = ()
 
     @property
@@ -64,7 +64,7 @@ class StripeImport:
     accounts: tuple[tuple[str, str], ...] = (("EUR", "Assets:CH:GmbH:Current:Stripe:EUR"),)
     fees_account: str = "Expenses:CH:GmbH:BankFees:Stripe"
     tax_account: str = "Assets:CH:GmbH:Tax:InputVAT"  # VAT within Stripe's own fees
-    account_id: str | None = None            # required: acct_… this key must belong to
+    account_id: str | None = None  # required: acct_… this key must belong to
     rules: tuple[tuple[str, str, str], ...] = ()
 
     @property
@@ -76,7 +76,7 @@ class StripeImport:
 class Config:
     # [entity]
     entity_name: str = "Example GmbH"
-    vat_method: str = "effective"           # "saldo" would need a different Form-310 mapping
+    vat_method: str = "effective"  # "saldo" would need a different Form-310 mapping
     vat_registered_since: Date | None = None
     operating_currency: str = "CHF"
     # [ledger]
@@ -164,10 +164,21 @@ def _from_mapping(raw: dict) -> Config:
     take(entity, "operating_currency", "operating_currency")
     take(ledger_, "main", "ledger_main", Path)
     take(ledger_, "prices", "ledger_prices", Path)
-    for key in ("input_vat", "output_vat", "bezugsteuer", "payable_vat",
-                "income_prefix", "export_marker", "entity_marker",
-                "fx_gain", "fx_loss", "receivable", "rounding_income",
-                "income_domestic", "income_export"):
+    for key in (
+        "input_vat",
+        "output_vat",
+        "bezugsteuer",
+        "payable_vat",
+        "income_prefix",
+        "export_marker",
+        "entity_marker",
+        "fx_gain",
+        "fx_loss",
+        "receivable",
+        "rounding_income",
+        "income_domestic",
+        "income_export",
+    ):
         take(accounts, key, key)
     take(report, "language", "report_language")
     updates.update(_import_sections(raw))

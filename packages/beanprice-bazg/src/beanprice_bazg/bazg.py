@@ -41,7 +41,7 @@ from xml.etree import ElementTree
 import requests
 
 try:  # Use beanprice's types when available, but stay importable/testable without it.
-    from beanprice import source as _bp_source
+    from beanprice import source as _bp_source  # pyright: ignore[reportMissingImports]
 
     _Base = _bp_source.Source
     SourcePrice = _bp_source.SourcePrice
@@ -49,7 +49,7 @@ except ImportError:  # pragma: no cover - exercised only when beanprice is absen
     _Base = object
     SourcePrice = namedtuple("SourcePrice", "price time quote_currency")
 
-__all__ = ["Source", "SourcePrice", "BAZGError"]
+__all__ = ["BAZGError", "Source", "SourcePrice"]
 
 QUOTE_CURRENCY = "CHF"
 DAILY_URL = "https://www.backend-rates.bazg.admin.ch/api/xmldaily"
@@ -75,7 +75,7 @@ def _http_get(url: str, params: dict) -> str:
 def _parse_daily(xml_text: str, ticker: str) -> tuple[Decimal, datetime]:
     """Return (price_in_CHF, rate_date_utc) for ``ticker`` from a daily XML doc."""
     code = ticker.strip().lower()
-    root = ElementTree.fromstring(xml_text)
+    root = ElementTree.fromstring(xml_text)  # noqa: S314 — official BAZG endpoint over HTTPS
 
     rate_date = None
     for child in root:
@@ -136,9 +136,7 @@ class Source(_Base):
         return SourcePrice(price, rate_date, QUOTE_CURRENCY)
 
     def get_historical_price(self, ticker: str, time: datetime) -> SourcePrice:
-        xml_text = _http_get(
-            DAILY_URL, {"d": time.strftime("%Y%m%d"), "locale": "en"}
-        )
+        xml_text = _http_get(DAILY_URL, {"d": time.strftime("%Y%m%d"), "locale": "en"})
         price, rate_date = _parse_daily(xml_text, ticker)
         return SourcePrice(price, rate_date, QUOTE_CURRENCY)
 
@@ -155,9 +153,7 @@ class Source(_Base):
         day = time_begin.date()
         end = time_end.date()
         while day <= end:
-            xml_text = _http_get(
-                DAILY_URL, {"d": day.strftime("%Y%m%d"), "locale": "en"}
-            )
+            xml_text = _http_get(DAILY_URL, {"d": day.strftime("%Y%m%d"), "locale": "en"})
             price, rate_date = _parse_daily(xml_text, ticker)
             results[rate_date] = SourcePrice(price, rate_date, QUOTE_CURRENCY)
             day += timedelta(days=1)

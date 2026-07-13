@@ -76,9 +76,7 @@ def test_match_all_kinds(tmp_path):
     led = _repo(tmp_path)
     staging = tmp_path / "staging"
     staging.mkdir()
-    (staging / "2026-07-12-ubs.bean").write_text(
-        STAGING.format(qrr=make_qrr("ACME202606"))
-    )
+    (staging / "2026-07-12-ubs.bean").write_text(STAGING.format(qrr=make_qrr("ACME202606")))
 
     results = match.compute(led, today=date(2026, 7, 12), cfg=config.Config())
     kinds = {m.kind: m for m in results}

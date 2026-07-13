@@ -1,10 +1,9 @@
 """Tests for the gap-aware price sync (no network — a fake source is injected)."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from decimal import Decimal
 
 from beanprice_bazg.bazg import SourcePrice
-
 from quints import prices
 
 
@@ -24,14 +23,19 @@ class FakeSource:
 
 
 def _eur_dates(path):
-    return [l.split()[0] for l in path.read_text().splitlines() if "price EUR" in l]
+    return [ln.split()[0] for ln in path.read_text().splitlines() if "price EUR" in ln]
 
 
 def test_initial_backfill_then_noop(tmp_path):
     out = tmp_path / "prices.bean"
     out.write_text(";; header\n")
-    r1 = prices.sync(out, today=date(2026, 1, 5), backfill_start=date(2026, 1, 1),
-                     currencies=("EUR",), source=FakeSource())
+    r1 = prices.sync(
+        out,
+        today=date(2026, 1, 5),
+        backfill_start=date(2026, 1, 1),
+        currencies=("EUR",),
+        source=FakeSource(),
+    )
     assert r1.added == 5 and r1.wrote
     # Second run, same day → nothing to add.
     r2 = prices.sync(out, today=date(2026, 1, 5), currencies=("EUR",), source=FakeSource())
@@ -54,8 +58,13 @@ def test_repair_heals_interior_gap_and_sorts(tmp_path):
         ";; header\n\n2026-01-06 price EUR 0.9 CHF\n2026-01-01 price EUR 0.9 CHF\n"
         "2026-01-07 price EUR 0.9 CHF\n"
     )
-    r = prices.sync(out, repair_from=date(2026, 1, 1), today=date(2026, 1, 7),
-                    currencies=("EUR",), source=FakeSource())
+    r = prices.sync(
+        out,
+        repair_from=date(2026, 1, 1),
+        today=date(2026, 1, 7),
+        currencies=("EUR",),
+        source=FakeSource(),
+    )
     assert r.added == 4  # 01-02..01-05
     dates = _eur_dates(out)
     assert dates == sorted(dates)  # rewritten sorted

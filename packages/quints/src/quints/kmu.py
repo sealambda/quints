@@ -53,7 +53,10 @@ KMU_NAMES: dict[str, dict[str, str]] = {
     "2200": {"en": "VAT due", "de": "Geschuldete Mehrwertsteuer"},
     "2270": {"en": "Social security payable", "de": "Geschuldete Sozialversicherungsbeiträge"},
     "2300": {"en": "Accrued expenses", "de": "Passive Rechnungsabgrenzung"},
-    "2500": {"en": "Liabilities to shareholders", "de": "Verbindlichkeiten gegenüber Gesellschaftern"},
+    "2500": {
+        "en": "Liabilities to shareholders",
+        "de": "Verbindlichkeiten gegenüber Gesellschaftern",
+    },
     "2800": {"en": "Share capital", "de": "Stammkapital"},
     "3400": {"en": "Revenue from services", "de": "Dienstleistungserlöse"},
     "4400": {"en": "Purchased services", "de": "Aufwand für bezogene Dienstleistungen"},
@@ -95,11 +98,20 @@ BILANZ_ROWS: tuple[tuple[str, str, str], ...] = (
 )
 
 BILANZ_SECTIONS: dict[str, tuple[str, ...]] = {
-    "current_assets": ("cash", "trade_receivables", "other_receivables",
-                       "inventories", "prepaid_expenses"),
+    "current_assets": (
+        "cash",
+        "trade_receivables",
+        "other_receivables",
+        "inventories",
+        "prepaid_expenses",
+    ),
     "noncurrent_assets": ("financial_assets", "tangible_assets", "intangible_assets"),
-    "short_term_liabilities": ("trade_payables", "short_term_debt",
-                               "other_short_term", "accrued_liabilities"),
+    "short_term_liabilities": (
+        "trade_payables",
+        "short_term_debt",
+        "other_short_term",
+        "accrued_liabilities",
+    ),
     "long_term_liabilities": ("long_term_debt", "other_long_term", "provisions"),
     "equity": ("share_capital", "reserves", "retained_earnings"),
 }
@@ -116,9 +128,20 @@ ERFOLG_ROWS: tuple[tuple[str, str, str], ...] = (
 
 # Rows whose natural beancount sign is credit (display flipped).
 CREDIT_ROWS = frozenset(
-    {"trade_payables", "short_term_debt", "other_short_term", "accrued_liabilities",
-     "long_term_debt", "other_long_term", "provisions", "share_capital",
-     "reserves", "retained_earnings", "revenue", "financial_income"}
+    {
+        "trade_payables",
+        "short_term_debt",
+        "other_short_term",
+        "accrued_liabilities",
+        "long_term_debt",
+        "other_long_term",
+        "provisions",
+        "share_capital",
+        "reserves",
+        "retained_earnings",
+        "revenue",
+        "financial_income",
+    }
 )
 
 LABELS: dict[str, dict[str, str]] = {
@@ -134,19 +157,40 @@ LABELS: dict[str, dict[str, str]] = {
     "long_term_liabilities": {"en": "Long-term liabilities", "de": "Langfristiges Fremdkapital"},
     "equity": {"en": "Equity", "de": "Eigenkapital"},
     "cash": {"en": "Cash and cash equivalents", "de": "Flüssige Mittel"},
-    "trade_receivables": {"en": "Trade receivables", "de": "Forderungen aus Lieferungen und Leistungen"},
-    "other_receivables": {"en": "Other current receivables", "de": "Übrige kurzfristige Forderungen"},
+    "trade_receivables": {
+        "en": "Trade receivables",
+        "de": "Forderungen aus Lieferungen und Leistungen",
+    },
+    "other_receivables": {
+        "en": "Other current receivables",
+        "de": "Übrige kurzfristige Forderungen",
+    },
     "inventories": {"en": "Inventories", "de": "Vorräte"},
     "prepaid_expenses": {"en": "Prepaid expenses", "de": "Aktive Rechnungsabgrenzung"},
     "financial_assets": {"en": "Financial assets", "de": "Finanzanlagen"},
     "tangible_assets": {"en": "Tangible fixed assets", "de": "Sachanlagen"},
     "intangible_assets": {"en": "Intangible assets", "de": "Immaterielle Werte"},
-    "trade_payables": {"en": "Trade payables", "de": "Verbindlichkeiten aus Lieferungen und Leistungen"},
-    "short_term_debt": {"en": "Short-term interest-bearing debt", "de": "Kurzfristige verzinsliche Verbindlichkeiten"},
-    "other_short_term": {"en": "Other short-term liabilities", "de": "Übrige kurzfristige Verbindlichkeiten"},
+    "trade_payables": {
+        "en": "Trade payables",
+        "de": "Verbindlichkeiten aus Lieferungen und Leistungen",
+    },
+    "short_term_debt": {
+        "en": "Short-term interest-bearing debt",
+        "de": "Kurzfristige verzinsliche Verbindlichkeiten",
+    },
+    "other_short_term": {
+        "en": "Other short-term liabilities",
+        "de": "Übrige kurzfristige Verbindlichkeiten",
+    },
     "accrued_liabilities": {"en": "Accrued liabilities", "de": "Passive Rechnungsabgrenzung"},
-    "long_term_debt": {"en": "Long-term interest-bearing debt", "de": "Langfristige verzinsliche Verbindlichkeiten"},
-    "other_long_term": {"en": "Other long-term liabilities", "de": "Übrige langfristige Verbindlichkeiten"},
+    "long_term_debt": {
+        "en": "Long-term interest-bearing debt",
+        "de": "Langfristige verzinsliche Verbindlichkeiten",
+    },
+    "other_long_term": {
+        "en": "Other long-term liabilities",
+        "de": "Übrige langfristige Verbindlichkeiten",
+    },
     "provisions": {"en": "Provisions", "de": "Rückstellungen"},
     "share_capital": {"en": "Share capital", "de": "Stammkapital"},
     "reserves": {"en": "Reserves", "de": "Reserven"},
@@ -155,11 +199,20 @@ LABELS: dict[str, dict[str, str]] = {
     "result": {"en": "Profit/loss for the year", "de": "Jahresgewinn/-verlust"},
     "total_assets": {"en": "Total assets", "de": "Total Aktiven"},
     "total_liabilities_equity": {"en": "Total liabilities and equity", "de": "Total Passiven"},
-    "revenue": {"en": "Net revenue from services", "de": "Nettoerlöse aus Lieferungen und Leistungen"},
-    "materials_services": {"en": "Cost of materials and purchased services", "de": "Material- und Dienstleistungsaufwand"},
+    "revenue": {
+        "en": "Net revenue from services",
+        "de": "Nettoerlöse aus Lieferungen und Leistungen",
+    },
+    "materials_services": {
+        "en": "Cost of materials and purchased services",
+        "de": "Material- und Dienstleistungsaufwand",
+    },
     "personnel": {"en": "Personnel expenses", "de": "Personalaufwand"},
     "other_operating": {"en": "Other operating expenses", "de": "Übriger betrieblicher Aufwand"},
-    "depreciation": {"en": "Depreciation and value adjustments", "de": "Abschreibungen und Wertberichtigungen"},
+    "depreciation": {
+        "en": "Depreciation and value adjustments",
+        "de": "Abschreibungen und Wertberichtigungen",
+    },
     "ebit": {"en": "Operating result (EBIT)", "de": "Betriebsergebnis (EBIT)"},
     "financial_expenses": {"en": "Financial expenses", "de": "Finanzaufwand"},
     "financial_income": {"en": "Financial income", "de": "Finanzertrag"},
@@ -194,10 +247,11 @@ def _row_for(code: str, rows: tuple[tuple[str, str, str], ...]) -> str | None:
 
 # ── data ─────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class CodeLine:
     code: str
-    amount: Decimal            # display sign (positive in its natural direction)
+    amount: Decimal  # display sign (positive in its natural direction)
     accounts: list[str]
 
 
@@ -216,11 +270,13 @@ class BilanzReport:
     short_term_liabilities: list[RowLine]
     long_term_liabilities: list[RowLine]
     equity: list[RowLine]
-    retained_prior: Decimal    # unbooked P&L of years before the report year (Gewinnvortrag)
-    result: Decimal            # report-year share of the balancing figure (Jahresgewinn)
+    retained_prior: Decimal  # unbooked P&L of years before the report year (Gewinnvortrag)
+    result: Decimal  # report-year share of the balancing figure (Jahresgewinn)
     total_assets: Decimal
     total_liabilities_equity: Decimal
-    converted: dict[str, Decimal] = field(default_factory=dict)  # ccy → units valued at report-date rate
+    converted: dict[str, Decimal] = field(
+        default_factory=dict
+    )  # ccy → units valued at report-date rate
 
 
 @dataclass
@@ -228,7 +284,7 @@ class ErfolgReport:
     date_from: str
     date_to: str
     revenue: list[RowLine]
-    expenses: list[RowLine]    # materials..depreciation, statutory order
+    expenses: list[RowLine]  # materials..depreciation, statutory order
     ebit: Decimal
     financial_expenses: list[RowLine]
     financial_income: list[RowLine]
@@ -250,7 +306,7 @@ class KontoLine:
 class Konto:
     code: str
     lines: list[KontoLine]
-    flow: Decimal              # CHF, natural display sign
+    flow: Decimal  # CHF, natural display sign
 
 
 @dataclass
@@ -261,6 +317,7 @@ class KontenReport:
 
 
 # ── compute ──────────────────────────────────────────────────────────────────
+
 
 def kmu_map(entries, marker: str) -> dict[str, str]:
     """account → kmu code, from the entity's open directives."""
@@ -317,8 +374,7 @@ def _rows_from(
     return [rows[k] for k in keys if k in rows]
 
 
-def compute_bilanz(ledger_path: Path, at: str,
-                   cfg: config.Config | None = None) -> BilanzReport:
+def compute_bilanz(ledger_path: Path, at: str, cfg: config.Config | None = None) -> BilanzReport:
     cfg = cfg or config.get()
     on = Date.fromisoformat(at)
     entries, _ = ledger.load_entries(ledger_path)
@@ -355,8 +411,11 @@ def compute_bilanz(ledger_path: Path, at: str,
         amount, accounts = per_code.get(code, (Decimal("0"), set()))
         per_code[code] = (amount + total, accounts | {account})
 
-    assets_rows = _rows_from(per_code, BILANZ_ROWS,
-                             BILANZ_SECTIONS["current_assets"] + BILANZ_SECTIONS["noncurrent_assets"])
+    assets_rows = _rows_from(
+        per_code,
+        BILANZ_ROWS,
+        BILANZ_SECTIONS["current_assets"] + BILANZ_SECTIONS["noncurrent_assets"],
+    )
     current = [r for r in assets_rows if r.key in BILANZ_SECTIONS["current_assets"]]
     noncurrent = [r for r in assets_rows if r.key in BILANZ_SECTIONS["noncurrent_assets"]]
     short = _rows_from(per_code, BILANZ_ROWS, BILANZ_SECTIONS["short_term_liabilities"])
@@ -387,8 +446,9 @@ def compute_bilanz(ledger_path: Path, at: str,
     )
 
 
-def compute_erfolg(ledger_path: Path, date_from: str, date_to: str,
-                   cfg: config.Config | None = None) -> ErfolgReport:
+def compute_erfolg(
+    ledger_path: Path, date_from: str, date_to: str, cfg: config.Config | None = None
+) -> ErfolgReport:
     cfg = cfg or config.get()
     d0, d1 = Date.fromisoformat(date_from), Date.fromisoformat(date_to)
     entries, _ = ledger.load_entries(ledger_path)
@@ -411,7 +471,8 @@ def compute_erfolg(ledger_path: Path, date_from: str, date_to: str,
 
     revenue = _rows_from(per_code, ERFOLG_ROWS, ("revenue",))
     expenses = _rows_from(
-        per_code, ERFOLG_ROWS,
+        per_code,
+        ERFOLG_ROWS,
         ("materials_services", "personnel", "other_operating", "depreciation"),
     )
     fin_exp = _rows_from(per_code, ERFOLG_ROWS, ("financial_expenses",))
@@ -437,8 +498,9 @@ def compute_erfolg(ledger_path: Path, date_from: str, date_to: str,
     )
 
 
-def compute_konten(ledger_path: Path, date_from: str, date_to: str,
-                   cfg: config.Config | None = None) -> KontenReport:
+def compute_konten(
+    ledger_path: Path, date_from: str, date_to: str, cfg: config.Config | None = None
+) -> KontenReport:
     cfg = cfg or config.get()
     d0, d1 = Date.fromisoformat(date_from), Date.fromisoformat(date_to)
     entries, _ = ledger.load_entries(ledger_path)
@@ -456,14 +518,22 @@ def compute_konten(ledger_path: Path, date_from: str, date_to: str,
             chf = _posting_chf(p, e.date, d1, price_map)
             konto = konten.setdefault(code, Konto(code, [], Decimal("0")))
             konto.lines.append(
-                KontoLine(str(e.date), e.payee or "", e.narration or "",
-                          p.account, p.units.number, p.units.currency, chf)
+                KontoLine(
+                    str(e.date),
+                    e.payee or "",
+                    e.narration or "",
+                    p.account,
+                    p.units.number,
+                    p.units.currency,
+                    chf,
+                )
             )
             konto.flow += chf
     return KontenReport(date_from, date_to, [konten[c] for c in sorted(konten)])
 
 
 # ── render ───────────────────────────────────────────────────────────────────
+
 
 def _statement_table(lang: str) -> Table:
     t = Table(box=box.SIMPLE_HEAVY, pad_edge=False, expand=False, show_header=False)
@@ -477,16 +547,26 @@ def _add_rows(t: Table, rows: list[RowLine], lang: str) -> None:
     for row in rows:
         t.add_row("", label(row.key, lang), ui.money(row.amount))
         for cl in row.codes:
-            t.add_row(cl.code, f"[muted]{kmu_name(cl.code, lang)}[/]", f"[muted]{ui.money(cl.amount)}[/]")
+            t.add_row(
+                cl.code, f"[muted]{kmu_name(cl.code, lang)}[/]", f"[muted]{ui.money(cl.amount)}[/]"
+            )
 
 
-def render_bilanz(report: BilanzReport, lang: str = "en", console: Console | None = None,
-                  cfg: config.Config | None = None) -> None:
+def render_bilanz(
+    report: BilanzReport,
+    lang: str = "en",
+    console: Console | None = None,
+    cfg: config.Config | None = None,
+) -> None:
     console = console or ui.console
     console.print()
     console.rule(f"[bold]{label('bilanz_title', lang)}[/]   {label('as_at', lang)} {report.at}")
-    console.print(f"{(cfg or config.get()).entity_name} · OR Art. 959a · "
-                  f"{(cfg or config.get()).operating_currency}", style="muted", justify="center")
+    console.print(
+        f"{(cfg or config.get()).entity_name} · OR Art. 959a · "
+        f"{(cfg or config.get()).operating_currency}",
+        style="muted",
+        justify="center",
+    )
     console.print()
 
     t = _statement_table(lang)
@@ -497,10 +577,15 @@ def render_bilanz(report: BilanzReport, lang: str = "en", console: Console | Non
             continue
         t.add_section()
         _add_rows(t, rows, lang)
-        t.add_row("", f"[bold]{label(section, lang)}[/]",
-                  f"[bold]{ui.money(sum((r.amount for r in rows), Decimal('0')))}[/]")
+        t.add_row(
+            "",
+            f"[bold]{label(section, lang)}[/]",
+            f"[bold]{ui.money(sum((r.amount for r in rows), Decimal('0')))}[/]",
+        )
     t.add_section()
-    t.add_row("", f"[bold]{label('total_assets', lang)}[/]", f"[bold]{ui.money(report.total_assets)}[/]")
+    t.add_row(
+        "", f"[bold]{label('total_assets', lang)}[/]", f"[bold]{ui.money(report.total_assets)}[/]"
+    )
 
     t.add_section()
     t.add_row("", f"[bold]{label('liabilities_equity', lang)}[/]", "")
@@ -519,8 +604,11 @@ def render_bilanz(report: BilanzReport, lang: str = "en", console: Console | Non
             total += report.result
         t.add_row("", f"[bold]{label(section, lang)}[/]", f"[bold]{ui.money(total)}[/]")
     t.add_section()
-    t.add_row("", f"[bold]{label('total_liabilities_equity', lang)}[/]",
-              f"[bold]{ui.money(report.total_liabilities_equity)}[/]")
+    t.add_row(
+        "",
+        f"[bold]{label('total_liabilities_equity', lang)}[/]",
+        f"[bold]{ui.money(report.total_liabilities_equity)}[/]",
+    )
     console.print(t)
 
     if report.converted:
@@ -533,15 +621,21 @@ def render_bilanz(report: BilanzReport, lang: str = "en", console: Console | Non
     console.print()
 
 
-def render_erfolg(report: ErfolgReport, lang: str = "en", console: Console | None = None,
-                  cfg: config.Config | None = None) -> None:
+def render_erfolg(
+    report: ErfolgReport,
+    lang: str = "en",
+    console: Console | None = None,
+    cfg: config.Config | None = None,
+) -> None:
     console = console or ui.console
     console.print()
-    console.rule(
-        f"[bold]{label('erfolg_title', lang)}[/]   {report.date_from} – {report.date_to}"
+    console.rule(f"[bold]{label('erfolg_title', lang)}[/]   {report.date_from} – {report.date_to}")
+    console.print(
+        f"{(cfg or config.get()).entity_name} · OR Art. 959b · "
+        f"{(cfg or config.get()).operating_currency}",
+        style="muted",
+        justify="center",
     )
-    console.print(f"{(cfg or config.get()).entity_name} · OR Art. 959b · "
-                  f"{(cfg or config.get()).operating_currency}", style="muted", justify="center")
     console.print()
 
     t = _statement_table(lang)
@@ -550,19 +644,33 @@ def render_erfolg(report: ErfolgReport, lang: str = "en", console: Console | Non
     for row in report.expenses:
         t.add_row("", label(row.key, lang), ui.money(-row.amount))
         for cl in row.codes:
-            t.add_row(cl.code, f"[muted]{kmu_name(cl.code, lang)}[/]", f"[muted]{ui.money(-cl.amount)}[/]")
+            t.add_row(
+                cl.code, f"[muted]{kmu_name(cl.code, lang)}[/]", f"[muted]{ui.money(-cl.amount)}[/]"
+            )
     t.add_section()
     t.add_row("", f"[bold]{label('ebit', lang)}[/]", f"[bold]{ui.money(report.ebit)}[/]")
     t.add_section()
     for row in report.financial_expenses:
-        _add_rows(t, [RowLine(row.key, -row.amount,
-                              [CodeLine(c.code, -c.amount, c.accounts) for c in row.codes])], lang)
+        _add_rows(
+            t,
+            [
+                RowLine(
+                    row.key,
+                    -row.amount,
+                    [CodeLine(c.code, -c.amount, c.accounts) for c in row.codes],
+                )
+            ],
+            lang,
+        )
     for row in report.financial_income:
         _add_rows(t, [row], lang)
     t.add_section()
     style = "refund" if report.result >= 0 else "owe"
-    t.add_row("", f"[bold {style}]{label('result', lang)}[/]",
-              f"[bold {style}]{ui.money(report.result)}[/]")
+    t.add_row(
+        "",
+        f"[bold {style}]{label('result', lang)}[/]",
+        f"[bold {style}]{ui.money(report.result)}[/]",
+    )
     console.print(t)
     console.print()
 
@@ -570,9 +678,7 @@ def render_erfolg(report: ErfolgReport, lang: str = "en", console: Console | Non
 def render_konten(report: KontenReport, lang: str = "en", console: Console | None = None) -> None:
     console = console or ui.console
     console.print()
-    console.rule(
-        f"[bold]{label('konten_title', lang)}[/]   {report.date_from} – {report.date_to}"
-    )
+    console.rule(f"[bold]{label('konten_title', lang)}[/]   {report.date_from} – {report.date_to}")
     for konto in report.konten:
         console.print()
         t = Table(
@@ -589,10 +695,14 @@ def render_konten(report: KontenReport, lang: str = "en", console: Console | Non
         t.add_column("CHF", justify="right", no_wrap=True)
         for line in konto.lines:
             t.add_row(
-                line.date, line.payee, line.narration,
-                line.account.replace("Assets:CH:GmbH:", "").replace("Liabilities:CH:GmbH:", "")
-                    .replace("Income:CH:GmbH:", "").replace("Expenses:CH:GmbH:", "")
-                    .replace("Equity:CH:GmbH:", ""),
+                line.date,
+                line.payee,
+                line.narration,
+                line.account.replace("Assets:CH:GmbH:", "")
+                .replace("Liabilities:CH:GmbH:", "")
+                .replace("Income:CH:GmbH:", "")
+                .replace("Expenses:CH:GmbH:", "")
+                .replace("Equity:CH:GmbH:", ""),
                 f"{line.original:,.2f} {line.currency}",
                 ui.money(line.chf),
             )

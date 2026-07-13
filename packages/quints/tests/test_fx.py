@@ -31,7 +31,7 @@ def test_compute_delta_book_vs_market(tmp_path):
     (r,) = fx.compute(_ledger_file(tmp_path), "2026-12-31")
     assert r.currency == "EUR"
     assert r.units == Decimal("200.00")
-    assert r.book_chf == Decimal("190.00")    # 200 @ 0.95 (txn-date rate)
+    assert r.book_chf == Decimal("190.00")  # 200 @ 0.95 (txn-date rate)
     assert r.market_chf == Decimal("180.00")  # 200 @ 0.90 (year-end rate)
     assert r.delta == Decimal("-10.00")
 

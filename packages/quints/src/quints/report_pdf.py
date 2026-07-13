@@ -33,8 +33,15 @@ def _money(value: Decimal, lang: str) -> str:
     return text.replace(",", "'") if lang == "de" else text
 
 
-def _line(label_: str, amount: str = "", *, code: str = "",
-          indent: int = 0, bold: bool = False, rule: bool = False) -> dict:
+def _line(
+    label_: str,
+    amount: str = "",
+    *,
+    code: str = "",
+    indent: int = 0,
+    bold: bool = False,
+    rule: bool = False,
+) -> dict:
     return {
         "code": code,
         "label": label_,
@@ -50,8 +57,11 @@ def _section(rows: list[RowLine], lang: str, *, sign: int = 1) -> list[dict]:
     for row in rows:
         lines.append(_line(label(row.key, lang), _money(sign * row.amount, lang)))
         for cl in row.codes:
-            lines.append(_line(kmu_name(cl.code, lang), _money(sign * cl.amount, lang),
-                               code=cl.code, indent=1))
+            lines.append(
+                _line(
+                    kmu_name(cl.code, lang), _money(sign * cl.amount, lang), code=cl.code, indent=1
+                )
+            )
     return lines
 
 
@@ -62,10 +72,16 @@ def bilanz_lines(report: BilanzReport, lang: str) -> list[dict]:
         if not rows:
             continue
         lines += _section(rows, lang)
-        lines.append(_line(label(section, lang),
-                           _money(sum((r.amount for r in rows), Decimal("0")), lang), bold=True))
-    lines.append(_line(label("total_assets", lang), _money(report.total_assets, lang),
-                       bold=True, rule=True))
+        lines.append(
+            _line(
+                label(section, lang),
+                _money(sum((r.amount for r in rows), Decimal("0")), lang),
+                bold=True,
+            )
+        )
+    lines.append(
+        _line(label("total_assets", lang), _money(report.total_assets, lang), bold=True, rule=True)
+    )
 
     lines.append(_line(label("liabilities_equity", lang), bold=True))
     for section in ("short_term_liabilities", "long_term_liabilities", "equity"):
@@ -76,14 +92,21 @@ def bilanz_lines(report: BilanzReport, lang: str) -> list[dict]:
         total = sum((r.amount for r in rows), Decimal("0"))
         if section == "equity":
             if report.retained_prior:
-                lines.append(_line(label("retained_prior", lang),
-                                   _money(report.retained_prior, lang)))
+                lines.append(
+                    _line(label("retained_prior", lang), _money(report.retained_prior, lang))
+                )
                 total += report.retained_prior
             lines.append(_line(label("result", lang), _money(report.result, lang)))
             total += report.result
         lines.append(_line(label(section, lang), _money(total, lang), bold=True))
-    lines.append(_line(label("total_liabilities_equity", lang),
-                       _money(report.total_liabilities_equity, lang), bold=True, rule=True))
+    lines.append(
+        _line(
+            label("total_liabilities_equity", lang),
+            _money(report.total_liabilities_equity, lang),
+            bold=True,
+            rule=True,
+        )
+    )
     return lines
 
 
@@ -108,8 +131,9 @@ def _load_issuer(path: Path) -> dict:
     }
 
 
-def build_context(bilanz: BilanzReport, erfolg: ErfolgReport, lang: str,
-                  issuer_path: Path = DEFAULT_ISSUER) -> dict:
+def build_context(
+    bilanz: BilanzReport, erfolg: ErfolgReport, lang: str, issuer_path: Path = DEFAULT_ISSUER
+) -> dict:
     fx_note = ""
     if bilanz.converted:
         parts = ", ".join(f"{_money(v, lang)} {c}" for c, v in sorted(bilanz.converted.items()))
@@ -134,8 +158,13 @@ def build_context(bilanz: BilanzReport, erfolg: ErfolgReport, lang: str,
     }
 
 
-def render_pdf(bilanz: BilanzReport, erfolg: ErfolgReport, lang: str, out_path: Path,
-               issuer_path: Path = DEFAULT_ISSUER) -> Path:
+def render_pdf(
+    bilanz: BilanzReport,
+    erfolg: ErfolgReport,
+    lang: str,
+    out_path: Path,
+    issuer_path: Path = DEFAULT_ISSUER,
+) -> Path:
     ctx = build_context(bilanz, erfolg, lang, issuer_path)
     work = Path(tempfile.mkdtemp(prefix="quints-report-"))
     try:
@@ -144,8 +173,9 @@ def render_pdf(bilanz: BilanzReport, erfolg: ErfolgReport, lang: str, out_path: 
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            typst.compile(str(work / "report.typ"), output=str(out_path),
-                          root=str(work), pdf_standards="a-2b")
+            typst.compile(
+                str(work / "report.typ"), output=str(out_path), root=str(work), pdf_standards="a-2b"
+            )
         except (TypeError, ValueError):
             typst.compile(str(work / "report.typ"), output=str(out_path), root=str(work))
         return out_path

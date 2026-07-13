@@ -42,7 +42,7 @@ def invoice_id(e: data.Transaction) -> str | None:
     meta = (e.meta or {}).get("invoice")
     if meta:
         return str(meta)
-    links = [l for l in (e.links or ()) if _INVOICE_ID.match(l)]
+    links = [lk for lk in (e.links or ()) if _INVOICE_ID.match(lk)]
     return links[0] if len(links) == 1 else None
 
 
@@ -72,16 +72,23 @@ def compute_from_entries(entries, at: Date, cfg: config.Config) -> list[OpenInvo
         if abs(net) <= _TOL:
             continue
         inv_date = inv_date or at
-        out.append(OpenInvoice(
-            number=number, payee=payee, invoice_date=inv_date, currency=currency,
-            open_amount=net, age_days=(at - inv_date).days,
-        ))
+        out.append(
+            OpenInvoice(
+                number=number,
+                payee=payee,
+                invoice_date=inv_date,
+                currency=currency,
+                open_amount=net,
+                age_days=(at - inv_date).days,
+            )
+        )
     out.sort(key=lambda o: (o.invoice_date, o.number))
     return out
 
 
-def compute(ledger_path: Path, at: Date | None = None,
-            cfg: config.Config | None = None) -> tuple[list[OpenInvoice], Date]:
+def compute(
+    ledger_path: Path, at: Date | None = None, cfg: config.Config | None = None
+) -> tuple[list[OpenInvoice], Date]:
     cfg = cfg or config.get()
     at = at or datetime.now(timezone.utc).date()
     entries, _ = ledger.load_entries(ledger_path)
@@ -90,8 +97,8 @@ def compute(ledger_path: Path, at: Date | None = None,
 
 # ── render ────────────────────────────────────────────────────────────────────
 
-def render(open_invoices: list[OpenInvoice], at: Date,
-           console: Console | None = None) -> None:
+
+def render(open_invoices: list[OpenInvoice], at: Date, console: Console | None = None) -> None:
     console = console or ui.console
     console.print()
     console.rule(f"[bold]Open receivables[/]  ·  {at}")
@@ -108,9 +115,13 @@ def render(open_invoices: list[OpenInvoice], at: Date,
     t.add_column("Open", justify="right", no_wrap=True)
     for o in open_invoices:
         style = "owe" if o.age_days > 45 else ("warn" if o.age_days > 30 else "muted")
-        t.add_row(o.number, o.payee, str(o.invoice_date),
-                  f"[{style}]{o.age_days} d[/]",
-                  f"{ui.money(o.open_amount)} {o.currency}")
+        t.add_row(
+            o.number,
+            o.payee,
+            str(o.invoice_date),
+            f"[{style}]{o.age_days} d[/]",
+            f"{ui.money(o.open_amount)} {o.currency}",
+        )
     totals: dict[str, Decimal] = {}
     for o in open_invoices:
         totals[o.currency] = totals.get(o.currency, Decimal("0")) + o.open_amount

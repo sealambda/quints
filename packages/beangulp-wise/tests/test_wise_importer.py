@@ -5,6 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from beancount.core import data
+
 from beangulp_wise import Importer, merge_conversions
 
 HERE = Path(__file__).parent
@@ -70,7 +71,8 @@ def test_merge_conversions_joins_legs_with_priced_incoming_leg():
     merged = merge_conversions(entries)
 
     conversions = [
-        e for e in merged
+        e
+        for e in merged
         if isinstance(e, data.Transaction) and e.meta.get("wise_id") == "CONVERSION-3000003"
     ]
     assert len(conversions) == 1
@@ -95,7 +97,8 @@ def test_merge_leaves_unpaired_leg_for_review():
     entries = _importer().extract(EUR, existing=[])
     merged = merge_conversions(entries)
     unpaired = [
-        e for e in merged
+        e
+        for e in merged
         if isinstance(e, data.Transaction) and e.meta.get("wise_id") == "CONVERSION-3000003"
     ]
     assert len(unpaired) == 1
@@ -106,8 +109,14 @@ def test_extract_skips_references_already_in_ledger():
     meta = data.new_metadata("ledger.bean", 1)
     meta["wise_id"] = "CARD-1000001"
     booked = data.Transaction(
-        meta, Date(2026, 7, 3), "*", "Cloudflare", "already booked",
-        data.EMPTY_SET, data.EMPTY_SET, [],
+        meta,
+        Date(2026, 7, 3),
+        "*",
+        "Cloudflare",
+        "already booked",
+        data.EMPTY_SET,
+        data.EMPTY_SET,
+        [],
     )
     entries = _importer().extract(EUR, existing=[booked])
     refs = [e.meta.get("wise_id") for e in entries if isinstance(e, data.Transaction)]

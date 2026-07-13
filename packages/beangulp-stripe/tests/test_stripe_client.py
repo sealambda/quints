@@ -1,6 +1,7 @@
 """Tests for the thin Stripe API client (stubbed session, no network)."""
 
 import pytest
+
 from beangulp_stripe.client import StripeClient, StripeError
 
 
@@ -26,18 +27,26 @@ class StubSession:
 
 
 def test_balance_transactions_paginates_and_sorts_ascending():
-    session = StubSession([
-        StubResponse(200, {
-            "object": "list",
-            "data": [{"id": "txn_3", "created": 300}, {"id": "txn_2", "created": 200}],
-            "has_more": True,
-        }),
-        StubResponse(200, {
-            "object": "list",
-            "data": [{"id": "txn_1", "created": 100}],
-            "has_more": False,
-        }),
-    ])
+    session = StubSession(
+        [
+            StubResponse(
+                200,
+                {
+                    "object": "list",
+                    "data": [{"id": "txn_3", "created": 300}, {"id": "txn_2", "created": 200}],
+                    "has_more": True,
+                },
+            ),
+            StubResponse(
+                200,
+                {
+                    "object": "list",
+                    "data": [{"id": "txn_1", "created": 100}],
+                    "has_more": False,
+                },
+            ),
+        ]
+    )
     client = StripeClient("rk_test_x", session=session)
     transactions = client.balance_transactions(created_gte=1, created_lte=400)
 
@@ -51,9 +60,11 @@ def test_balance_transactions_paginates_and_sorts_ascending():
 
 
 def test_auth_header_and_error_message():
-    session = StubSession([
-        StubResponse(401, {"error": {"message": "Invalid API Key provided"}}),
-    ])
+    session = StubSession(
+        [
+            StubResponse(401, {"error": {"message": "Invalid API Key provided"}}),
+        ]
+    )
     client = StripeClient("rk_test_x", session=session)
     assert session.headers["Authorization"] == "Bearer rk_test_x"
 

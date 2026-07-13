@@ -22,8 +22,9 @@ class CrossCheck:
     date_ok: bool = True  # booking date equals the invoice issue date
 
 
-def cross_check(ledger_path: Path, inv: Invoice, totals: Totals,
-                tol: Decimal = Decimal("0.005")) -> CrossCheck:
+def cross_check(
+    ledger_path: Path, inv: Invoice, totals: Totals, tol: Decimal = Decimal("0.005")
+) -> CrossCheck:
     """Match by invoice id (metadata `invoice:` or a `^<number>` link); compare
     the invoice grand total to the income + output VAT across ALL matching
     transactions (the payment-clearing entry may carry the same link — its

@@ -11,34 +11,28 @@ def _errors(ledger: str):
 
 
 def test_ch_account_without_kmu_errors():
-    errors = _errors('2024-01-01 open Expenses:CH:GmbH:IT:Hosting\n')
+    errors = _errors("2024-01-01 open Expenses:CH:GmbH:IT:Hosting\n")
     assert len(errors) == 1
     assert "no kmu: code" in errors[0].message
 
 
 def test_ch_account_with_kmu_passes():
-    errors = _errors(
-        '2024-01-01 open Expenses:CH:GmbH:IT:Hosting\n  kmu: "6570"\n'
-    )
+    errors = _errors('2024-01-01 open Expenses:CH:GmbH:IT:Hosting\n  kmu: "6570"\n')
     assert errors == []
 
 
 def test_malformed_kmu_code_errors():
-    errors = _errors(
-        '2024-01-01 open Expenses:CH:GmbH:IT:Hosting\n  kmu: "657"\n'
-    )
+    errors = _errors('2024-01-01 open Expenses:CH:GmbH:IT:Hosting\n  kmu: "657"\n')
     assert len(errors) == 1
     assert "invalid kmu:" in errors[0].message
 
 
 def test_non_string_kmu_code_errors():
-    errors = _errors(
-        '2024-01-01 open Expenses:CH:GmbH:IT:Hosting\n  kmu: 6570\n'
-    )
+    errors = _errors("2024-01-01 open Expenses:CH:GmbH:IT:Hosting\n  kmu: 6570\n")
     assert len(errors) == 1
     assert "invalid kmu:" in errors[0].message
 
 
 def test_us_accounts_exempt():
-    errors = _errors('2024-01-01 open Expenses:US:LLC:Ops:Software USD\n')
+    errors = _errors("2024-01-01 open Expenses:US:LLC:Ops:Software USD\n")
     assert errors == []

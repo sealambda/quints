@@ -5,14 +5,13 @@ from decimal import Decimal
 from pathlib import Path
 
 from beancount.core import data
+
 from beangulp_mt940 import Importer
 
 FIXTURE = str(Path(__file__).parent / "fixture.mt940")
 
 CASH = "Assets:Bank:Checking"
-RULES = (
-    (r"client ag", "Assets:Receivable", "*"),
-)
+RULES = ((r"client ag", "Assets:Receivable", "*"),)
 
 
 def _importer(**kwargs):
@@ -59,8 +58,14 @@ def test_extract_skips_references_already_in_ledger():
     meta = data.new_metadata("ledger.bean", 1)
     meta["mt940_ref"] = "REF001"
     booked = data.Transaction(
-        meta, Date(2026, 1, 5), "*", "ACME", "already booked",
-        data.EMPTY_SET, data.EMPTY_SET, [],
+        meta,
+        Date(2026, 1, 5),
+        "*",
+        "ACME",
+        "already booked",
+        data.EMPTY_SET,
+        data.EMPTY_SET,
+        [],
     )
     entries = _importer().extract(FIXTURE, existing=[booked])
     txns = [e for e in entries if isinstance(e, data.Transaction)]

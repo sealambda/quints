@@ -55,8 +55,8 @@ def test_run_ubs_dedups_and_stages(tmp_path):
     assert result.balances[0].amount.number == Decimal("30407.14")
 
     staged = result.out_path.read_text()
-    assert 'ubs_ref: "9902063AR6387321"' in staged           # share-capital draft
-    assert 'ubs_ref: "9930635BN7487612"' not in staged        # already imported
+    assert 'ubs_ref: "9902063AR6387321"' in staged  # share-capital draft
+    assert 'ubs_ref: "9930635BN7487612"' not in staged  # already imported
     assert "2027-01-01 balance Assets:CH:GmbH:Current:UBS:CHF" in staged
 
     # Re-running against a ledger containing the staged refs would skip them;
@@ -178,14 +178,25 @@ def _draft(payee, narration, amount, meta=None):
     from beancount.core.amount import Amount
 
     return data.Transaction(
-        meta=dict(meta or {}), date=__import__("datetime").date(2026, 7, 20),
-        flag="!", payee=payee, narration=narration,
-        tags=frozenset(), links=frozenset(),
+        meta=dict(meta or {}),
+        date=__import__("datetime").date(2026, 7, 20),
+        flag="!",
+        payee=payee,
+        narration=narration,
+        tags=frozenset(),
+        links=frozenset(),
         postings=[
-            data.Posting("Assets:CH:GmbH:Current:UBS:CHF",
-                         Amount(Decimal(amount), "CHF"), None, None, None, None),
-            data.Posting("Expenses:CH:GmbH:FIXME",
-                         Amount(-Decimal(amount), "CHF"), None, None, None, None),
+            data.Posting(
+                "Assets:CH:GmbH:Current:UBS:CHF",
+                Amount(Decimal(amount), "CHF"),
+                None,
+                None,
+                None,
+                None,
+            ),
+            data.Posting(
+                "Expenses:CH:GmbH:FIXME", Amount(-Decimal(amount), "CHF"), None, None, None, None
+            ),
         ],
     )
 
@@ -198,13 +209,13 @@ def test_match_receivables_by_qrr_and_scor(tmp_path):
 
     entries, _, _ = load_string(_RECV_LEDGER)
     qrr = make_qrr("ACME202606")
-    spaced_rf = " ".join([make_scor("ACME202606")[i:i + 4] for i in range(0, 30, 4)])
+    spaced_rf = " ".join([make_scor("ACME202606")[i : i + 4] for i in range(0, 30, 4)])
 
     result = importing.ImportResult(source="test")
     result.drafts = [
         _draft("ACME AG", "payment", "5059.10", {"ubs_ref": f"X1 {qrr}"}),
         _draft("ACME AG", f"ref {spaced_rf}", "1000.00"),
-        _draft("ACME AG", f"refund {qrr}", "-50.00"),      # outgoing → untouched
+        _draft("ACME AG", f"refund {qrr}", "-50.00"),  # outgoing → untouched
         _draft("Somebody", "unrelated", "12.00"),
     ]
     importing._match_receivables(result, entries, config.Config())
@@ -215,5 +226,5 @@ def test_match_receivables_by_qrr_and_scor(tmp_path):
     assert matched.postings[1].account == "Assets:CH:GmbH:Receivable:Trade"
     assert "ACME202606" in matched.links
     assert matched.meta["invoice"] == "ACME202606"
-    assert result.drafts[2].flag == "!"                     # outgoing untouched
+    assert result.drafts[2].flag == "!"  # outgoing untouched
     assert result.drafts[3].postings[1].account == "Expenses:CH:GmbH:FIXME"

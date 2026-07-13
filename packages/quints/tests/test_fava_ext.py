@@ -40,7 +40,7 @@ def test_dashboard_renders(tmp_path):
     assert page.status_code == 200
     html = page.get_data(as_text=True)
 
-    assert "ACME202606" in html and "500.00" in html          # receivable open
-    assert "VAT-2026-Q2" in html and "123.45" in html         # VAT outstanding
-    assert "2026-07-12-ubs.bean" in html                      # staging queue
-    assert "2026-07-12.receipt.pdf" in html                   # inbox backlog
+    assert "ACME202606" in html and "500.00" in html  # receivable open
+    assert "VAT-2026-Q2" in html and "123.45" in html  # VAT outstanding
+    assert "2026-07-12-ubs.bean" in html  # staging queue
+    assert "2026-07-12.receipt.pdf" in html  # inbox backlog

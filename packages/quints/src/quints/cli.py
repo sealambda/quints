@@ -5,23 +5,44 @@ from __future__ import annotations
 from datetime import date as Date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Optional
 
 import typer
 
 from . import (
     config as config_mod,
+)
+from . import (
     fx as fx_mod,
+)
+from . import (
     importing as importing_mod,
+)
+from . import (
     inbox as inbox_mod,
+)
+from . import (
     kmu as kmu_mod,
+)
+from . import (
     ledger,
-    match as match_mod,
-    mwst as mwst_mod,
-    prices as prices_mod,
-    receivables as recv_mod,
-    settlement as settle_mod,
     ui,
+)
+from . import (
+    match as match_mod,
+)
+from . import (
+    mwst as mwst_mod,
+)
+from . import (
+    prices as prices_mod,
+)
+from . import (
+    receivables as recv_mod,
+)
+from . import (
+    settlement as settle_mod,
+)
+from . import (
     vat as vat_mod,
 )
 
@@ -34,11 +55,13 @@ app = typer.Typer(
 
 @app.callback()
 def _main(
-    config: Optional[Path] = typer.Option(
+    config: Path | None = typer.Option(
         None, "--config", help="quints.toml path (default: ./quints.toml, else built-in defaults)."
     ),
 ):
     config_mod.set_path(config)
+
+
 prices_app = typer.Typer(no_args_is_help=True, help="Price database (BAZG daily CHF rates).")
 app.add_typer(prices_app, name="prices")
 report_app = typer.Typer(
@@ -56,7 +79,9 @@ app.add_typer(fx_app, name="fx")
 
 
 def _lang_option() -> str:
-    return typer.Option(None, "--lang", "-l", help="Report language: en or de (default from quints.toml).")
+    return typer.Option(
+        None, "--lang", "-l", help="Report language: en or de (default from quints.toml)."
+    )
 
 
 def _emit(report, render, lang: str | None, as_json: bool) -> None:
@@ -79,7 +104,7 @@ def _parse_date(text: str) -> Date:
         return Date.fromisoformat(text)
     except ValueError:
         typer.secho(f"ERROR: invalid date {text!r} (use YYYY-MM-DD)", fg="red", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 def _json_out(payload) -> None:
@@ -97,10 +122,16 @@ def _require_ledger(file: Path) -> None:
 
 @app.command()
 def vat(
-    amount: str = typer.Argument(..., help="VAT amount in the invoice currency (or net price with --net)."),
+    amount: str = typer.Argument(
+        ..., help="VAT amount in the invoice currency (or net price with --net)."
+    ),
     currency: str = typer.Argument(..., help="Invoice currency, e.g. USD or EUR."),
-    date: str = typer.Argument(..., metavar="YYYY-MM-DD", help="Invoice date (picks the BAZG rate)."),
-    net: bool = typer.Option(False, "--net", help="Treat amount as the net price; VAT = 8.1% first."),
+    date: str = typer.Argument(
+        ..., metavar="YYYY-MM-DD", help="Invoice date (picks the BAZG rate)."
+    ),
+    net: bool = typer.Option(
+        False, "--net", help="Treat amount as the net price; VAT = 8.1% first."
+    ),
     bezugsteuer: bool = typer.Option(
         False,
         "--bezugsteuer",
@@ -118,7 +149,7 @@ def vat(
         amt = Decimal(amount)
     except InvalidOperation:
         typer.secho(f"ERROR: invalid amount {amount!r}", fg="red", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     _require_ledger(file)
 
     price_map, errors = ledger.build_price_map(file)
@@ -133,24 +164,29 @@ def vat(
             fg="red",
             err=True,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     text = posting.render_bezugsteuer() if bezugsteuer else posting.render()
     if as_json:
         import dataclasses
 
-        _json_out({**dataclasses.asdict(posting),
-                   "bezugsteuer": bezugsteuer, "posting_text": text})
+        _json_out({**dataclasses.asdict(posting), "bezugsteuer": bezugsteuer, "posting_text": text})
         return
     typer.echo(text)
 
 
 @app.command()
 def mwst(
-    quarter: Optional[str] = typer.Option(None, "--quarter", "-q", help="e.g. 2026-Q2 (instead of --from/--to)."),
-    from_: Optional[str] = typer.Option(None, "--from", help="Period start YYYY-MM-DD."),
-    to: Optional[str] = typer.Option(None, "--to", help="Period end YYYY-MM-DD."),
-    settle: bool = typer.Option(False, "--settle", help="Also print the settlement transaction to paste (period close)."),
-    as_json: bool = typer.Option(False, "--json", help="Machine-readable output (not with --settle)."),
+    quarter: str | None = typer.Option(
+        None, "--quarter", "-q", help="e.g. 2026-Q2 (instead of --from/--to)."
+    ),
+    from_: str | None = typer.Option(None, "--from", help="Period start YYYY-MM-DD."),
+    to: str | None = typer.Option(None, "--to", help="Period end YYYY-MM-DD."),
+    settle: bool = typer.Option(
+        False, "--settle", help="Also print the settlement transaction to paste (period close)."
+    ),
+    as_json: bool = typer.Option(
+        False, "--json", help="Machine-readable output (not with --settle)."
+    ),
     file: Path = _file_option(),
 ):
     """Swiss MWST (VAT) report for a reporting period."""
@@ -162,7 +198,7 @@ def mwst(
             date_from, date_to = mwst_mod.quarter_range(quarter)
         except ValueError as e:
             typer.secho(f"ERROR: {e}", fg="red", err=True)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         label = quarter.upper().replace(" ", "")
     elif from_ and to:
         date_from = _parse_date(from_).isoformat()
@@ -196,24 +232,27 @@ def status(
         import dataclasses
         import json
 
-        typer.echo(json.dumps(
-            {
-                "today": str(today),
-                "liabilities": [dataclasses.asdict(l) for l in liabilities],
-                "unlinked_owed": str(unlinked),
-                "total_owed": str(total),
-            },
-            indent=2,
-            default=str,
-        ))
+        typer.echo(
+            json.dumps(
+                {
+                    "today": str(today),
+                    "liabilities": [dataclasses.asdict(liab) for liab in liabilities],
+                    "unlinked_owed": str(unlinked),
+                    "total_owed": str(total),
+                },
+                indent=2,
+                default=str,
+            )
+        )
         return
     settle_mod.render_status(liabilities, unlinked, total, today)
 
 
 @app.command()
 def receivables(
-    at: Optional[str] = typer.Option(None, "--at", metavar="YYYY-MM-DD",
-                                     help="Aging as of this date (default: today)."),
+    at: str | None = typer.Option(
+        None, "--at", metavar="YYYY-MM-DD", help="Aging as of this date (default: today)."
+    ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
 ):
@@ -224,11 +263,13 @@ def receivables(
         import dataclasses
         import json
 
-        typer.echo(json.dumps(
-            {"at": str(ref), "open": [dataclasses.asdict(o) for o in open_invoices]},
-            indent=2,
-            default=str,
-        ))
+        typer.echo(
+            json.dumps(
+                {"at": str(ref), "open": [dataclasses.asdict(o) for o in open_invoices]},
+                indent=2,
+                default=str,
+            )
+        )
         return
     recv_mod.render(open_invoices, ref)
 
@@ -251,7 +292,9 @@ def inbox(
 
 @app.command()
 def match(
-    staging: Optional[Path] = typer.Option(None, "--staging", help="Staging directory (default: ./staging)."),
+    staging: Path | None = typer.Option(
+        None, "--staging", help="Staging directory (default: ./staging)."
+    ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
 ):
@@ -268,9 +311,13 @@ def match(
 
 @prices_app.command("sync")
 def prices_sync(
-    out: Path = typer.Option(ledger.DEFAULT_PRICES, "--out", help="Price file (default: prices.bean)."),
-    from_: Optional[str] = typer.Option(
-        None, "--from", help="Repair: re-scan from this date and fill ANY missing days (heals interior gaps).",
+    out: Path = typer.Option(
+        ledger.DEFAULT_PRICES, "--out", help="Price file (default: prices.bean)."
+    ),
+    from_: str | None = typer.Option(
+        None,
+        "--from",
+        help="Repair: re-scan from this date and fill ANY missing days (heals interior gaps).",
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ):
@@ -282,11 +329,17 @@ def prices_sync(
     repair = _parse_date(from_) if from_ else None
     result = prices_mod.sync(out, repair_from=repair)
     if as_json:
-        _json_out({
-            "file": str(out), "wrote": result.wrote, "added": result.added,
-            "per_currency": {ccy: {"added": added, "had_through": last}
-                             for ccy, (added, last) in result.per_currency.items()},
-        })
+        _json_out(
+            {
+                "file": str(out),
+                "wrote": result.wrote,
+                "added": result.added,
+                "per_currency": {
+                    ccy: {"added": added, "had_through": last}
+                    for ccy, (added, last) in result.per_currency.items()
+                },
+            }
+        )
         return
     for ccy, (added, last) in result.per_currency.items():
         where = f"had through {last}" if last else "was empty"
@@ -312,9 +365,9 @@ def bilanz(
 
 @report_app.command()
 def erfolg(
-    from_: Optional[str] = typer.Option(None, "--from", metavar="YYYY-MM-DD"),
-    to: Optional[str] = typer.Option(None, "--to", metavar="YYYY-MM-DD"),
-    year: Optional[int] = typer.Option(None, "--year", help="Shortcut for a calendar year."),
+    from_: str | None = typer.Option(None, "--from", metavar="YYYY-MM-DD"),
+    to: str | None = typer.Option(None, "--to", metavar="YYYY-MM-DD"),
+    year: int | None = typer.Option(None, "--year", help="Shortcut for a calendar year."),
     lang: str = _lang_option(),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
@@ -327,9 +380,9 @@ def erfolg(
 
 @report_app.command()
 def konten(
-    from_: Optional[str] = typer.Option(None, "--from", metavar="YYYY-MM-DD"),
-    to: Optional[str] = typer.Option(None, "--to", metavar="YYYY-MM-DD"),
-    year: Optional[int] = typer.Option(None, "--year", help="Shortcut for a calendar year."),
+    from_: str | None = typer.Option(None, "--from", metavar="YYYY-MM-DD"),
+    to: str | None = typer.Option(None, "--to", metavar="YYYY-MM-DD"),
+    year: int | None = typer.Option(None, "--year", help="Shortcut for a calendar year."),
     lang: str = _lang_option(),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
@@ -343,10 +396,11 @@ def konten(
 @report_app.command()
 def statements(
     year: int = typer.Option(..., "--year", help="Fiscal year."),
-    at: Optional[str] = typer.Option(None, "--at", metavar="YYYY-MM-DD",
-                                     help="Balance-sheet date (default: <year>-12-31)."),
+    at: str | None = typer.Option(
+        None, "--at", metavar="YYYY-MM-DD", help="Balance-sheet date (default: <year>-12-31)."
+    ),
     lang: str = _lang_option(),
-    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Output PDF path."),
+    out: Path | None = typer.Option(None, "--out", "-o", help="Output PDF path."),
     file: Path = _file_option(),
 ):
     """Bilanz + Erfolgsrechnung as one PDF for the Treuhänder/auditor."""
@@ -365,7 +419,9 @@ def statements(
 
 @fx_app.command("revalue")
 def fx_revalue(
-    at: str = typer.Option(..., "--at", metavar="YYYY-MM-DD", help="Revaluation date (usually 12-31)."),
+    at: str = typer.Option(
+        ..., "--at", metavar="YYYY-MM-DD", help="Revaluation date (usually 12-31)."
+    ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
 ):
@@ -375,14 +431,19 @@ def fx_revalue(
     try:
         revaluations = fx_mod.compute(file, at)
     except fx_mod.RateUnavailable as e:
-        typer.secho(f"ERROR: {e}.\n       Fetch rates:  uv run quints prices sync", fg="red", err=True)
-        raise typer.Exit(1)
+        typer.secho(
+            f"ERROR: {e}.\n       Fetch rates:  uv run quints prices sync", fg="red", err=True
+        )
+        raise typer.Exit(1) from None
     if as_json:
         import dataclasses
 
-        _json_out({"at": at, "revaluations": [
-            {**dataclasses.asdict(r), "delta": r.delta} for r in revaluations
-        ]})
+        _json_out(
+            {
+                "at": at,
+                "revaluations": [{**dataclasses.asdict(r), "delta": r.delta} for r in revaluations],
+            }
+        )
         return
     fx_mod.render(revaluations, at)
 
@@ -403,17 +464,17 @@ def import_ubs(
         result = importing_mod.run_ubs(statement, file, out)
     except ValueError as e:
         typer.secho(f"ERROR: {e}", fg="red", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     _report_import(result, as_json)
 
 
 @import_app.command("wise")
 def import_wise(
-    statements: Optional[list[Path]] = typer.Argument(None, help="Wise statement.json file(s)."),
+    statements: list[Path] | None = typer.Argument(None, help="Wise statement.json file(s)."),
     fetch: bool = typer.Option(False, "--fetch", help="Fetch statements from the Wise API first."),
-    from_: Optional[str] = typer.Option(None, "--from", metavar="YYYY-MM-DD"),
-    to: Optional[str] = typer.Option(None, "--to", metavar="YYYY-MM-DD"),
+    from_: str | None = typer.Option(None, "--from", metavar="YYYY-MM-DD"),
+    to: str | None = typer.Option(None, "--to", metavar="YYYY-MM-DD"),
     out: Path = typer.Option(importing_mod.DEFAULT_STAGING, "--out", help="Staging directory."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
@@ -424,7 +485,8 @@ def import_wise(
         if not (from_ and to):
             typer.secho("ERROR: --fetch needs --from and --to.", fg="red", err=True)
             raise typer.Exit(1)
-        _parse_date(from_), _parse_date(to)
+        _parse_date(from_)
+        _parse_date(to)
         try:
             statements = importing_mod.fetch_wise(from_, to, out)
         except importing_mod.WiseError as e:
@@ -437,7 +499,7 @@ def import_wise(
                     fg="yellow",
                     err=True,
                 )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         for path in statements:
             typer.echo(f"fetched {path}")
     if not statements:
@@ -447,16 +509,20 @@ def import_wise(
         result = importing_mod.run_wise(list(statements), file, out)
     except ValueError as e:
         typer.secho(f"ERROR: {e}", fg="red", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     _report_import(result, as_json)
 
 
 @import_app.command("stripe")
 def import_stripe(
-    statements: Optional[list[Path]] = typer.Argument(None, help="Stripe balance-transactions JSON file(s)."),
-    fetch: bool = typer.Option(False, "--fetch", help="Fetch balance transactions from the Stripe API first."),
-    from_: Optional[str] = typer.Option(None, "--from", metavar="YYYY-MM-DD"),
-    to: Optional[str] = typer.Option(None, "--to", metavar="YYYY-MM-DD"),
+    statements: list[Path] | None = typer.Argument(
+        None, help="Stripe balance-transactions JSON file(s)."
+    ),
+    fetch: bool = typer.Option(
+        False, "--fetch", help="Fetch balance transactions from the Stripe API first."
+    ),
+    from_: str | None = typer.Option(None, "--from", metavar="YYYY-MM-DD"),
+    to: str | None = typer.Option(None, "--to", metavar="YYYY-MM-DD"),
     out: Path = typer.Option(importing_mod.DEFAULT_STAGING, "--out", help="Staging directory."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
@@ -467,7 +533,8 @@ def import_stripe(
         if not (from_ and to):
             typer.secho("ERROR: --fetch needs --from and --to.", fg="red", err=True)
             raise typer.Exit(1)
-        _parse_date(from_), _parse_date(to)
+        _parse_date(from_)
+        _parse_date(to)
         try:
             statements = importing_mod.fetch_stripe(from_, to, out)
         except importing_mod.StripeError as e:
@@ -479,7 +546,7 @@ def import_stripe(
                 fg="yellow",
                 err=True,
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         for path in statements:
             typer.echo(f"fetched {path}")
     if not statements:
@@ -489,28 +556,45 @@ def import_stripe(
         result = importing_mod.run_stripe(list(statements), file, out)
     except ValueError as e:
         typer.secho(f"ERROR: {e}", fg="red", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     _report_import(result, as_json)
 
 
 def _report_import(result, as_json: bool = False) -> None:
     if as_json:
+
         def txn(t):
             u = t.postings[0].units
-            return {"date": str(t.date), "flag": t.flag, "payee": t.payee,
-                    "narration": t.narration, "amount": u.number, "currency": u.currency}
+            return {
+                "date": str(t.date),
+                "flag": t.flag,
+                "payee": t.payee,
+                "narration": t.narration,
+                "amount": u.number,
+                "currency": u.currency,
+            }
 
-        _json_out({
-            "source": result.source,
-            "staging_file": str(result.out_path) if result.out_path else None,
-            "skipped_ref": result.skipped_ref,
-            "drafts": [txn(t) for t in result.drafts],
-            "legacy_matches": [{**txn(t), "booked": str(d)} for t, d in result.legacy_matches],
-            "receivable_matches": [{**txn(t), "invoice": n} for n, t in result.receivable_matches],
-            "balances": [{"date": str(b.date), "account": b.account,
-                          "amount": b.amount.number, "currency": b.amount.currency}
-                         for b in result.balances],
-        })
+        _json_out(
+            {
+                "source": result.source,
+                "staging_file": str(result.out_path) if result.out_path else None,
+                "skipped_ref": result.skipped_ref,
+                "drafts": [txn(t) for t in result.drafts],
+                "legacy_matches": [{**txn(t), "booked": str(d)} for t, d in result.legacy_matches],
+                "receivable_matches": [
+                    {**txn(t), "invoice": n} for n, t in result.receivable_matches
+                ],
+                "balances": [
+                    {
+                        "date": str(b.date),
+                        "account": b.account,
+                        "amount": b.amount.number,
+                        "currency": b.amount.currency,
+                    }
+                    for b in result.balances
+                ],
+            }
+        )
         return
     if result.skipped_ref:
         typer.echo(f"{result.skipped_ref} entr(ies) already imported (reference match) — skipped.")
@@ -525,7 +609,8 @@ def _report_import(result, as_json: bool = False) -> None:
     if result.receivable_matches:
         typer.secho(
             f"{len(result.receivable_matches)} payment(s) matched open invoices "
-            f"(receivable clearing drafted):", fg="green",
+            f"(receivable clearing drafted):",
+            fg="green",
         )
         for number, draft in result.receivable_matches:
             typer.echo(f"  {draft.date}  {draft.postings[0].units}  ^{number}")
@@ -539,7 +624,7 @@ def _report_import(result, as_json: bool = False) -> None:
         typer.echo(f"Closing balance assertion: {balance.date} {balance.amount} (in staging file).")
 
 
-def _period(from_: Optional[str], to: Optional[str], year: Optional[int]) -> tuple[str, str]:
+def _period(from_: str | None, to: str | None, year: int | None) -> tuple[str, str]:
     if year is not None:
         return f"{year}-01-01", f"{year}-12-31"
     if from_ and to:
@@ -557,12 +642,19 @@ def check(
     _require_ledger(file)
     _entries, errors = ledger.load_entries(file)
     if as_json:
-        _json_out({"ok": not errors, "errors": [
-            {"file": (e.source or {}).get("filename"),
-             "line": (e.source or {}).get("lineno"),
-             "message": e.message}
-            for e in errors
-        ]})
+        _json_out(
+            {
+                "ok": not errors,
+                "errors": [
+                    {
+                        "file": (e.source or {}).get("filename"),
+                        "line": (e.source or {}).get("lineno"),
+                        "message": e.message,
+                    }
+                    for e in errors
+                ],
+            }
+        )
         raise typer.Exit(1 if errors else 0)
     if errors:
         from beancount.parser import printer
@@ -576,18 +668,30 @@ def check(
 @app.command()
 def invoice(
     data: Path = typer.Argument(..., help="Invoice file (.yaml/.toml/.json)."),
-    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Output PDF (default: <number>.pdf)."),
-    issuer: Path = typer.Option(Path("invoicing/issuer.yaml"), "--issuer", help="Issuer config (.yaml/.toml/.json)."),
-    customers: Path = typer.Option(Path("invoicing/customers.yaml"), "--customers",
-                                   help="Customer registry (.yaml/.toml/.json)."),
+    out: Path | None = typer.Option(
+        None, "--out", "-o", help="Output PDF (default: <number>.pdf)."
+    ),
+    issuer: Path = typer.Option(
+        Path("invoicing/issuer.yaml"), "--issuer", help="Issuer config (.yaml/.toml/.json)."
+    ),
+    customers: Path = typer.Option(
+        Path("invoicing/customers.yaml"),
+        "--customers",
+        help="Customer registry (.yaml/.toml/.json).",
+    ),
     file: Path = _file_option(),
-    verify: bool = typer.Option(True, "--verify/--no-verify", help="Cross-check total against the ledger."),
+    verify: bool = typer.Option(
+        True, "--verify/--no-verify", help="Cross-check total against the ledger."
+    ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ):
     """Render a Swiss QR-bill invoice PDF (domestic or export)."""
     import dataclasses
 
-    from .invoice import draft as dr, model as m, render as r, verify as v
+    from .invoice import draft as dr
+    from .invoice import model as m
+    from .invoice import render as r
+    from .invoice import verify as v
 
     for p, what in [(data, "invoice file"), (issuer, "issuer config")]:
         if not p.exists():
@@ -629,7 +733,9 @@ def invoice(
                 print(ledger_draft)
                 print()
             elif cc.ok:
-                ui.console.print(f"[ok]Ledger match[/] ({cc.date}): {inv.currency} {m.money(cc.ledger_total)}")
+                ui.console.print(
+                    f"[ok]Ledger match[/] ({cc.date}): {inv.currency} {m.money(cc.ledger_total)}"
+                )
                 if not cc.date_ok:
                     ui.console.print(
                         f"[warn]booking date {cc.date} ≠ invoice date {inv.issue_date}[/]"
@@ -644,19 +750,27 @@ def invoice(
         ui.console.print("[warn]ledger not found — cross-check skipped.[/]")
 
     if as_json:
-        _json_out({
-            "number": inv.number, "kind": inv.kind, "currency": inv.currency,
-            "issue_date": inv.issue_date, "customer": inv.customer.name,
-            "pdf": str(path), "totals": totals.model_dump(), "qr_payload_ok": qr_ok,
-            "cross_check": dataclasses.asdict(cc) if cc else None,
-            "ledger_draft": ledger_draft,
-        })
+        _json_out(
+            {
+                "number": inv.number,
+                "kind": inv.kind,
+                "currency": inv.currency,
+                "issue_date": inv.issue_date,
+                "customer": inv.customer.name,
+                "pdf": str(path),
+                "totals": totals.model_dump(),
+                "qr_payload_ok": qr_ok,
+                "cross_check": dataclasses.asdict(cc) if cc else None,
+                "ledger_draft": ledger_draft,
+            }
+        )
 
 
 @app.command()
 def schema(
-    out: Path = typer.Option(Path("invoicing/schema"), "--out", "-o",
-                             help="Directory for the generated JSON Schemas."),
+    out: Path = typer.Option(
+        Path("invoicing/schema"), "--out", "-o", help="Directory for the generated JSON Schemas."
+    ),
 ):
     """Write JSON Schemas for the invoice, issuer, and customers files.
 
@@ -667,8 +781,11 @@ def schema(
     from .invoice import model as m
 
     out.mkdir(parents=True, exist_ok=True)
-    for name, mdl in [("invoice", m.Invoice), ("issuer", m.Issuer),
-                      ("customers", m.CustomerRegistry)]:
+    for name, mdl in [
+        ("invoice", m.Invoice),
+        ("issuer", m.Issuer),
+        ("customers", m.CustomerRegistry),
+    ]:
         path = out / f"{name}.schema.json"
         path.write_text(_json.dumps(mdl.model_json_schema(), indent=2) + "\n")
         ui.console.print(f"[ok]Wrote[/] {path}")

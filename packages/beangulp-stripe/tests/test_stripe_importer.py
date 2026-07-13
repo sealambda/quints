@@ -5,6 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from beancount.core import data
+
 from beangulp_stripe import Importer, major_units
 
 HERE = Path(__file__).parent
@@ -99,8 +100,14 @@ def test_extract_charge_fee_payment_payout_and_balance():
 
 def test_extract_skips_ids_already_in_the_ledger():
     booked = data.Transaction(
-        {"stripe_id": "txn_charge_may"}, Date(2026, 5, 15), "*", "ACME Labs GmbH", "",
-        data.EMPTY_SET, data.EMPTY_SET, [],
+        {"stripe_id": "txn_charge_may"},
+        Date(2026, 5, 15),
+        "*",
+        "ACME Labs GmbH",
+        "",
+        data.EMPTY_SET,
+        data.EMPTY_SET,
+        [],
     )
     entries = _importer().extract(FIXTURE, existing=[booked])
     ids = [e.meta.get("stripe_id") for e in entries if isinstance(e, data.Transaction)]
@@ -110,7 +117,8 @@ def test_extract_skips_ids_already_in_the_ledger():
 def test_without_rules_drafts_keep_cash_and_fee_legs_only():
     entries = Importer(ACCOUNTS, fees_account="Expenses:Fees").extract(FIXTURE, existing=[])
     charge = next(
-        e for e in entries
+        e
+        for e in entries
         if isinstance(e, data.Transaction) and e.meta["stripe_id"] == "txn_charge_may"
     )
     assert charge.flag == "!"
@@ -120,7 +128,8 @@ def test_without_rules_drafts_keep_cash_and_fee_legs_only():
 def test_without_tax_account_tax_folds_into_fees_but_still_balances():
     entries = Importer(ACCOUNTS, fees_account="Expenses:Fees").extract(FIXTURE, existing=[])
     fee = next(
-        e for e in entries
+        e
+        for e in entries
         if isinstance(e, data.Transaction) and e.meta["stripe_id"] == "txn_fee_may"
     )
     assert [(p.account, p.units.number) for p in fee.postings] == [

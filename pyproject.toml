@@ -12,7 +12,15 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "basedpyright>=1.39.9",
+    "deptry>=0.25.1",
+    "import-linter>=2.13",
+    "pytest>=8",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.21",
+    "vulture>=2.16",
+]
 
 [tool.uv]
 package = false
@@ -26,3 +34,93 @@ beangulp-mt940 = { workspace = true }
 beangulp-stripe = { workspace = true }
 beangulp-wise = { workspace = true }
 beanprice-bazg = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Quality tooling. Single entrypoint: `make check` (see Makefile).
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = [
+    "packages/quints/src",
+    "packages/beangulp-mt940/src",
+    "packages/beangulp-stripe/src",
+    "packages/beangulp-wise/src",
+    "packages/beanprice-bazg/src",
+]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "UP",       # pyupgrade
+    "B",        # bugbear
+    "C4",       # comprehensions
+    "SIM",      # simplify
+    "S",        # bandit (security)
+    "RUF",      # ruff-specific
+]
+ignore = [
+    "B008",             # function call in default — the standard typer.Option/Argument idiom
+    "RUF001", "RUF002", "RUF003",  # ambiguous unicode — de/fr/it strings are core content here
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/*" = ["S101", "S105", "S106"]  # asserts and hardcoded test credentials are fine in tests
+
+[tool.basedpyright]
+include = ["packages"]
+exclude = ["**/.venv", "**/__pycache__", "dist"]
+pythonVersion = "3.10"
+typeCheckingMode = "strict"
+# beancount/beangulp/fava ship no type stubs — Unknown-type diagnostics on their
+# APIs are unfixable noise, so only the Unknown* family is relaxed from strict.
+reportMissingTypeStubs = false
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownLambdaType = false
+
+[tool.vulture]
+paths = ["packages"]
+exclude = ["*/.venv/*", "*/tests/*"]
+min_confidence = 80
+ignore_names = ["cls"]  # pydantic @field_validator signature
+
+[tool.importlinter]
+root_packages = [
+    "quints",
+    "beangulp_mt940",
+    "beangulp_stripe",
+    "beangulp_wise",
+    "beanprice_bazg",
+]
+
+# Layers within quints, top to bottom. Modules on the same line (":") may
+# import each other; a module may only import from lines below its own.
+# exhaustive: adding a new module without placing it in a layer is an error.
+[[tool.importlinter.contracts]]
+name = "quints is layered: entrypoints -> orchestration -> domain -> foundation"
+type = "layers"
+containers = ["quints"]
+exhaustive = true
+layers = [
+    "cli : fava : plugins",
+    "settlement : report_pdf : match : importing",
+    "mwst : kmu : vat : fx : prices : inbox : receivables : invoice",
+    "config : ledger : ui",
+]
+
+[[tool.importlinter.contracts]]
+name = "standalone importers stay standalone"
+type = "independence"
+modules = ["beangulp_mt940", "beangulp_stripe", "beangulp_wise", "beanprice_bazg"]
+
+[[tool.importlinter.contracts]]
+name = "building blocks never depend on quints"
+type = "forbidden"
+source_modules = ["beangulp_mt940", "beangulp_stripe", "beangulp_wise", "beanprice_bazg"]
+forbidden_modules = ["quints"]

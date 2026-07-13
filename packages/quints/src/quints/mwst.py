@@ -64,6 +64,7 @@ def quarter_range(quarter: str) -> tuple[str, str]:
 
 # ── data ─────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class VatLine:
     date: str
@@ -116,6 +117,7 @@ class MwstReport:
 
 # ── compute ───────────────────────────────────────────────────────────────────
 
+
 def _to_chf(units: Amount, date: Date, price_map) -> Decimal:
     """Value an amount in CHF at ``date`` (prior-date fallback via price map)."""
     if units.currency == "CHF":
@@ -124,8 +126,9 @@ def _to_chf(units: Amount, date: Date, price_map) -> Decimal:
     return conv.number if conv.currency == "CHF" else Decimal("0")
 
 
-def compute(ledger_path: Path, date_from: str, date_to: str,
-            cfg: config.Config | None = None) -> MwstReport:
+def compute(
+    ledger_path: Path, date_from: str, date_to: str, cfg: config.Config | None = None
+) -> MwstReport:
     cfg = cfg or config.get()
     d0, d1 = Date.fromisoformat(date_from), Date.fromisoformat(date_to)
     # Pre-registration activity is not part of any VAT period (the transition
@@ -167,8 +170,9 @@ def compute(ledger_path: Path, date_from: str, date_to: str,
                 else:
                     original, currency, rate = tax, p.units.currency, Decimal("1")
                 bezugsteuer_lines.append(
-                    VatLine(str(e.date), e.payee or "", e.narration or "",
-                            original, currency, rate, tax)
+                    VatLine(
+                        str(e.date), e.payee or "", e.narration or "", original, currency, rate, tax
+                    )
                 )
 
             # Input VAT: debits to InputVAT are purchase accruals
@@ -182,8 +186,9 @@ def compute(ledger_path: Path, date_from: str, date_to: str,
                 else:
                     original, currency, rate = n, p.units.currency, Decimal("1")
                 vat_lines.append(
-                    VatLine(str(e.date), e.payee or "", e.narration or "",
-                            original, currency, rate, n)
+                    VatLine(
+                        str(e.date), e.payee or "", e.narration or "", original, currency, rate, n
+                    )
                 )
 
             # Revenue: credits to CH GmbH income (converted to CHF at the txn date).
@@ -224,8 +229,10 @@ def compute(ledger_path: Path, date_from: str, date_to: str,
 
 # ── render ────────────────────────────────────────────────────────────────────
 
-def render(report: MwstReport, console: Console | None = None,
-           cfg: config.Config | None = None) -> None:
+
+def render(
+    report: MwstReport, console: Console | None = None, cfg: config.Config | None = None
+) -> None:
     cfg = cfg or config.get()
     console = console or ui.console
     console.print()
@@ -276,12 +283,18 @@ def render(report: MwstReport, console: Console | None = None,
 
     if report.vat_lines:
         console.print()
-        console.print(_vat_table(report.vat_lines, report.z400,
-                                 "Vorsteuer (Input VAT) — Ziffer 400"))
+        console.print(
+            _vat_table(report.vat_lines, report.z400, "Vorsteuer (Input VAT) — Ziffer 400")
+        )
     if report.bezugsteuer_lines:
         console.print()
-        console.print(_vat_table(report.bezugsteuer_lines, report.z382_tax,
-                                 "Bezugsteuer (reverse charge) — Ziffer 382"))
+        console.print(
+            _vat_table(
+                report.bezugsteuer_lines,
+                report.z382_tax,
+                "Bezugsteuer (reverse charge) — Ziffer 382",
+            )
+        )
     if report.domestic or report.export:
         console.print()
         console.print(_revenue_table(report))

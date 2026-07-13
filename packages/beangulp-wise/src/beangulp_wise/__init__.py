@@ -29,8 +29,8 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+from collections.abc import Sequence
 from decimal import Decimal
-from typing import Sequence
 
 import beangulp
 from beancount.core import data, flags
@@ -38,7 +38,14 @@ from beancount.core.amount import Amount
 
 from .client import ScaChallenge, WiseClient, WiseError, sign_sca_token  # re-export
 
-__all__ = ["Importer", "merge_conversions", "WiseClient", "WiseError", "ScaChallenge", "sign_sca_token"]
+__all__ = [
+    "Importer",
+    "ScaChallenge",
+    "WiseClient",
+    "WiseError",
+    "merge_conversions",
+    "sign_sca_token",
+]
 
 
 def _decimal(value) -> Decimal:
@@ -175,8 +182,14 @@ class Importer(beangulp.Importer):
             date = dt.datetime.fromisoformat(txn["date"].replace("Z", "+00:00")).date()
             entries.append(
                 data.Transaction(
-                    meta, date, flag, payee, narration,
-                    data.EMPTY_SET, data.EMPTY_SET, postings,
+                    meta,
+                    date,
+                    flag,
+                    payee,
+                    narration,
+                    data.EMPTY_SET,
+                    data.EMPTY_SET,
+                    postings,
                 )
             )
 
@@ -216,13 +229,13 @@ def merge_conversions(entries: data.Entries, meta_key: str = "wise_id") -> data.
 
     merged: data.Entries = []
     drop: set[int] = set()
-    for ref, indexes in by_ref.items():
+    for indexes in by_ref.values():
         if len(indexes) != 2:
             continue  # counterpart not in this batch; leave the leg for review
         a, b = (entries[i] for i in indexes)
         out_leg, in_leg = (a, b) if a.postings[0].units.number < 0 else (b, a)
         out_cash = out_leg.postings[0]
-        fees = [p for p in out_leg.postings[1:] + in_leg.postings[1:]]
+        fees = list(out_leg.postings[1:] + in_leg.postings[1:])
         fee_total = sum(
             (p.units.number for p in fees if p.units.currency == out_cash.units.currency),
             Decimal("0"),
@@ -240,9 +253,13 @@ def merge_conversions(entries: data.Entries, meta_key: str = "wise_id") -> data.
         meta.pop("conversion", None)
         merged.append(
             data.Transaction(
-                meta, out_leg.date, "*", "Wise",
+                meta,
+                out_leg.date,
+                "*",
+                "Wise",
                 out_leg.narration or in_leg.narration,
-                data.EMPTY_SET, data.EMPTY_SET,
+                data.EMPTY_SET,
+                data.EMPTY_SET,
                 [out_cash, priced_in, *fees],
             )
         )

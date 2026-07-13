@@ -13,7 +13,7 @@ import sys
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import Literal, Union
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, RootModel, field_validator, model_validator
@@ -22,10 +22,6 @@ if sys.version_info >= (3, 11):
     import tomllib
 else:  # pragma: no cover
     import tomli as tomllib
-
-
-def _dec(x) -> Decimal:
-    return Decimal(str(x))
 
 
 def money(v: Decimal) -> str:
@@ -72,6 +68,7 @@ def make_scor(base: str) -> str:
 
 # ── model ─────────────────────────────────────────────────────────────────────
 
+
 class Party(BaseModel):
     name: str
     address: list[str] = Field(min_length=1)
@@ -82,6 +79,7 @@ class Party(BaseModel):
     def _vat_id_checksum(self):
         if self.vat_id:
             from . import vatid
+
             vatid.validate(self.vat_id, self.country)
         return self
 
@@ -92,6 +90,7 @@ class CustomerVersion(Party):
 
 class Customer(BaseModel):
     """Registry entry: a flat party, or a dated `versions` history."""
+
     name: str | None = None
     address: list[str] | None = None
     country: str = "CH"
@@ -107,11 +106,14 @@ class Customer(BaseModel):
     def at(self, on: date) -> Party:
         """The party data in force on `on` (for re-rendering old invoices)."""
         if not self.versions:
-            return Party(name=self.name, address=self.address,
-                         country=self.country, vat_id=self.vat_id)
-        live = [v for v in sorted(self.versions,
-                                  key=lambda v: v.valid_from or date.min)
-                if (v.valid_from or date.min) <= on]
+            return Party(
+                name=self.name, address=self.address, country=self.country, vat_id=self.vat_id
+            )
+        live = [
+            v
+            for v in sorted(self.versions, key=lambda v: v.valid_from or date.min)
+            if (v.valid_from or date.min) <= on
+        ]
         if not live:
             raise ValueError(f"no customer version valid on {on}")
         v = live[-1]
@@ -124,8 +126,7 @@ class CustomerRegistry(RootModel[dict[str, Customer]]):
             return self.root[ref].at(on)
         except KeyError:
             raise ValueError(
-                f"unknown customer {ref!r} "
-                f"(registry has: {', '.join(sorted(self.root)) or 'none'})"
+                f"unknown customer {ref!r} (registry has: {', '.join(sorted(self.root)) or 'none'})"
             ) from None
 
 
@@ -149,15 +150,15 @@ class Invoice(BaseModel):
     kind: Literal["domestic", "export"]
     currency: str = Field(pattern=r"^[A-Z]{3}$")
     issue_date: date
-    customer: Union[str, Party]  # str → key into the customer registry
+    customer: str | Party  # str → key into the customer registry
     items: list[LineItem] = Field(min_length=1)
     supply: str = ""
     language: str = "de"
     vat: VatBlock = Field(default_factory=VatBlock)
     reference: str | None = None
     notes: list[str] = Field(default_factory=list)
-    round_5: bool | None = None   # None → 0.05 rounding iff currency is CHF
-    terms_days: int | None = 30   # None → no payment-terms line
+    round_5: bool | None = None  # None → 0.05 rounding iff currency is CHF
+    terms_days: int | None = 30  # None → no payment-terms line
     # Export only. None → reverse charge expected (EU B2B default); requires the
     # customer's VAT number (Art. 196, 226(4)+(11a) EU VAT Directive). Set false
     # for customers outside a reverse-charge regime (e.g. US) to drop the note.
@@ -173,8 +174,8 @@ class Invoice(BaseModel):
 
 
 class BankAccount(BaseModel):
-    iban: str = ""      # regular IBAN — SEPA/international credit transfers
-    qr_iban: str = ""   # QR-IID variant — Swiss QR-bill with QRR reference ONLY
+    iban: str = ""  # regular IBAN — SEPA/international credit transfers
+    qr_iban: str = ""  # QR-IID variant — Swiss QR-bill with QRR reference ONLY
     bic: str | None = None
 
     @field_validator("iban", "qr_iban")
@@ -186,9 +187,9 @@ class BankAccount(BaseModel):
 class Brand(BaseModel):
     accent: str = "#123c3a"
     font: str = "Liberation Sans"
-    font_display: str | None = None     # title/wordmark family; defaults to `font`
-    font_display_stretch: int = 100     # CSS-style font-stretch % (125 → Expanded cut)
-    font_dir: str | None = None         # bundled fonts dir passed to typst (repo-relative)
+    font_display: str | None = None  # title/wordmark family; defaults to `font`
+    font_display_stretch: int = 100  # CSS-style font-stretch % (125 → Expanded cut)
+    font_dir: str | None = None  # bundled fonts dir passed to typst (repo-relative)
     logo: str | None = None
 
 
@@ -222,6 +223,7 @@ class Totals(BaseModel):
 
 
 # ── loading ───────────────────────────────────────────────────────────────────
+
 
 def load_mapping(path: Path) -> dict:
     """Parse a .yaml/.yml/.toml/.json file into a plain mapping."""
@@ -260,6 +262,7 @@ def load_invoice(path: Path, customers: CustomerRegistry | None = None) -> Invoi
 
 # ── computation ───────────────────────────────────────────────────────────────
 
+
 def compute(inv: Invoice) -> Totals:
     subtotal = sum((it.total for it in inv.items), Decimal("0"))
     if inv.kind == "export":
@@ -270,5 +273,11 @@ def compute(inv: Invoice) -> Totals:
         vat = (subtotal * rate / 100).quantize(Decimal("0.01"), ROUND_HALF_UP)
     unrounded = subtotal + vat
     grand = round_step(unrounded, Decimal("0.05") if inv.rounds_to_5 else Decimal("0"))
-    return Totals(subtotal=subtotal, vat_rate=rate, vat_amount=vat,
-                  unrounded=unrounded, rounding=grand - unrounded, grand_total=grand)
+    return Totals(
+        subtotal=subtotal,
+        vat_rate=rate,
+        vat_amount=vat,
+        unrounded=unrounded,
+        rounding=grand - unrounded,
+        grand_total=grand,
+    )

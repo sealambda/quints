@@ -17,8 +17,9 @@ LEDGER = """
 def test_vat_json(tmp_path):
     led = tmp_path / "m.bean"
     led.write_text(LEDGER)
-    res = runner.invoke(app, ["vat", "100", "EUR", "2026-07-02",
-                              "--bezugsteuer", "--json", "-f", str(led)])
+    res = runner.invoke(
+        app, ["vat", "100", "EUR", "2026-07-02", "--bezugsteuer", "--json", "-f", str(led)]
+    )
     assert res.exit_code == 0, res.output
     d = json.loads(res.output)
     assert d["bezugsteuer"] is True and d["currency"] == "EUR"

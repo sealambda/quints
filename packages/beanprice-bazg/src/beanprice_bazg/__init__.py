@@ -6,5 +6,5 @@ Re-exports :class:`Source` so the beancount price-source string can be the short
 
 from beanprice_bazg.bazg import BAZGError, Source, SourcePrice
 
-__all__ = ["Source", "SourcePrice", "BAZGError"]
+__all__ = ["BAZGError", "Source", "SourcePrice"]
 __version__ = "0.1.0"

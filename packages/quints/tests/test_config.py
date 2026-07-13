@@ -113,8 +113,8 @@ def test_stranger_entity_gets_correct_mwst(tmp_path):
         entity_marker=":XX:AG:",
     )
     report = mwst.compute(ledger_file, "2025-01-01", "2025-06-30", cfg=cfg)
-    assert report.z299 == Decimal("1000.00")   # domestic net
-    assert report.z221 == Decimal("500.00")    # export
+    assert report.z299 == Decimal("1000.00")  # domestic net
+    assert report.z221 == Decimal("500.00")  # export
     assert report.z303_tax == Decimal("81.00")
     assert report.z500 == Decimal("81.00")
 
@@ -122,15 +122,18 @@ def test_stranger_entity_gets_correct_mwst(tmp_path):
 def test_vat_registered_since_clamps_period(tmp_path):
     ledger_file = tmp_path / "books.bean"
     ledger_file.write_text(_STRANGER_LEDGER)
-    base = dict(
-        input_vat="Assets:XX:AG:VAT:In",
-        output_vat="Liabilities:XX:AG:VAT:Out",
-        income_prefix="Income:XX:AG",
+    base = {
+        "input_vat": "Assets:XX:AG:VAT:In",
+        "output_vat": "Liabilities:XX:AG:VAT:Out",
+        "income_prefix": "Income:XX:AG",
+    }
+    unclamped = mwst.compute(ledger_file, "2025-01-01", "2025-06-30", cfg=config.Config(**base))
+    clamped = mwst.compute(
+        ledger_file,
+        "2025-01-01",
+        "2025-06-30",
+        cfg=config.Config(**base, vat_registered_since=Date(2025, 3, 15)),
     )
-    unclamped = mwst.compute(ledger_file, "2025-01-01", "2025-06-30",
-                             cfg=config.Config(**base))
-    clamped = mwst.compute(ledger_file, "2025-01-01", "2025-06-30",
-                           cfg=config.Config(**base, vat_registered_since=Date(2025, 3, 15)))
     assert unclamped.z303_tax == Decimal("81.00")
-    assert clamped.z303_tax == Decimal("0")      # March invoice predates liability
-    assert clamped.z221 == Decimal("500.00")     # April export still in
+    assert clamped.z303_tax == Decimal("0")  # March invoice predates liability
+    assert clamped.z221 == Decimal("500.00")  # April export still in

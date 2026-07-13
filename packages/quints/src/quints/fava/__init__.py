@@ -34,8 +34,9 @@ class QuintDashboard(FavaExtensionBase):
 
     @property
     def _cfg(self) -> config.Config:
-        return config.load(self._root / "quints.toml"
-                           if (self._root / "quints.toml").exists() else None)
+        return config.load(
+            self._root / "quints.toml" if (self._root / "quints.toml").exists() else None
+        )
 
     def today(self):
         return datetime.now(timezone.utc).date()
@@ -49,9 +50,7 @@ class QuintDashboard(FavaExtensionBase):
         )
 
     def open_receivables(self):
-        return receivables.compute_from_entries(
-            self.ledger.all_entries, self.today(), self._cfg
-        )
+        return receivables.compute_from_entries(self.ledger.all_entries, self.today(), self._cfg)
 
     def staging(self):
         """Pending staging drafts: (file name, total drafts, flagged drafts)."""

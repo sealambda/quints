@@ -29,12 +29,12 @@ _NAMED = re.compile(r"^(\d{4}-\d{2}-\d{2})\.([^.]+)\.(.+)\.(\w+)$")
 class InboxDoc:
     name: str
     size: int
-    sha256: str                     # short content hash (12 hex chars)
-    date_hint: str | None           # from the YYYY-MM-DD.payee.narrative.ext convention
+    sha256: str  # short content hash (12 hex chars)
+    date_hint: str | None  # from the YYYY-MM-DD.payee.narrative.ext convention
     payee_hint: str | None
     narrative_hint: str | None
-    duplicate_of: str | None        # identical file already under documents/
-    linked: bool                    # basename referenced by a document: metadata
+    duplicate_of: str | None  # identical file already under documents/
+    linked: bool  # basename referenced by a document: metadata
 
 
 def _sha(path: Path) -> str:
@@ -56,9 +56,11 @@ def scan(root: Path, entries) -> list[InboxDoc]:
     box_dir = root / "inbox"
     if not box_dir.is_dir():
         return []
-    files = sorted(p for p in box_dir.iterdir()
-                   if p.is_file() and not p.name.startswith(".")
-                   and not p.name.lower().startswith("readme"))
+    files = sorted(
+        p
+        for p in box_dir.iterdir()
+        if p.is_file() and not p.name.startswith(".") and not p.name.lower().startswith("readme")
+    )
     if not files:
         return []
 
@@ -77,16 +79,18 @@ def scan(root: Path, entries) -> list[InboxDoc]:
     for p in files:
         m = _NAMED.match(p.name)
         dup = filed_by_hash.get(_sha(p))
-        out.append(InboxDoc(
-            name=p.name,
-            size=p.stat().st_size,
-            sha256=_sha(p),
-            date_hint=m.group(1) if m else None,
-            payee_hint=m.group(2) if m else None,
-            narrative_hint=m.group(3) if m else None,
-            duplicate_of=str(dup.relative_to(root)) if dup else None,
-            linked=p.name in linked,
-        ))
+        out.append(
+            InboxDoc(
+                name=p.name,
+                size=p.stat().st_size,
+                sha256=_sha(p),
+                date_hint=m.group(1) if m else None,
+                payee_hint=m.group(2) if m else None,
+                narrative_hint=m.group(3) if m else None,
+                duplicate_of=str(dup.relative_to(root)) if dup else None,
+                linked=p.name in linked,
+            )
+        )
     return out
 
 
@@ -96,6 +100,7 @@ def compute(ledger_path: Path, cfg: config.Config | None = None) -> list[InboxDo
 
 
 # ── render ────────────────────────────────────────────────────────────────────
+
 
 def render(docs: list[InboxDoc], console: Console | None = None) -> None:
     console = console or ui.console

@@ -20,7 +20,7 @@ TEMPLATE = Path(__file__).parent / "template.typ"
 
 def _fmt_iban(iban: str) -> str:
     s = iban.replace(" ", "")
-    return " ".join(s[i:i + 4] for i in range(0, len(s), 4))
+    return " ".join(s[i : i + 4] for i in range(0, len(s), 4))
 
 
 def _fmt_date(d: date, language: str, country: str) -> str:
@@ -28,8 +28,9 @@ def _fmt_date(d: date, language: str, country: str) -> str:
     return format_date(d, format="medium", locale=f"{language}_{country}")
 
 
-def build_context(inv: Invoice, issuer: Issuer, totals: Totals, payment: dict,
-                  reverse_charge: bool = False) -> dict:
+def build_context(
+    inv: Invoice, issuer: Issuer, totals: Totals, payment: dict, reverse_charge: bool = False
+) -> dict:
     lbl = get_labels(inv.language)
     return {
         "reverse_charge": reverse_charge,
@@ -37,36 +38,61 @@ def build_context(inv: Invoice, issuer: Issuer, totals: Totals, payment: dict,
         "kind": inv.kind,
         "currency": inv.currency,
         "labels": lbl,
-        "issuer": {"name": issuer.name, "address": issuer.address,
-                   "vat_id": issuer.vat_id, "country": issuer.country,
-                   "email": issuer.email, "phone": issuer.phone},
-        "customer": {"name": inv.customer.name, "address": inv.customer.address,
-                     "country": inv.customer.country, "vat_id": inv.customer.vat_id},
-        "invoice": {"number": inv.number, "supply": inv.supply,
-                    "issue_date": _fmt_date(inv.issue_date, inv.language, issuer.country)},
-        "terms": (lbl["terms"].format(days=inv.terms_days)
-                  if inv.terms_days is not None else None),
-        "items": [{"pos": i + 1, "description": it.description,
-                   "quantity": f"{it.quantity:g}", "unit": it.unit,
-                   "unit_price": money(it.unit_price), "total": money(it.total)}
-                  for i, it in enumerate(inv.items)],
-        "totals": {"subtotal": money(totals.subtotal), "vat_rate": f"{totals.vat_rate:g}",
-                   "vat_amount": money(totals.vat_amount), "rounding": money(totals.rounding),
-                   "show_rounding": totals.rounding != 0,
-                   "grand_total": money(totals.grand_total), "export": inv.kind == "export"},
+        "issuer": {
+            "name": issuer.name,
+            "address": issuer.address,
+            "vat_id": issuer.vat_id,
+            "country": issuer.country,
+            "email": issuer.email,
+            "phone": issuer.phone,
+        },
+        "customer": {
+            "name": inv.customer.name,
+            "address": inv.customer.address,
+            "country": inv.customer.country,
+            "vat_id": inv.customer.vat_id,
+        },
+        "invoice": {
+            "number": inv.number,
+            "supply": inv.supply,
+            "issue_date": _fmt_date(inv.issue_date, inv.language, issuer.country),
+        },
+        "terms": (lbl["terms"].format(days=inv.terms_days) if inv.terms_days is not None else None),
+        "items": [
+            {
+                "pos": i + 1,
+                "description": it.description,
+                "quantity": f"{it.quantity:g}",
+                "unit": it.unit,
+                "unit_price": money(it.unit_price),
+                "total": money(it.total),
+            }
+            for i, it in enumerate(inv.items)
+        ],
+        "totals": {
+            "subtotal": money(totals.subtotal),
+            "vat_rate": f"{totals.vat_rate:g}",
+            "vat_amount": money(totals.vat_amount),
+            "rounding": money(totals.rounding),
+            "show_rounding": totals.rounding != 0,
+            "grand_total": money(totals.grand_total),
+            "export": inv.kind == "export",
+        },
         "payment": payment,
         "notes": list(inv.notes),
-        "brand": {"accent": issuer.brand.accent, "font": issuer.brand.font,
-                  "font_display": issuer.brand.font_display or issuer.brand.font,
-                  "display_stretch": issuer.brand.font_display_stretch,
-                  "logo": None},
+        "brand": {
+            "accent": issuer.brand.accent,
+            "font": issuer.brand.font,
+            "font_display": issuer.brand.font_display or issuer.brand.font,
+            "display_stretch": issuer.brand.font_display_stretch,
+            "logo": None,
+        },
     }
 
 
 def _compile(main: Path, output: Path, root: Path, font_paths: list) -> None:
     """Compile to PDF/A-2b (archival) when supported, else a plain PDF."""
-    kwargs = {"output": str(output), "root": str(root),
-              "font_paths": [str(p) for p in font_paths]}
+    kwargs = {"output": str(output), "root": str(root), "font_paths": [str(p) for p in font_paths]}
     try:
         typst.compile(str(main), pdf_standards="a-2b", **kwargs)
     except (TypeError, ValueError):  # older typst-py, or standard unsupported
@@ -108,9 +134,12 @@ def render(inv: Invoice, issuer: Issuer, out_path: Path) -> tuple[Path, Totals, 
                     f"export invoice in {inv.currency} needs a regular `iban` "
                     f"(a QR-IBAN cannot receive normal credit transfers)"
                 )
-            payment = {"type": "sepa", "iban": _fmt_iban(account.iban),
-                       "bic": account.bic,
-                       "reference": _fmt_iban(inv.reference or make_scor(inv.number))}
+            payment = {
+                "type": "sepa",
+                "iban": _fmt_iban(account.iban),
+                "bic": account.bic,
+                "reference": _fmt_iban(inv.reference or make_scor(inv.number)),
+            }
 
         ctx = build_context(inv, issuer, totals, payment, reverse_charge)
         logo = issuer.brand.logo

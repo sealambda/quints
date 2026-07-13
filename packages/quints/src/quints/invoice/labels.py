@@ -19,9 +19,8 @@ LABELS = {
         "reference": "Referenz",
         "terms": "Zahlbar innert {days} Tagen netto.",
         "export_note": "Nicht der schweizerischen MWST unterliegend: Ort der "
-                       "Leistung im Ausland (Art. 8 Abs. 1 MWSTG).",
-        "reverse_charge": "Reverse Charge — die Steuer ist vom Leistungsempfänger "
-                          "abzurechnen.",
+        "Leistung im Ausland (Art. 8 Abs. 1 MWSTG).",
+        "reverse_charge": "Reverse Charge — die Steuer ist vom Leistungsempfänger abzurechnen.",
     },
     "en": {
         "invoice": "Invoice",
@@ -41,7 +40,7 @@ LABELS = {
         "reference": "Reference",
         "terms": "Payable within {days} days net.",
         "export_note": "Not subject to Swiss VAT: place of supply abroad "
-                       "(Art. 8 para. 1 Swiss VAT Act).",
+        "(Art. 8 para. 1 Swiss VAT Act).",
         "reverse_charge": "Reverse charge — VAT to be accounted for by the recipient.",
     },
 }

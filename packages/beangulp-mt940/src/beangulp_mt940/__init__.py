@@ -21,9 +21,9 @@ constructor parameters.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import timedelta
 from decimal import Decimal
-from typing import Iterable, Sequence
 
 import beangulp
 import mt940
@@ -63,8 +63,7 @@ class Importer(beangulp.Importer):
         self._currency = currency
         self._meta_key = meta_key
         self._rules = [
-            (re.compile(pattern, re.IGNORECASE), acct, flag)
-            for pattern, acct, flag in payee_rules
+            (re.compile(pattern, re.IGNORECASE), acct, flag) for pattern, acct, flag in payee_rules
         ]
         self._review_flag = review_flag
 
@@ -130,8 +129,14 @@ class Importer(beangulp.Importer):
 
             entries.append(
                 data.Transaction(
-                    meta, d["date"], flag, payee, narration,
-                    data.EMPTY_SET, data.EMPTY_SET, postings,
+                    meta,
+                    d["date"],
+                    flag,
+                    payee,
+                    narration,
+                    data.EMPTY_SET,
+                    data.EMPTY_SET,
+                    postings,
                 )
             )
 

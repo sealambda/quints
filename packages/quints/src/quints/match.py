@@ -41,7 +41,7 @@ _TOL = Decimal("0.005")
 
 @dataclass
 class Match:
-    kind: str            # payment→invoice | draft→inbox | inbox→booked
+    kind: str  # payment→invoice | draft→inbox | inbox→booked
     score: float
     source: dict
     target: dict
@@ -53,7 +53,7 @@ def reference_index(open_invoices) -> dict[str, str]:
     idx: dict[str, str] = {}
     for inv in open_invoices:
         idx[inv.number.upper()] = inv.number
-        idx[make_qrr(inv.number)] = inv.number   # QRR — QR-IBAN payments
+        idx[make_qrr(inv.number)] = inv.number  # QRR — QR-IBAN payments
         idx[make_scor(inv.number)] = inv.number  # SCOR/RF — SEPA transfers
     return idx
 
@@ -87,13 +87,22 @@ def load_staging(staging_dir: Path) -> list[tuple[str, data.Transaction]]:
 
 def _txn_dict(staging_file: str | None, t: data.Transaction) -> dict:
     units = t.postings[0].units
-    return {"staging_file": staging_file, "date": str(t.date), "payee": t.payee,
-            "narration": t.narration, "amount": str(units.number),
-            "currency": units.currency}
+    return {
+        "staging_file": staging_file,
+        "date": str(t.date),
+        "payee": t.payee,
+        "narration": t.narration,
+        "amount": str(units.number),
+        "currency": units.currency,
+    }
 
 
-def compute(ledger_path: Path, staging_dir: Path | None = None,
-            today: Date | None = None, cfg: config.Config | None = None) -> list[Match]:
+def compute(
+    ledger_path: Path,
+    staging_dir: Path | None = None,
+    today: Date | None = None,
+    cfg: config.Config | None = None,
+) -> list[Match]:
     cfg = cfg or config.get()
     today = today or datetime.now(timezone.utc).date()
     root = ledger_path.resolve().parent
@@ -101,8 +110,7 @@ def compute(ledger_path: Path, staging_dir: Path | None = None,
 
     entries, _ = ledger.load_entries(ledger_path)
     opens = receivables.compute_from_entries(entries, today, cfg)
-    docs = [d for d in inbox_mod.scan(root, entries)
-            if not d.duplicate_of and not d.linked]
+    docs = [d for d in inbox_mod.scan(root, entries) if not d.duplicate_of and not d.linked]
     drafts = load_staging(staging_dir) if staging_dir.is_dir() else []
 
     matches: list[Match] = []
@@ -110,46 +118,65 @@ def compute(ledger_path: Path, staging_dir: Path | None = None,
     by_number = {o.number: o for o in opens}
 
     def inv_dict(o) -> dict:
-        return {"invoice": o.number, "payee": o.payee, "date": str(o.invoice_date),
-                "open": str(o.open_amount), "currency": o.currency}
+        return {
+            "invoice": o.number,
+            "payee": o.payee,
+            "date": str(o.invoice_date),
+            "open": str(o.open_amount),
+            "currency": o.currency,
+        }
 
     for fname, t in drafts:
         units = t.postings[0].units
         src = _txn_dict(fname, t)
 
         if units.number > 0:  # incoming → open invoice
-            blob = " ".join([t.payee or "", t.narration or ""]
-                            + [str(v) for v in (t.meta or {}).values()]).upper()
+            blob = " ".join(
+                [t.payee or "", t.narration or ""] + [str(v) for v in (t.meta or {}).values()]
+            ).upper()
             compact = re.sub(r"[^A-Z0-9]", "", blob)
             hit = next((n for ref, n in ref_idx.items() if ref in compact), None)
             if hit:
-                matches.append(Match("payment→invoice", 1.0, src, inv_dict(by_number[hit]),
-                                     ["invoice reference in payment details"]))
+                matches.append(
+                    Match(
+                        "payment→invoice",
+                        1.0,
+                        src,
+                        inv_dict(by_number[hit]),
+                        ["invoice reference in payment details"],
+                    )
+                )
                 continue
             for o in opens:
                 psim = similarity(t.payee, o.payee)
                 exact = o.currency == units.currency and abs(o.open_amount - units.number) <= _TOL
                 score = round(0.6 * psim + 0.4 * exact, 2)
                 if score >= THRESHOLD:
-                    matches.append(Match("payment→invoice", score, src, inv_dict(o), [
-                        f"payee ≈ {psim:.2f}",
-                        f"amount {'equals' if exact else 'differs from'} open "
-                        f"{o.open_amount} {o.currency}",
-                    ]))
+                    matches.append(
+                        Match(
+                            "payment→invoice",
+                            score,
+                            src,
+                            inv_dict(o),
+                            [
+                                f"payee ≈ {psim:.2f}",
+                                f"amount {'equals' if exact else 'differs from'} open "
+                                f"{o.open_amount} {o.currency}",
+                            ],
+                        )
+                    )
         else:  # outgoing → inbox document
             for d in docs:
                 psim = similarity(t.payee, d.payee_hint or d.name)
                 if d.date_hint:
                     dsc = date_score(t.date, Date.fromisoformat(d.date_hint), 14)
                     score = round(0.7 * psim + 0.3 * dsc, 2)
-                    reasons = [f"payee ≈ {psim:.2f}",
-                               f"dated {d.date_hint} vs paid {t.date}"]
+                    reasons = [f"payee ≈ {psim:.2f}", f"dated {d.date_hint} vs paid {t.date}"]
                 else:
                     score = round(0.8 * psim, 2)
                     reasons = [f"payee ≈ {psim:.2f}", "no date in filename"]
                 if score >= THRESHOLD:
-                    matches.append(Match("draft→inbox", score, src,
-                                         {"document": d.name}, reasons))
+                    matches.append(Match("draft→inbox", score, src, {"document": d.name}, reasons))
 
     # inbox document → booked transaction still missing its document link
     dated_docs = [d for d in docs if d.date_hint]
@@ -168,17 +195,22 @@ def compute(ledger_path: Path, staging_dir: Path | None = None,
                 psim = similarity(e.payee, d.payee_hint or d.name)
                 score = round(0.7 * psim + 0.3 * dsc, 2)
                 if score >= THRESHOLD:
-                    matches.append(Match(
-                        "inbox→booked", score, {"document": d.name},
-                        {**_txn_dict(None, e), "staging_file": None},
-                        [f"payee ≈ {psim:.2f}", f"dated {d.date_hint} vs booked {e.date}"],
-                    ))
+                    matches.append(
+                        Match(
+                            "inbox→booked",
+                            score,
+                            {"document": d.name},
+                            {**_txn_dict(None, e), "staging_file": None},
+                            [f"payee ≈ {psim:.2f}", f"dated {d.date_hint} vs booked {e.date}"],
+                        )
+                    )
 
     matches.sort(key=lambda m: -m.score)
     return matches
 
 
 # ── render ────────────────────────────────────────────────────────────────────
+
 
 def render(matches: list[Match], console: Console | None = None) -> None:
     console = console or ui.console
@@ -198,10 +230,16 @@ def render(matches: list[Match], console: Console | None = None) -> None:
         style = "ok" if m.score >= 0.9 else ("warn" if m.score >= 0.7 else "muted")
         src = m.source.get("document") or (
             f"{m.source['date']} {m.source['payee'] or '?'} "
-            f"{m.source['amount']} {m.source['currency']}")
-        tgt = m.target.get("invoice") or m.target.get("document") or (
-            f"{m.target['date']} {m.target['payee'] or '?'} "
-            f"{m.target['amount']} {m.target['currency']}")
+            f"{m.source['amount']} {m.source['currency']}"
+        )
+        tgt = (
+            m.target.get("invoice")
+            or m.target.get("document")
+            or (
+                f"{m.target['date']} {m.target['payee'] or '?'} "
+                f"{m.target['amount']} {m.target['currency']}"
+            )
+        )
         t.add_row(f"[{style}]{m.score:.2f}[/]", m.kind, src, tgt, "; ".join(m.reasons))
     console.print(t)
     console.print()

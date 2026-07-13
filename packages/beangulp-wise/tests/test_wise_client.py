@@ -1,6 +1,7 @@
 """Tests for the thin Wise API client (no network)."""
 
 import pytest
+
 from beangulp_wise.client import ScaChallenge, WiseClient, sign_sca_token
 
 

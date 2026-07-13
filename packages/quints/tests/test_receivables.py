@@ -33,7 +33,7 @@ LEDGER = """
 def test_open_invoices_and_aging(tmp_path):
     led = tmp_path / "m.bean"
     led.write_text(LEDGER)
-    open_invoices, at = receivables.compute(led, date(2026, 7, 1), config.Config())
+    open_invoices, _at = receivables.compute(led, date(2026, 7, 1), config.Config())
     assert [o.number for o in open_invoices] == ["ACME202605"]  # 202606 fully paid
     o = open_invoices[0]
     assert o.open_amount == Decimal("400.00")
@@ -52,13 +52,16 @@ def test_at_date_excludes_later_payments(tmp_path):
 
 def test_posting_level_invoice_metadata_reallocates(tmp_path):
     led = tmp_path / "m.bean"
-    led.write_text(LEDGER + """
+    led.write_text(
+        LEDGER
+        + """
 2026-06-25 * "ACME" "May residual settled with June payment (relink)" ^ACME202605 ^ACME202606
   Assets:CH:GmbH:Receivable:Trade       -400.00 CHF
     invoice: "ACME202605"
   Assets:CH:GmbH:Receivable:Trade        400.00 CHF
     invoice: "ACME202606"
-""")
+"""
+    )
     open_invoices, _ = receivables.compute(led, date(2026, 7, 1), config.Config())
     # 202605 closed by the relink; 202606 reopened by it
     assert {(o.number, o.open_amount) for o in open_invoices} == {

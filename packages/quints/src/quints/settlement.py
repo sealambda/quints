@@ -2,10 +2,10 @@
 
 A settlement crystallizes a period's accrued VAT into the PayableVAT liability:
 it debits OutputVAT (303) and Bezugsteuer (382) and credits InputVAT (479),
-leaving the net (500) owed to the ESTV. Payment follows later — Swiss VAT is due 60 days after period end
-(Art. 86 MWSTG). Settlement and its eventual payment share a ``^VAT-<period>``
-link, and the settlement carries a ``due:`` date, so outstanding liabilities can
-be listed until paid.
+leaving the net (500) owed to the ESTV. Payment follows later — Swiss VAT is due
+60 days after period end (Art. 86 MWSTG). Settlement and its eventual payment
+share a ``^VAT-<period>`` link, and the settlement carries a ``due:`` date, so
+outstanding liabilities can be listed until paid.
 
 Like `vat`, this only *prints* the transaction to paste — it never writes the
 ledger. The emitted balance assertions make bean-check verify the flush.
@@ -58,7 +58,9 @@ def _payable_balance(entries, upto: Date, cfg: config.Config) -> Decimal:
 
 
 def build_settlement(
-    ledger_path: Path, report: MwstReport, label: str | None = None,
+    ledger_path: Path,
+    report: MwstReport,
+    label: str | None = None,
     cfg: config.Config | None = None,
 ) -> Settlement:
     d1 = Date.fromisoformat(report.date_to)
@@ -128,8 +130,9 @@ def _as_date(v):
         return None
 
 
-def outstanding(ledger_path: Path, today: Date | None = None,
-                cfg: config.Config | None = None, entries=None):
+def outstanding(
+    ledger_path: Path, today: Date | None = None, cfg: config.Config | None = None, entries=None
+):
     """Return (liabilities, unlinked_owed, total_owed, today).
 
     Groups PayableVAT movements by their ``^VAT-*`` link; a link nets to zero once
@@ -147,7 +150,7 @@ def outstanding(ledger_path: Path, today: Date | None = None,
     for e in entries:
         if not isinstance(e, data.Transaction):
             continue
-        link = next((l for l in (e.links or ()) if l.startswith("VAT-")), None)
+        link = next((lk for lk in (e.links or ()) if lk.startswith("VAT-")), None)
         due = e.meta.get("due") if e.meta else None
         for p in e.postings:
             if p.account != cfg.payable_vat:
@@ -173,8 +176,8 @@ def outstanding(ledger_path: Path, today: Date | None = None,
                 days_left=(due_date - today).days if due_date else None,
             )
         )
-    liabilities.sort(key=lambda l: l.due or "9999-12-31")
-    total = sum((l.owed for l in liabilities), Decimal("0")) + (-unlinked)
+    liabilities.sort(key=lambda liab: liab.due or "9999-12-31")
+    total = sum((liab.owed for liab in liabilities), Decimal("0")) + (-unlinked)
     return liabilities, -unlinked, total, today
 
 
@@ -191,9 +194,7 @@ def render_settlement(s: Settlement, console: Console | None = None) -> None:
     console.print()
 
 
-def render_status(
-    liabilities, unlinked, total, today, console: Console | None = None
-) -> None:
+def render_status(liabilities, unlinked, total, today, console: Console | None = None) -> None:
     console = console or ui.console
     console.print()
     console.rule(f"[bold]VAT status[/]  ·  {today}")
@@ -207,15 +208,15 @@ def render_status(
     t.add_column("Owed CHF", justify="right", no_wrap=True)
     t.add_column("Due", no_wrap=True)
     t.add_column("Status", no_wrap=True)
-    for l in liabilities:
-        if l.days_left is None:
+    for liab in liabilities:
+        if liab.days_left is None:
             status = "[muted]no due date[/]"
-        elif l.days_left < 0:
-            status = f"[owe]OVERDUE {-l.days_left} d[/]"
+        elif liab.days_left < 0:
+            status = f"[owe]OVERDUE {-liab.days_left} d[/]"
         else:
-            style = "warn" if l.days_left <= 14 else "muted"
-            status = f"[{style}]in {l.days_left} d[/]"
-        t.add_row(l.period, ui.money(l.owed), l.due or "—", status)
+            style = "warn" if liab.days_left <= 14 else "muted"
+            status = f"[{style}]in {liab.days_left} d[/]"
+        t.add_row(liab.period, ui.money(liab.owed), liab.due or "—", status)
     if unlinked:
         t.add_row("[muted](unlinked)[/]", ui.money(unlinked), "—", "")
     t.add_section()

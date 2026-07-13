@@ -41,10 +41,10 @@ class Revaluation:
     currency: str
     account: str
     units: Decimal
-    book_chf: Decimal      # implicit book value (booked rates / txn-date BAZG)
-    market_chf: Decimal    # units at the report-date BAZG rate
-    rate: Decimal          # report-date rate used
-    rate_date: Date        # BAZG date of that rate
+    book_chf: Decimal  # implicit book value (booked rates / txn-date BAZG)
+    market_chf: Decimal  # units at the report-date BAZG rate
+    rate: Decimal  # report-date rate used
+    rate_date: Date  # BAZG date of that rate
 
     @property
     def delta(self) -> Decimal:
@@ -58,8 +58,7 @@ class RateUnavailable(RuntimeError):
         self.ccy, self.on = ccy, on
 
 
-def compute(ledger_path: Path, at: str,
-            cfg: config.Config | None = None) -> list[Revaluation]:
+def compute(ledger_path: Path, at: str, cfg: config.Config | None = None) -> list[Revaluation]:
     cfg = cfg or config.get()
     on = Date.fromisoformat(at)
     entries, _ = ledger.load_entries(ledger_path)
@@ -113,8 +112,9 @@ def compute(ledger_path: Path, at: str,
     return revaluations
 
 
-def revaluation_text(revaluations: list[Revaluation], at: str,
-                     cfg: config.Config | None = None) -> str:
+def revaluation_text(
+    revaluations: list[Revaluation], at: str, cfg: config.Config | None = None
+) -> str:
     """Paste-ready ledger text, one transaction per currency."""
     cfg = cfg or config.get()
     by_ccy: dict[str, list[Revaluation]] = {}
