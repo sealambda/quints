@@ -1,6 +1,8 @@
-# Publish the `quints` CLI to PyPI on a version tag (v1.2.3).
-# Trusted publishing (OIDC) — no API token. Only `quints` is published; the
-# beangulp-*/beanprice-* building blocks stay in the repo.
+# Publish all five distributions to PyPI on a version tag (v1.2.3).
+# Trusted publishing (OIDC) — no API token. `quints` imports the
+# beangulp-*/beanprice-* building blocks at runtime, so they must be on PyPI
+# too or `uvx quints` cannot resolve; each project needs its own trusted
+# publisher configured on PyPI for this workflow.
 # https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/
 name: Publish
 
@@ -11,7 +13,7 @@ on:
 
 jobs:
   build:
-    name: Build quints 📦
+    name: Build all distributions 📦
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,15 +23,15 @@ jobs:
       - run: uv sync --all-packages
       - name: Quality gate
         run: make check
-      - name: Build the quints distribution
-        run: uv build --package quints
+      - name: Build all workspace distributions
+        run: uv build --all-packages
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
 
   publish-to-pypi:
-    name: Publish quints 🐍 to PyPI
+    name: Publish 🐍 to PyPI
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -43,6 +45,10 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Building blocks are versioned independently of quints; a tag that
+          # doesn't bump one of them re-builds an already-published version.
+          skip-existing: true
 
   github-release:
     name: Sign 📦 with Sigstore and create a GitHub Release

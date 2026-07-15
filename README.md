@@ -100,8 +100,8 @@ diverge from your books.
 ## The building blocks
 
 `quints` is assembled from standalone distributions, each useful on its own in
-any beancount setup. They live in this repo; **`quints` is the one published to
-PyPI** — the rest are vendored here.
+any beancount setup. They all live in this repo and are all published to PyPI —
+installing `quints` pulls them in.
 
 | Package | What it does |
 |---|---|
@@ -121,5 +121,5 @@ make check     # ruff, basedpyright, import-linter, deptry, vulture, pytest
 ```
 
 `make check` is the whole quality gate; CI runs exactly it. Pushing a `vX.Y.Z`
-tag builds and publishes `quints` to PyPI (trusted publishing). See
+tag builds and publishes all five distributions to PyPI (trusted publishing). See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the architecture and conventions.

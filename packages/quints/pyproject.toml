@@ -1,6 +1,6 @@
 [project]
 name = "quints"
-version = "0.1.0"
+version = "0.1.1"
 description = "Swiss VAT & accounting toolkit for plain-text (beancount) books: MWST reports and quarterly settlement, Bezugsteuer helpers, BAZG daily FX rates, QR-bill invoicing, KMU statutory statements, and statement importers (UBS MT940, Wise, Stripe) that draft into a staging area"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,10 +12,10 @@ keywords = [
 dependencies = [
     "babel>=2.13",
     "beancount>=3.2.0",
-    "beangulp-mt940",
-    "beangulp-stripe",
-    "beangulp-wise[sca]",
-    "beanprice-bazg",
+    "beangulp-mt940>=0.1.0",
+    "beangulp-stripe>=0.1.0",
+    "beangulp-wise[sca]>=0.1.0",
+    "beanprice-bazg>=0.1.0",
     "fava>=1.30",
     "pydantic>=2.7",
     "python-stdnum>=1.20",
