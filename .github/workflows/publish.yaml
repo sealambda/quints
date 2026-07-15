@@ -1,8 +1,13 @@
 # Publish all five distributions to PyPI on a version tag (v1.2.3).
 # Trusted publishing (OIDC) — no API token. `quints` imports the
 # beangulp-*/beanprice-* building blocks at runtime, so they must be on PyPI
-# too or `uvx quints` cannot resolve; each project needs its own trusted
-# publisher configured on PyPI for this workflow.
+# too or `uvx quints` cannot resolve.
+#
+# Each package publishes from its own GitHub environment (`pypi-<package>`),
+# because PyPI rejects two *pending* trusted publishers with the identical
+# (repo, workflow, environment) configuration — one environment shared by all
+# five can only ever be registered for one project name. On PyPI, register the
+# publisher for each project with environment `pypi-<package>`.
 # https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/
 name: Publish
 
@@ -31,12 +36,21 @@ jobs:
           path: dist/
 
   publish-to-pypi:
-    name: Publish 🐍 to PyPI
+    name: Publish ${{ matrix.package }} 🐍 to PyPI
     needs: build
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - quints
+          - beangulp-mt940
+          - beangulp-stripe
+          - beangulp-wise
+          - beanprice-bazg
     environment:
-      name: pypi
-      url: https://pypi.org/p/quints
+      name: pypi-${{ matrix.package }}
+      url: https://pypi.org/p/${{ matrix.package }}
     permissions:
       id-token: write        # trusted publishing
     steps:
@@ -44,8 +58,13 @@ jobs:
         with:
           name: dist
           path: dist/
+      - name: Select this package's distributions
+        run: |
+          mkdir package-dist
+          cp dist/"$(echo '${{ matrix.package }}' | tr - _)"-* package-dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          packages-dir: package-dist
           # Building blocks are versioned independently of quints; a tag that
           # doesn't bump one of them re-builds an already-published version.
           skip-existing: true
