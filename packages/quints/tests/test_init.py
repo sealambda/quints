@@ -210,8 +210,68 @@ def test_sample_invoices_render_and_reconcile(tmp_path: Path):
     assert cc.found and cc.ok and cc.date_ok
 
 
+def test_cli_scaffold_to_invoice_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # The exact steps a new user types, through the CLI: `quints init …
+    # --samples`, then `quints invoice` on each sample invoice inside the
+    # project. Guards the whole chain — invoicing/ lands on disk, quints.toml
+    # resolves from the cwd, the QR-bill renders, the ledger cross-check
+    # matches. Einzelfirma on purpose: its account namespace differs from the
+    # built-in defaults, so a config-resolution regression can't hide.
+    proj = tmp_path / "jane-books"
+    res = runner.invoke(
+        app,
+        [
+            "init",
+            str(proj),
+            "--name",
+            "Jane Doe",
+            "--legal-form",
+            "einzelfirma",
+            "--lang",
+            "en",
+            "--samples",
+        ],
+    )
+    assert res.exit_code == 0, res.output
+    for rel in (
+        "invoicing/issuer.yaml",
+        "invoicing/customers.yaml",
+        "invoicing/acme-2026-07.yaml",
+        "invoicing/globex-2026-08.yaml",
+    ):
+        assert (proj / rel).exists(), f"scaffold did not create {rel}:\n{res.output}"
+
+    monkeypatch.chdir(proj)
+    for invoice_file, number in (("acme-2026-07", "INV2026014"), ("globex-2026-08", "INV2026015")):
+        res = runner.invoke(app, ["invoice", f"invoicing/{invoice_file}.yaml"])
+        assert res.exit_code == 0, res.output
+        assert "Ledger match" in res.output, res.output
+        assert (proj / f"{number}.pdf").exists()
+
+
 def test_no_invoicing_files_without_samples():
     assert not any(f.path.parts[0] == "invoicing" for f in init.plan(init.Answers()))
+
+
+def test_cli_init_without_tty_aborts_cleanly_before_writing(tmp_path: Path):
+    # `init` prompts for unanswered questions; with no stdin (agent, script,
+    # CI) the prompt aborts — that must happen BEFORE anything is written, so
+    # a failed run never leaves a half-scaffolded project. Non-interactive
+    # callers pass the full flag set, --yes, or --answers.
+    proj = tmp_path / "books"
+    res = runner.invoke(app, ["init", str(proj), "--samples"])
+    assert res.exit_code != 0
+    assert not proj.exists()
+
+
+def test_cli_version_flag():
+    # `quints --version` must report the installed distribution's version —
+    # the first thing to check when a scaffold is missing newer files.
+    from importlib.metadata import version
+
+    res = runner.invoke(app, ["--version"])
+    assert res.exit_code == 0
+    assert res.output.strip() == version("quints")
 
 
 def test_cli_init_answers_file_and_force(tmp_path: Path):

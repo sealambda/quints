@@ -57,10 +57,25 @@ app = typer.Typer(
 )
 
 
+def _print_version(value: bool) -> None:
+    if value:
+        from . import __version__
+
+        typer.echo(__version__)
+        raise typer.Exit()
+
+
 @app.callback()
 def _main(
     config: Path | None = typer.Option(
         None, "--config", help="quints.toml path (default: ./quints.toml, else built-in defaults)."
+    ),
+    version: bool = typer.Option(
+        False,
+        "--version",
+        help="Print the quints version and exit.",
+        callback=_print_version,
+        is_eager=True,
     ),
 ):
     config_mod.set_path(config)
