@@ -21,6 +21,11 @@ dev = [
     "ruff>=0.15.21",
     "vulture>=2.16",
 ]
+# Zensical is alpha (0.0.x) and regresses between patches — pin exactly,
+# bump deliberately after checking the release notes.
+docs = [
+    "zensical==0.0.50",
+]
 
 [tool.uv]
 package = false

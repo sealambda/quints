@@ -1,0 +1,72 @@
+# Docs site (https://sealambda.github.io/quints/). Build: `make docs`,
+# preview: `make docs-serve`. Zensical is pinned in pyproject.toml — see the
+# docs dependency group. Every quints command shown in docs/ is executed by
+# packages/quints/tests/test_docs.py; docs that don't run don't merge.
+
+[project]
+site_name = "quints"
+site_description = "Swiss VAT & accounting for plain-text (beancount) books — MWST returns, QR-bill invoicing, KMU statutory statements, statement importers."
+site_url = "https://sealambda.github.io/quints/"
+repo_url = "https://github.com/sealambda/quints"
+copyright = "Copyright &copy; 2026 Sealambda GmbH — GPL-2.0-only"
+
+nav = [
+    { "quints" = "index.md" },
+    { "Getting started" = "getting-started.md" },
+    { "Legal forms" = "legal-forms.md" },
+    { "Guides" = [{ "Quarterly VAT (MWST)" = "guides/vat.md" }, { "Import statements" = "guides/importing.md" }, { "Invoicing" = "guides/invoicing.md" }, { "Statutory reports" = "guides/reports.md" }, { "FX rates" = "guides/fx.md" }] },
+    { "Reference" = [{ "quints.toml" = "reference/configuration.md" }, { "Working with AI agents" = "reference/ai-agents.md" }] },
+]
+
+[project.theme]
+language = "en"
+features = [
+    "content.code.copy",
+    "content.code.annotate",
+    "content.tabs.link",
+    "content.tooltips",
+    "navigation.footer",
+    "navigation.indexes",
+    "navigation.instant",
+    "navigation.instant.prefetch",
+    "navigation.path",
+    "navigation.sections",
+    "navigation.top",
+    "navigation.tracking",
+    "search.highlight",
+    "toc.follow",
+]
+
+[[project.theme.palette]]
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/sealambda/quints"
+
+[project.markdown_extensions.admonition]
+[project.markdown_extensions.attr_list]
+[project.markdown_extensions.def_list]
+[project.markdown_extensions.footnotes]
+[project.markdown_extensions.md_in_html]
+[project.markdown_extensions.toc]
+permalink = true
+[project.markdown_extensions.pymdownx.betterem]
+[project.markdown_extensions.pymdownx.details]
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+line_spans = "__span"
+pygments_lang_class = true
+[project.markdown_extensions.pymdownx.inlinehilite]
+[project.markdown_extensions.pymdownx.magiclink]
+[project.markdown_extensions.pymdownx.superfences]
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+combine_header_slug = true

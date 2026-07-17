@@ -1,5 +1,5 @@
 # Illustrative invoice for the example project — NOT emitted by `quints init`.
-# It ties to the ^INV2026014 booking in main.bean (net 1000 + 8.1% VAT = 1081),
+# It ties to the ^INV2026014 booking in books/2026.bean (net 1000 + 8.1% VAT = 1081),
 # so `quints invoice … --verify` reconciles the PDF against the ledger.
 number: INV2026014
 kind: domestic

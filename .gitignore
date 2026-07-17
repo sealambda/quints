@@ -6,6 +6,7 @@ build/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+site/
 .env
 .DS_Store
 .claude/settings.local.json

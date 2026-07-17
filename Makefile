@@ -3,7 +3,7 @@
 
 PKG_DIRS := packages/quints packages/beangulp-mt940 packages/beangulp-stripe packages/beangulp-wise packages/beanprice-bazg
 
-.PHONY: check static test format typebaseline
+.PHONY: check static test format typebaseline docs docs-serve
 
 check: static test
 
@@ -30,3 +30,12 @@ format:
 # baselined errors) — never to bury new ones.
 typebaseline:
 	uv run basedpyright --writebaseline
+
+# Docs site (Zensical → site/). Every quints command in docs/ and README.md
+# is executed by tests/test_docs.py — `make check` guards the content,
+# `make docs` the build.
+docs:
+	uv run --only-group docs zensical build --clean
+
+docs-serve:
+	uv run --only-group docs zensical serve

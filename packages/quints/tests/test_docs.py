@@ -1,15 +1,34 @@
-"""Every command shown in the README must actually run.
+"""Every quints command shown in the docs must actually run.
 
-The README tells a newcomer to `cd packages/quints/examples` and run these
-commands. This copies that example to a scratch dir, changes into it, and runs
-each *literal* command through the CLI (no `--config`/`--file` overrides — the
-same resolution a copy-paste gets), asserting a clean exit. If a documented
-command breaks — a renamed flag, a changed default — this fails, so the docs
-can't silently rot. `prices sync` is excluded by design (it needs network);
-`init` is covered by test_init.
+The docs site (docs/**/*.md) and the README promise commands; this extracts
+them from the fenced code blocks and runs each page as a session — a fresh
+copy of the example project, commands executed in document order through the
+CLI (no --config/--file overrides — the same resolution a copy-paste gets),
+asserting a clean exit. If a documented command breaks — a renamed flag, a
+changed default — this fails, so the docs can't silently rot.
+
+Extraction rules (documented here because docs authors rely on them):
+
+- Only ``bash`` and ``console`` fences are scanned. In console blocks just
+  the ``$ ``-prefixed lines are commands (the rest is output); in bash
+  blocks every non-comment line is considered.
+- Only ``quints …`` and ``cd …`` lines execute. Anything else (uv, git,
+  pipx, …) is skipped — this suite runs offline and in-process.
+- A line containing a ``<placeholder>`` is skipped: it documents a pattern,
+  not a runnable invocation. Prefer concrete commands where possible.
+- An HTML comment containing ``no-test`` on the line above a fence skips the
+  whole block (network commands, credential-dependent fetches).
+- ``cd`` into a directory that doesn't exist (e.g. after a skipped
+  ``git clone``) is skipped too.
 """
 
+from __future__ import annotations
+
+import os
+import re
+import shlex
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -18,31 +37,76 @@ from typer.testing import CliRunner
 from quints.cli import app
 
 runner = CliRunner()
+REPO = Path(__file__).resolve().parents[3]
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 
-# Exactly the runnable commands in README.md's "by the job" sections.
-README_COMMANDS: list[list[str]] = [
-    ["check"],
-    ["mwst", "-q", "2026-Q3"],
-    ["status"],
-    ["receivables"],
-    ["report", "bilanz", "--at", "2026-12-31"],
-    ["report", "erfolg", "--year", "2026"],
-    ["report", "statements", "--year", "2026", "--lang", "de"],
-    ["import", "ubs", "statements/ubs-2026.mt940"],
-    ["invoice", "invoicing/acme-2026-07.yaml"],
-    ["fx", "revalue", "--at", "2026-12-31"],
-]
+DOC_PAGES = sorted(p.relative_to(REPO) for p in (REPO / "docs").rglob("*.md"))
+PAGES = [Path("README.md"), *DOC_PAGES]
+
+_FENCE = re.compile(r"^```(\w*)")
+_NO_TEST = re.compile(r"<!--.*no-test.*-->")
+_PLACEHOLDER = re.compile(r"<[^>]+>")
 
 
-@pytest.mark.parametrize("cmd", README_COMMANDS, ids=lambda c: " ".join(c))
-def test_readme_command_runs(
-    cmd: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@dataclass(frozen=True)
+class _Command:
+    line: str  # verbatim doc line, for failure messages
+    argv: list[str]
+
+
+def _commands(text: str) -> list[_Command]:
+    """The quints/cd command sequence a reader would run for one page."""
+    commands: list[_Command] = []
+    lang: str | None = None  # inside a fence when not None
+    skip_block = False
+    prev = ""
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        fence = _FENCE.match(line)
+        if fence and lang is None:
+            lang = fence.group(1)
+            skip_block = bool(_NO_TEST.search(prev))
+        elif line.startswith("```"):
+            lang = None
+        elif lang in ("bash", "console") and not skip_block:
+            cmd = line.strip()
+            if lang == "console":
+                if not cmd.startswith("$ "):
+                    continue  # output line
+                cmd = cmd[2:]
+            elif cmd.startswith("$ "):
+                cmd = cmd[2:]
+            if _PLACEHOLDER.search(cmd):
+                continue
+            argv = shlex.split(cmd, comments=True)
+            if argv and argv[0] in ("quints", "cd"):
+                commands.append(_Command(line=cmd, argv=argv))
+        prev = line
+    return commands
+
+
+@pytest.mark.parametrize("page", PAGES, ids=str)
+def test_documented_commands_run(
+    page: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    commands = _commands((REPO / page).read_text())
     proj = tmp_path / "example"
     shutil.copytree(EXAMPLES, proj)
-    monkeypatch.chdir(proj)
-    result = runner.invoke(app, cmd)
-    assert result.exit_code == 0, (
-        f"`quints {' '.join(cmd)}` exited {result.exit_code}:\n{result.output}"
-    )
+    monkeypatch.chdir(proj)  # restores the original cwd on teardown
+    for cmd in commands:
+        if cmd.argv[0] == "cd":
+            if Path(cmd.argv[1]).is_dir():
+                os.chdir(cmd.argv[1])
+            continue
+        result = runner.invoke(app, cmd.argv[1:])
+        assert result.exit_code == 0, (
+            f"{page}: `{cmd.line}` exited {result.exit_code}:\n{result.output}"
+        )
+
+
+def test_extractor_sees_the_docs() -> None:
+    # If the docs move or the extractor breaks, the suite above would pass
+    # vacuously. Pin a floor: the site exists and yields real commands.
+    assert len(DOC_PAGES) >= 8, f"docs/ pages missing: found only {DOC_PAGES}"
+    total = sum(len(_commands((REPO / p).read_text())) for p in PAGES)
+    assert total >= 25, f"only {total} documented commands extracted — extractor broken?"

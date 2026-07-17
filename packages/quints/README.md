@@ -2,7 +2,7 @@
 
 Swiss VAT & accounting toolkit for plain-text ([beancount](https://github.com/beancount/beancount)) books.
 
-Everything a Swiss micro-company (GmbH/AG) needs on top of beancount + Fava:
+Everything a Swiss micro-company (GmbH, AG, or Einzelfirma) needs on top of beancount + Fava:
 
 - **MWST**: quarterly VAT report mapped to the ESTV form Ziffern, settlement
   transactions, VAT status, and Bezugsteuer (reverse-charge, Art. 45 ff. MWSTG)

@@ -5,12 +5,16 @@ Plain-text accounting for Swiss micro-companies, on top of
 [Fava](https://github.com/beancount/fava).
 
 Swiss VAT (MWST) returns, Bezugsteuer, QR-bill invoicing, statutory KMU
-statements, and official BAZG FX rates — the things a Swiss GmbH actually has
-to do, on a ledger you own as text. There's no incumbent for this niche, and
+statements, and official BAZG FX rates — the things a Swiss micro-company
+(GmbH, AG, or Einzelfirma) actually has to do, on a ledger you own as text.
+There's no incumbent for this niche, and
 `quints` is built to be **driven by an AI coding agent** (Claude Code, Codex,
 …): it's a deterministic CLI with machine-readable output, so the agent
 proposes bookings and `quints` checks and reports on them — it never calls a
 model itself.
+
+**Docs: [sealambda.github.io/quints](https://sealambda.github.io/quints/)** —
+every command shown there is executed by the test suite.
 
 ## Install
 
@@ -27,7 +31,7 @@ and everything else come bundled; nothing more to install.
 Scaffold a project with a sample quarter already booked, and run against it:
 
 ```bash
-quints init my-books --samples
+quints init my-books --samples --yes   # drop --yes to answer the questionnaire
 cd my-books
 quints mwst -q 2026-Q3
 ```
@@ -75,6 +79,7 @@ quints report statements --year 2026 --lang de   # both, as one PDF
 
 ### Keep FX rates right
 
+<!-- no-test: prices sync needs network; fx revalue is covered by docs/guides/fx.md -->
 ```bash
 quints prices sync                    # official BAZG/EZV daily CHF rates (needs network)
 quints fx revalue --at 2026-12-31     # year-end revaluation entry to paste (Art. 960 OR)
