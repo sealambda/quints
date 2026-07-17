@@ -235,7 +235,7 @@ wheels = [
 
 [[package]]
 name = "beanprice-bazg"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/beanprice-bazg" }
 dependencies = [
     { name = "requests" },
@@ -1699,7 +1699,7 @@ wheels = [
 
 [[package]]
 name = "quints"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "packages/quints" }
 dependencies = [
     { name = "babel" },
