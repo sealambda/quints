@@ -3,7 +3,7 @@
 
 PKG_DIRS := packages/quints packages/beangulp-mt940 packages/beangulp-stripe packages/beangulp-wise packages/beanprice-bazg
 
-.PHONY: check static test format typebaseline docs docs-serve
+.PHONY: check static test format typebaseline docs docs-serve media
 
 check: static test
 
@@ -39,3 +39,9 @@ docs:
 
 docs-serve:
 	uv run --only-group docs zensical serve
+
+# Regenerate the terminal GIFs and PDF previews in docs/assets/ from the
+# committed VHS tapes (media/*.tape) and the sample project. Needs vhs and
+# poppler — see media/generate.sh. Run before a release so visuals track the CLI.
+media:
+	./media/generate.sh

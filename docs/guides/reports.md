@@ -38,4 +38,6 @@ Bilanz + Erfolgsrechnung as one PDF, in German (`--lang de`) or English,
 with your issuer identity from `invoicing/issuer.yaml` on it. `--out` picks
 the path.
 
+![The Bilanz page of the generated statements PDF, grouped by KMU code](../assets/statements.png){ width="480" }
+
 All report commands take `--lang` and `--json`.

@@ -13,6 +13,8 @@ filed automatically.
 
 Arbitrary periods work too: `--from 2026-01-01 --to 2026-06-30`.
 
+![The full MWST report on the sample quarter — Form-310 Ziffern plus the Vorsteuer, Bezugsteuer, and revenue detail tables](../assets/mwst.gif)
+
 ## Close the quarter
 
 ```bash

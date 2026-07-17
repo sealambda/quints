@@ -12,6 +12,10 @@ already booked at a different amount, you get a conflict, not a silent
 divergence. If it isn't booked yet, quints prints the draft transaction to
 paste into `books/<year>.bean`.
 
+![Rendering the two sample invoices — domestic QR-bill and EUR export — each cross-checked against the ledger](../assets/invoice.gif)
+
+![The generated Swiss QR-bill PDF, with receipt and payment part](../assets/invoice-qr-bill.png){ width="480" }
+
 An invoice is one YAML file:
 
 ```yaml
@@ -48,6 +52,8 @@ EU B2B reverse-charge note, which requires the customer's VAT number in the
 registry. Set `reverse_charge: false` for customers outside a reverse-charge
 regime (e.g. US).
 
+![The generated export invoice PDF — no QR part, SEPA IBAN and reverse-charge note instead](../assets/invoice-export.png){ width="480" }
+
 A project scaffolded with `quints init --samples` includes both flavours:
 `invoicing/acme-<year>-07.yaml` (domestic QR-bill) and
 `invoicing/globex-<year>-08.yaml` (EUR export), each tied to a booking in the
@@ -72,3 +78,5 @@ quints receivables
 Open invoices against `Receivable:Trade`, grouped by invoice id, aged by due
 date. An invoice disappears from the list when the payment leg is booked with
 the same `^invoice-id` link.
+
+![quints receivables lists open invoices aged by due date](../assets/receivables.gif)

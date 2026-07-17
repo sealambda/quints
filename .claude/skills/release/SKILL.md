@@ -26,6 +26,9 @@ publishes everything; unchanged packages are no-ops.
   the only place: `__version__` attributes are derived from installed
   metadata, never edited by hand.
 - `uv lock` (records the new workspace versions), then `make check`.
+- If CLI output, the scaffold, or the PDFs changed since the last release,
+  refresh the visuals: `make media` locally (needs vhs + poppler) or the
+  "Media" workflow (`gh workflow run media.yml`), and commit `docs/assets/`.
 
 ## 3. Commit, tag, push
 

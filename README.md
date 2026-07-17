@@ -1,5 +1,9 @@
 # quints
 
+[![CI](https://github.com/sealambda/quints/actions/workflows/ci.yml/badge.svg)](https://github.com/sealambda/quints/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/quints)](https://pypi.org/project/quints/)
+[![Docs](https://img.shields.io/badge/docs-sealambda.github.io%2Fquints-blue)](https://sealambda.github.io/quints/)
+
 Plain-text accounting for Swiss micro-companies, on top of
 [beancount](https://github.com/beancount/beancount) and
 [Fava](https://github.com/beancount/fava).
@@ -12,6 +16,8 @@ There's no incumbent for this niche, and
 …): it's a deterministic CLI with machine-readable output, so the agent
 proposes bookings and `quints` checks and reports on them — it never calls a
 model itself.
+
+![quints init scaffolds sample books, quints check validates them, and quints mwst prints the Form-310 VAT return](docs/assets/quickstart.gif)
 
 **Docs: [sealambda.github.io/quints](https://sealambda.github.io/quints/)** —
 every command shown there is executed by the test suite.
@@ -69,6 +75,8 @@ quints status             # VAT filed but not yet paid, with due dates
 quints receivables        # open invoices, aged by due date
 ```
 
+![quints receivables lists open invoices aged by due date](docs/assets/receivables.gif)
+
 ### Year-end statements for your Treuhänder / auditor
 
 ```bash
@@ -76,6 +84,9 @@ quints report bilanz --at 2026-12-31             # balance sheet (OR Art. 959a)
 quints report erfolg --year 2026                 # income statement (OR Art. 959b)
 quints report statements --year 2026 --lang de   # both, as one PDF
 ```
+
+<img src="docs/assets/statements.png" alt="Generated Bilanz page of the statements PDF, grouped by KMU code" width="440">
+
 
 ### Keep FX rates right
 
@@ -104,6 +115,9 @@ quints invoice <invoice.yaml>         # QR-bill PDF, cross-checked against the l
 Renders a QR-bill PDF (domestic or export / reverse-charge) and reconciles the
 total against the matching booking in your ledger, so an invoice can't silently
 diverge from your books.
+
+<img src="docs/assets/invoice-qr-bill.png" alt="Generated Swiss QR-bill invoice PDF with payment part" width="440">
+
 
 > **Ready-to-run samples:** the repo's
 > [`packages/quints/examples/`](packages/quints/examples) ships a working

@@ -41,6 +41,8 @@ That's a runnable project with a sample quarter booked and a Form-310 VAT
 report on screen. [Getting started](getting-started.md) walks through a real
 setup — including the legal-form choice.
 
+![quints init scaffolds sample books, quints check validates them, and quints mwst prints the Form-310 VAT return](assets/quickstart.gif)
+
 ## By the job
 
 | You need to | Run | Guide |

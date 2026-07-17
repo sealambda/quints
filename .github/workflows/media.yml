@@ -1,0 +1,37 @@
+# Regenerate docs/assets/ (terminal GIFs from media/*.tape, PDF page previews)
+# and commit the result. Manual trigger only: VHS output is not byte-stable
+# across platforms/fonts, so this runs on demand — typically before a release —
+# rather than as a PR check. The tapes themselves fail loudly if a command breaks.
+name: Media
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - run: uv sync --all-packages
+      - name: Install vhs, ttyd, ffmpeg, poppler
+        run: |
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
+          sudo apt-get update
+          sudo apt-get install -y vhs ttyd ffmpeg poppler-utils
+      - run: make media
+      - name: Commit regenerated assets
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/assets
+          git diff --cached --quiet && echo "assets unchanged" && exit 0
+          git commit -m "chore: regenerate docs media"
+          git push

@@ -2,6 +2,8 @@
 
 Swiss VAT & accounting toolkit for plain-text ([beancount](https://github.com/beancount/beancount)) books.
 
+![quints init scaffolds sample books, quints check validates them, and quints mwst prints the Form-310 VAT return](https://raw.githubusercontent.com/sealambda/quints/main/docs/assets/quickstart.gif)
+
 Everything a Swiss micro-company (GmbH, AG, or Einzelfirma) needs on top of beancount + Fava:
 
 - **MWST**: quarterly VAT report mapped to the ESTV form Ziffern, settlement

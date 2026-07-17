@@ -63,6 +63,8 @@ quints report bilanz --at 2026-12-31
 carry a four-digit `kmu:` code, or the ledger doesn't validate. Run it before
 you trust any number.
 
+![Scaffolding a project with samples, validating it, and printing the Form-310 VAT return](assets/quickstart.gif)
+
 ## Extend the chart
 
 Add accounts as `open` directives in `accounts.bean`, each with the KMU code
