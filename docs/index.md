@@ -1,3 +1,7 @@
+---
+title: Plain-text accounting for Swiss micro-companies
+---
+
 # quints
 
 Plain-text accounting for Swiss micro-companies — GmbH, AG, or Einzelfirma —
