@@ -28,7 +28,9 @@ The compute layer (:func:`plan`) is presentation-free: answers in, an ordered
 list of :class:`ScaffoldFile` out, no I/O. :func:`write` does the I/O. Running
 :func:`plan` with ``include_samples=True`` produces the repo's ``examples/``
 project, which doubles as the CI smoke test — so the example is regenerated,
-never hand-maintained.
+never hand-maintained. The samples include an ``invoicing/`` set (issuer,
+customer registry, a domestic QR-bill and a reverse-charge export invoice)
+tied to the demo quarter's bookings, so ``quints invoice`` reconciles clean.
 """
 
 from __future__ import annotations
@@ -405,6 +407,108 @@ def _prices_bean(answers: Answers) -> str:
     )
 
 
+# ── invoicing samples ────────────────────────────────────────────────────────
+
+# Checksum-valid demo identifiers (stdnum-verified) — obviously not real.
+_SAMPLE_VAT_ID = "CHE-267.359.056 MWST"
+_SAMPLE_QR_IBAN = "CH44 3199 9123 0008 8901 2"  # QR-IID range 30000–31999
+_SAMPLE_IBAN = "CH93 0076 2011 6238 5295 7"
+_SAMPLE_CUSTOMER_VAT_ID = "IE1234567T"
+
+
+def _issuer_yaml(answers: Answers) -> str:
+    return "\n".join(
+        [
+            "# Issuer identity for `quints invoice` — name, address, VAT ID, and one",
+            "# bank account per invoicing currency. Sample data: replace the VAT ID",
+            "# and IBANs with your own before issuing a real invoice.",
+            f"name: {answers.entity_name}",
+            "address:",
+            "  - Beispielstrasse 1",
+            "  - 8000 Zürich",
+            f"vat_id: {_SAMPLE_VAT_ID}",
+            "email: billing@example.ch",
+            "bank:",
+            "  CHF:",
+            "    # QR-IBAN (QR-IID variant) — a Swiss QR-bill with a QRR reference.",
+            f"    qr_iban: {_SAMPLE_QR_IBAN}",
+            "  EUR:",
+            "    # Regular IBAN — foreign transfers can't use the QR-bill scheme.",
+            f"    iban: {_SAMPLE_IBAN}",
+            "",
+        ]
+    )
+
+
+def _customers_yaml(_answers: Answers) -> str:
+    return "\n".join(
+        [
+            "# Customer registry — invoices reference these entries by key. A customer",
+            "# is a flat entry, or a dated `versions` history for address changes.",
+            "acme:",
+            "  name: Acme AG",
+            "  address:",
+            "    - Bahnhofstrasse 1",
+            "    - 8001 Zürich",
+            "globex:",
+            "  name: Globex Ltd",
+            "  country: IE",
+            "  # Reverse-charge exports must carry the customer's VAT number.",
+            f"  vat_id: {_SAMPLE_CUSTOMER_VAT_ID}",
+            "  address:",
+            "    - 1 Liffey Street",
+            "    - Dublin 1",
+            "",
+        ]
+    )
+
+
+def _invoice_acme_yaml(answers: Answers) -> str:
+    year = _open_date(answers).year
+    return "\n".join(
+        [
+            f"# Sample domestic invoice — a Swiss QR-bill. It ties to the ^INV{year}014",
+            f"# booking in books/{year}.bean (net 1'000.00 + 8.1% VAT = 1'081.00), so",
+            "# `quints invoice` cross-checks it clean against the ledger.",
+            f"number: INV{year}014",
+            "kind: domestic",
+            "currency: CHF",
+            f"issue_date: {year}-07-02",
+            f"supply: Juli {year}",
+            "customer: acme",
+            "items:",
+            "  - description: Consulting — July",
+            "    quantity: 1",
+            "    unit_price: 1000.00",
+            "    unit: Pauschal",
+            "locale: de_CH",
+            "",
+        ]
+    )
+
+
+def _invoice_globex_yaml(answers: Answers) -> str:
+    year = _open_date(answers).year
+    return "\n".join(
+        [
+            "# Sample export invoice — foreign currency, reverse charge, no QR part.",
+            f"# Ties to the ^INV{year}015 booking in books/{year}.bean (500.00 EUR).",
+            f"number: INV{year}015",
+            "kind: export",
+            "currency: EUR",
+            f"issue_date: {year}-08-05",
+            f"supply: August {year}",
+            "customer: globex",
+            "items:",
+            "  - description: Export consulting",
+            "    quantity: 1",
+            "    unit_price: 500.00",
+            "locale: en",
+            "",
+        ]
+    )
+
+
 # ── project metadata rendering ───────────────────────────────────────────────
 
 
@@ -625,6 +729,16 @@ def plan(answers: Answers) -> list[ScaffoldFile]:
     """Answers → the ordered set of files to materialise. Pure, no I/O."""
     _validate(answers)
     year = _open_date(answers).year
+    invoicing: list[ScaffoldFile] = []
+    if answers.include_samples:
+        # One QR-bill and one export invoice, reconciling against the sample
+        # quarter — so `quints invoice` is testable out of the box.
+        invoicing = [
+            ScaffoldFile(Path("invoicing/issuer.yaml"), _issuer_yaml(answers)),
+            ScaffoldFile(Path("invoicing/customers.yaml"), _customers_yaml(answers)),
+            ScaffoldFile(Path(f"invoicing/acme-{year}-07.yaml"), _invoice_acme_yaml(answers)),
+            ScaffoldFile(Path(f"invoicing/globex-{year}-08.yaml"), _invoice_globex_yaml(answers)),
+        ]
     files = [
         ScaffoldFile(Path("quints.toml"), _quints_toml(answers)),
         ScaffoldFile(Path("pyproject.toml"), _pyproject_toml(answers)),
@@ -633,6 +747,7 @@ def plan(answers: Answers) -> list[ScaffoldFile]:
         ScaffoldFile(Path("commodities.bean"), _commodities_bean(answers)),
         ScaffoldFile(Path("prices.bean"), _prices_bean(answers)),
         ScaffoldFile(Path(f"books/{year}.bean"), _books_bean(answers)),
+        *invoicing,
         ScaffoldFile(Path("AGENTS.md"), _agents_md(answers)),
         ScaffoldFile(Path(".gitignore"), _gitignore()),
         ScaffoldFile(Path("inbox/.gitkeep"), ""),

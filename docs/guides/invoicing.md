@@ -34,7 +34,24 @@ locale: de_CH
 
 Issuer identity — name, address, VAT ID, IBAN/QR-IBAN per currency, logo —
 lives once in `invoicing/issuer.yaml`. Repeat customers can live in
-`invoicing/customers.yaml` and be referenced by key.
+`invoicing/customers.yaml` and be referenced by key (`customer: acme`).
+
+## Foreign invoices
+
+```bash
+quints invoice invoicing/globex-2026-08.yaml
+```
+
+An export invoice (`kind: export`) renders without a QR part — it shows the
+regular IBAN for a SEPA/international transfer instead — and defaults to the
+EU B2B reverse-charge note, which requires the customer's VAT number in the
+registry. Set `reverse_charge: false` for customers outside a reverse-charge
+regime (e.g. US).
+
+A project scaffolded with `quints init --samples` includes both flavours:
+`invoicing/acme-<year>-07.yaml` (domestic QR-bill) and
+`invoicing/globex-<year>-08.yaml` (EUR export), each tied to a booking in the
+sample quarter so the cross-check reconciles.
 
 ## Editor validation
 

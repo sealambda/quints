@@ -1,0 +1,13 @@
+# Sample export invoice — foreign currency, reverse charge, no QR part.
+# Ties to the ^INV2026015 booking in books/2026.bean (500.00 EUR).
+number: INV2026015
+kind: export
+currency: EUR
+issue_date: 2026-08-05
+supply: August 2026
+customer: globex
+items:
+  - description: Export consulting
+    quantity: 1
+    unit_price: 500.00
+locale: en

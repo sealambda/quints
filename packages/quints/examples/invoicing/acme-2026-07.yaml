@@ -1,16 +1,12 @@
-# Illustrative invoice for the example project — NOT emitted by `quints init`.
-# It ties to the ^INV2026014 booking in books/2026.bean (net 1000 + 8.1% VAT = 1081),
-# so `quints invoice … --verify` reconciles the PDF against the ledger.
+# Sample domestic invoice — a Swiss QR-bill. It ties to the ^INV2026014
+# booking in books/2026.bean (net 1'000.00 + 8.1% VAT = 1'081.00), so
+# `quints invoice` cross-checks it clean against the ledger.
 number: INV2026014
 kind: domestic
 currency: CHF
 issue_date: 2026-07-02
 supply: Juli 2026
-customer:
-  name: Acme AG
-  address:
-    - Bahnhofstrasse 1
-    - 8001 Zürich
+customer: acme
 items:
   - description: Consulting — July
     quantity: 1

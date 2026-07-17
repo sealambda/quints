@@ -182,6 +182,38 @@ def test_generated_ledger_reports_expected_numbers(tmp_path: Path):
     assert open_inv[0].currency == "EUR"
 
 
+def test_sample_invoices_render_and_reconcile(tmp_path: Path):
+    # --samples must make the invoice generator testable out of the box: a
+    # domestic QR-bill and a reverse-charge export, both reconciling against
+    # the sample quarter's ^INV… bookings.
+    from quints.invoice import model as im
+    from quints.invoice import render as ir
+    from quints.invoice import verify as iv
+
+    answers = init.Answers(entity_name="Smoke GmbH", include_samples=True)
+    init.write(tmp_path, init.plan(answers))
+    main = tmp_path / "main.bean"
+    registry = im.load_customers(tmp_path / "invoicing/customers.yaml")
+    issuer = im.load_issuer(tmp_path / "invoicing/issuer.yaml")
+    assert issuer.name == "Smoke GmbH"
+
+    domestic = im.load_invoice(tmp_path / "invoicing/acme-2026-07.yaml", registry)
+    _path, totals, payload = ir.render(domestic, issuer, tmp_path / "acme.pdf")
+    assert payload is not None and payload.splitlines()[0] == "SPC"  # QR part present
+    cc = iv.cross_check(main, domestic, totals)
+    assert cc.found and cc.ok and cc.date_ok
+
+    export = im.load_invoice(tmp_path / "invoicing/globex-2026-08.yaml", registry)
+    _path, totals, payload = ir.render(export, issuer, tmp_path / "globex.pdf")
+    assert payload is None  # no QR-bill on a foreign invoice
+    cc = iv.cross_check(main, export, totals)
+    assert cc.found and cc.ok and cc.date_ok
+
+
+def test_no_invoicing_files_without_samples():
+    assert not any(f.path.parts[0] == "invoicing" for f in init.plan(init.Answers()))
+
+
 def test_cli_init_answers_file_and_force(tmp_path: Path):
     # Guards the CLI wiring: --answers is non-interactive, --json is stable,
     # and a second run without --force skips rather than clobbers.

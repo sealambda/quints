@@ -37,6 +37,7 @@ jane-books/
 ├── commodities.bean   # currencies + their price sources
 ├── prices.bean        # FX rates (quints prices sync)
 ├── books/2026.bean    # transactions, one file per fiscal year
+├── invoicing/         # issuer + sample invoices (with --samples)
 ├── quints.toml        # everything entity-specific
 ├── pyproject.toml     # so uv sync makes bean-check and fava work
 ├── AGENTS.md          # playbook for an AI coding agent

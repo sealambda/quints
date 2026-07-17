@@ -1,0 +1,15 @@
+# Customer registry — invoices reference these entries by key. A customer
+# is a flat entry, or a dated `versions` history for address changes.
+acme:
+  name: Acme AG
+  address:
+    - Bahnhofstrasse 1
+    - 8001 Zürich
+globex:
+  name: Globex Ltd
+  country: IE
+  # Reverse-charge exports must carry the customer's VAT number.
+  vat_id: IE1234567T
+  address:
+    - 1 Liffey Street
+    - Dublin 1
