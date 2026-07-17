@@ -1,7 +1,9 @@
 """Tests for the gap-aware price sync (no network — a fake source is injected)."""
 
+from collections.abc import Callable
 from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 from beanprice_bazg.bazg import SourcePrice
 from quints import prices
@@ -13,11 +15,13 @@ class FakeSource:
     def __init__(self):
         self.calls = []
 
-    def get_prices_series(self, ccy, begin, end):
+    def get_prices_series(self, ccy, begin, end, progress: Callable[[date], None] | None = None):
         self.calls.append((ccy, begin.date(), end.date()))
         out, d = [], begin
         while d <= end:
             out.append(SourcePrice(Decimal("0.9"), d, "CHF"))
+            if progress is not None:
+                progress(d.date())
             d += timedelta(days=1)
         return out
 
@@ -69,6 +73,22 @@ def test_repair_heals_interior_gap_and_sorts(tmp_path):
     dates = _eur_dates(out)
     assert dates == sorted(dates)  # rewritten sorted
     assert dates.count("2026-01-06") == 1  # no duplicates
+
+
+def test_progress_reports_each_day_per_currency(tmp_path: Path):
+    out = tmp_path / "prices.bean"
+    out.write_text(";; header\n")
+    seen = []
+    prices.sync(
+        out,
+        today=date(2026, 1, 3),
+        backfill_start=date(2026, 1, 1),
+        currencies=("EUR", "USD"),
+        source=FakeSource(),
+        progress=lambda ccy, done, total: seen.append((ccy, done, total)),
+    )
+    # Announced at 0, then one tick per fetched day, for each currency in turn.
+    assert seen == [(ccy, n, 3) for ccy in ("EUR", "USD") for n in range(4)]
 
 
 def test_header_preserved(tmp_path):

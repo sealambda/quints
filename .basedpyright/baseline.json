@@ -2804,22 +2804,6 @@
                     "endColumn": 66,
                     "lineCount": 1
                 }
-            },
-            {
-                "code": "reportMissingParameterType",
-                "range": {
-                    "startColumn": 4,
-                    "endColumn": 14,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportMissingParameterType",
-                "range": {
-                    "startColumn": 4,
-                    "endColumn": 10,
-                    "lineCount": 1
-                }
             }
         ],
         "./packages/quints/src/quints/receivables.py": [

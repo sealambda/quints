@@ -78,6 +78,17 @@ def test_historical_passes_date_param(monkeypatch):
     assert seen["d"] == "20260603"
 
 
+def test_series_reports_progress_per_requested_day(monkeypatch: pytest.MonkeyPatch):
+    # The callback fires per requested calendar day (the network unit of work),
+    # even when weekend echoes collapse into fewer series points.
+    monkeypatch.setattr(bazg, "_http_get", _fixed(WEEKEND_XML))
+    seen = []
+    bazg.Source().get_prices_series(
+        "USD", datetime(2026, 6, 5), datetime(2026, 6, 7), progress=seen.append
+    )
+    assert seen == [datetime(2026, 6, d).date() for d in (5, 6, 7)]
+
+
 def test_series_dedupes_by_actual_rate_date(monkeypatch):
     # Fri 05.06 returns its own date; Sat/Sun echo Fri -> one point, not three.
     def fake(url, params):

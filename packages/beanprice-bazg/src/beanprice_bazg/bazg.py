@@ -34,7 +34,8 @@ API notes (discovered empirically):
 from __future__ import annotations
 
 from collections import namedtuple
-from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from xml.etree import ElementTree
 
@@ -65,9 +66,18 @@ def _localname(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+_session: requests.Session | None = None
+
+
 def _http_get(url: str, params: dict) -> str:
-    """Single network seam — monkeypatched in tests."""
-    resp = requests.get(url, params=params, timeout=_TIMEOUT)
+    """Single network seam — monkeypatched in tests.
+
+    One shared Session: a series fetch is one request per day, and reusing the
+    TLS connection cuts most of the per-request overhead."""
+    global _session
+    if _session is None:
+        _session = requests.Session()
+    resp = _session.get(url, params=params, timeout=_TIMEOUT)
     resp.raise_for_status()
     return resp.text
 
@@ -141,13 +151,19 @@ class Source(_Base):
         return SourcePrice(price, rate_date, QUOTE_CURRENCY)
 
     def get_prices_series(
-        self, ticker: str, time_begin: datetime, time_end: datetime
+        self,
+        ticker: str,
+        time_begin: datetime,
+        time_end: datetime,
+        progress: Callable[[date], None] | None = None,
     ) -> list[SourcePrice]:
         """Fetch one price per day in [begin, end], de-duplicated by rate date.
 
         BAZG has no bulk endpoint, so this issues one request per calendar day.
         Weekend/holiday days resolve to the prior business day's rate and are
-        collapsed, yielding a clean business-day series.
+        collapsed, yielding a clean business-day series. ``progress`` (if
+        given) is called with each calendar day as its request completes, so
+        callers can show a live bar over the slow one-request-per-day fetch.
         """
         results: dict[datetime, SourcePrice] = {}
         day = time_begin.date()
@@ -156,5 +172,7 @@ class Source(_Base):
             xml_text = _http_get(DAILY_URL, {"d": day.strftime("%Y%m%d"), "locale": "en"})
             price, rate_date = _parse_daily(xml_text, ticker)
             results[rate_date] = SourcePrice(price, rate_date, QUOTE_CURRENCY)
+            if progress is not None:
+                progress(day)
             day += timedelta(days=1)
         return [results[k] for k in sorted(results)]

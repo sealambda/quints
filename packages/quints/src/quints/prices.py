@@ -17,14 +17,44 @@ Unlike ``bean-price --update main.bean`` — which rounds through the ledger's
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date as Date
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
+from typing import Protocol
 
 from beanprice_bazg.bazg import Source
 
 from . import ledger
+
+ProgressFn = Callable[[str, int, int], None]
+"""(currency, days_fetched, days_total) — called once up front and per day."""
+
+
+class PricePoint(Protocol):
+    """One day's rate — the shape of ``beanprice`` ``SourcePrice``."""
+
+    @property
+    def price(self) -> Decimal: ...
+    @property
+    def time(self) -> datetime: ...
+
+
+class SeriesSource(Protocol):
+    """The slice of ``beanprice_bazg.Source`` that :func:`sync` needs."""
+
+    def get_prices_series(
+        self,
+        ticker: str,
+        time_begin: datetime,
+        time_end: datetime,
+        /,
+        *,
+        progress: Callable[[Date], None] | None = None,
+    ) -> Sequence[PricePoint]: ...
+
 
 DEFAULT_BACKFILL_START = Date(2024, 1, 1)
 _PRICE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2}) price (\w+)\s+(\S+) CHF\s*$")
@@ -40,6 +70,21 @@ class SyncResult:
 
 def _utc(d: Date) -> datetime:
     return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+
+
+def _ticker(progress: ProgressFn | None, ccy: str, total: int) -> Callable[[Date], None] | None:
+    """Adapt the (ccy, done, total) callback to the source's per-day one."""
+    if progress is None:
+        return None
+    progress(ccy, 0, total)  # announce the currency before the first request
+    done = 0
+
+    def tick(_day: Date) -> None:
+        nonlocal done
+        done += 1
+        progress(ccy, done, total)
+
+    return tick
 
 
 def _read(out: Path):
@@ -77,9 +122,10 @@ def sync(
     out: Path,
     repair_from: Date | None = None,
     today: Date | None = None,
-    currencies=ledger.PRICE_CURRENCIES,
+    currencies: Sequence[str] = ledger.PRICE_CURRENCIES,
     backfill_start: Date = DEFAULT_BACKFILL_START,
-    source=None,
+    source: SeriesSource | None = None,
+    progress: ProgressFn | None = None,
 ) -> SyncResult:
     if today is None:
         today = datetime.now(timezone.utc).date()
@@ -99,7 +145,8 @@ def sync(
 
         added = 0
         if start <= today:
-            for sp in src.get_prices_series(ccy, _utc(start), _utc(today)):
+            tick = _ticker(progress, ccy, total=(today - start).days + 1)
+            for sp in src.get_prices_series(ccy, _utc(start), _utc(today), progress=tick):
                 d = sp.time.date()
                 if (ccy, d) in entries:  # skip present (dedups weekend echoes + repair)
                     continue

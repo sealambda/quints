@@ -330,8 +330,37 @@ def prices_sync(
     Without --from: extend each currency forward to today (fast, daily use).
     With --from DATE: re-scan the whole range and fill any missing days.
     """
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        TaskID,
+        TextColumn,
+        TimeRemainingColumn,
+    )
+
     repair = _parse_date(from_) if from_ else None
-    result = prices_mod.sync(out, repair_from=repair)
+    # BAZG has no bulk endpoint — the fetch is one request per calendar day per
+    # currency, so a backfill takes a while: show a live per-currency bar
+    # (stderr, transient) unless the caller asked for machine-readable output.
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TextColumn("days"),
+        TimeRemainingColumn(),
+        console=ui.err_console,
+        transient=True,
+        disable=as_json,
+    ) as bars:
+        tasks: dict[str, TaskID] = {}
+
+        def on_progress(ccy: str, done: int, total: int) -> None:
+            if ccy not in tasks:
+                tasks[ccy] = bars.add_task(ccy, total=total)
+            bars.update(tasks[ccy], completed=done)
+
+        result = prices_mod.sync(out, repair_from=repair, progress=on_progress)
     if as_json:
         _json_out(
             {

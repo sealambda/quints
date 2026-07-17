@@ -11,8 +11,10 @@ quints prices sync                     # extend each currency forward to today
 quints prices sync --from 2026-01-01   # repair mode: fill any missing days
 ```
 
-Needs network. Rates already in the file are never touched — manual
-overrides survive a sync. Which currencies to fetch comes from
+Needs network. The BAZG API has no bulk endpoint — the fetch is one request
+per calendar day per currency, so a first backfill takes a while; a live
+per-currency progress bar shows how far along it is. Rates already in the
+file are never touched — manual overrides survive a sync. Which currencies to fetch comes from
 `commodities.bean`:
 
 ```beancount
