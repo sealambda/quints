@@ -3,3 +3,6 @@
 .env
 __pycache__/
 *.pdf
+.venv/
+.DS_Store
+.wise/

@@ -8,7 +8,13 @@ against it, asserting known figures. That is the end-to-end smoke test the CI
 
 import json
 import re
+import sys
 from datetime import date as Date
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 from decimal import Decimal
 from pathlib import Path
 
@@ -39,11 +45,14 @@ def test_plan_is_deterministic():
 def test_backbone_accounts_carry_known_kmu_codes():
     # Every account the backbone opens must map to a real KMU Kontenrahmen
     # code, or `quints.plugins.kmu` rejects the ledger.
-    main = _files(init.Answers(importers=("ubs", "wise", "stripe")))["main.bean"]
-    codes = re.findall(r'kmu: "(\d{4})"', main)
-    assert codes, "backbone emitted no accounts"
-    unknown = [c for c in codes if c not in kmu.KMU_NAMES]
-    assert not unknown, f"kmu codes absent from KMU_NAMES: {unknown}"
+    for legal_form in ("gmbh", "ag", "einzelfirma"):
+        chart = _files(init.Answers(legal_form=legal_form, importers=("ubs", "wise", "stripe")))[
+            "accounts.bean"
+        ]
+        codes = re.findall(r'kmu: "(\d{4})"', chart)
+        assert codes, "backbone emitted no accounts"
+        unknown = [c for c in codes if c not in kmu.KMU_NAMES]
+        assert not unknown, f"kmu codes absent from KMU_NAMES: {unknown}"
 
 
 def test_generated_quints_toml_loads_back_through_config(tmp_path: Path):
@@ -68,6 +77,64 @@ def test_write_refuses_overwrite_without_force(tmp_path: Path):
 def test_rejects_saldo_method():
     with pytest.raises(init.InitError):
         init.plan(init.Answers(vat_method="saldo"))
+
+
+def test_rejects_unknown_legal_form():
+    with pytest.raises(init.InitError, match="Personengesellschaft"):
+        init.plan(init.Answers(legal_form="personengesellschaft"))
+
+
+def test_einzelfirma_gets_the_official_klasse_28_variant():
+    # The veb.ch KMU Kontenrahmen prints a distinct equity block for
+    # Einzelunternehmen: no share capital, but 2820 contributions and
+    # 2850 Privat. The namespace marker follows the legal form.
+    files = _files(init.Answers(legal_form="einzelfirma", include_samples=True))
+    chart = files["accounts.bean"]
+    assert ":CH:Einzelfirma:" in chart and "GmbH" not in chart
+    assert "Capital:Share" not in chart
+    assert 'kmu: "2820"' in chart and 'kmu: "2850"' in chart
+    assert "Eigenkapital" not in chart  # comments render the English names
+    # The sample opening entry books an owner contribution, not share capital.
+    books = files["2026.bean"]
+    assert "Equity:CH:Einzelfirma:Contributions" in books
+    toml = files["quints.toml"]
+    assert 'legal_form = "einzelfirma"' in toml
+    assert 'entity_marker = ":CH:Einzelfirma:"' in toml
+
+
+def test_ag_marker_and_labels():
+    files = _files(init.Answers(legal_form="ag", entity_name="Example AG"))
+    assert ":CH:AG:" in files["accounts.bean"]
+    assert "Equity:CH:AG:Capital:Share" in files["accounts.bean"]
+    assert kmu.kmu_name("2800", "de", "ag") == "Aktienkapital"
+    assert kmu.label("share_capital", "de", "einzelfirma") == "Eigenkapital"
+    assert kmu.kmu_name("2800", "de") == "Stammkapital"  # GmbH stays the default
+
+
+def test_generated_pyproject_declares_quints(tmp_path: Path):
+    files = _files(init.Answers(entity_name="Round GmbH"))
+    raw = tomllib.loads(files["pyproject.toml"])
+    assert raw["project"]["name"] == "round-gmbh"
+    assert "quints" in raw["project"]["dependencies"]
+    assert raw["tool"]["uv"]["package"] is False
+
+
+def test_einzelfirma_ledger_loads_and_reports(tmp_path: Path):
+    # The einzelfirma scaffold must be as runnable as the GmbH one: kmu plugin
+    # clean, and the sample quarter reports the same EBIT.
+    answers = init.Answers(entity_name="Jane Doe", legal_form="einzelfirma", include_samples=True)
+    init.write(tmp_path, init.plan(answers))
+    main = tmp_path / "main.bean"
+    _entries, errors = ledger.load_entries(main)
+    assert not errors, errors
+    cfg = config.load(tmp_path / "quints.toml")
+    assert cfg.legal_form == "einzelfirma"
+    assert cfg.entity_marker == ":CH:Einzelfirma:"
+    erfolg = kmu.compute_erfolg(main, "2026-01-01", "2026-12-31", cfg)
+    assert erfolg.result == Decimal("1376.00")
+    bilanz = kmu.compute_bilanz(main, "2026-12-31", cfg)
+    assert bilanz.legal_form == "einzelfirma"
+    assert bilanz.total_assets == bilanz.total_liabilities_equity
 
 
 def test_rejects_unknown_importer():

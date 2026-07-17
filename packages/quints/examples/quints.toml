@@ -1,9 +1,9 @@
 # quints.toml — everything entity-specific lives here, next to main.bean.
-# Account names below are the built-in defaults (CH:GmbH namespacing);
-# uncomment and edit in quints.toml + main.bean together to change them.
+# Account names mirror accounts.bean; change them in both files together.
 
 [entity]
 name = "Example GmbH"
+legal_form = "gmbh"           # gmbh | ag | einzelfirma
 vat_method = "effective"            # "saldo" is not supported yet
 vat_registered_since = 2026-01-01   # earlier periods are pre-liability
 operating_currency = "CHF"
@@ -11,6 +11,21 @@ operating_currency = "CHF"
 [ledger]
 main = "main.bean"
 prices = "prices.bean"
+
+[accounts]
+entity_marker = ":CH:GmbH:"         # scopes KMU statements and the plugin
+input_vat = "Assets:CH:GmbH:Tax:InputVAT"
+output_vat = "Liabilities:CH:GmbH:Tax:OutputVAT"
+bezugsteuer = "Liabilities:CH:GmbH:Tax:Bezugsteuer"
+payable_vat = "Liabilities:CH:GmbH:Tax:PayableVAT"
+receivable = "Assets:CH:GmbH:Receivable:Trade"
+income_prefix = "Income:CH:GmbH"
+export_marker = ":Export"           # income sub-account marker → Ziffer 221
+income_domestic = "Income:CH:GmbH:Consulting:External:Domestic"
+income_export = "Income:CH:GmbH:Consulting:External:Export"
+fx_gain = "Income:CH:GmbH:FX:CurrencyGain"
+fx_loss = "Expenses:CH:GmbH:FX:CurrencyLoss"
+rounding_income = "Income:CH:GmbH:Rounding"
 
 [report]
 language = "en"                     # or "de"; --lang overrides
@@ -42,7 +57,7 @@ USD = "Assets:CH:GmbH:Current:Wise:USD"
 [import.stripe]
 account_id = "acct_XXXXXXXXXXXX"   # guard: refuse a key for another account
 fees_account = "Expenses:CH:GmbH:BankFees:Stripe"
-tax_account = "Assets:CH:GmbH:Tax:InputVAT"   # VAT inside Stripe's monthly fee debits
+tax_account = "Assets:CH:GmbH:Tax:InputVAT"   # VAT inside Stripe's own fees
 rules = [
     ['\bpayout\b', "Assets:CH:GmbH:Current:Wise:EUR", "*"],
 ]

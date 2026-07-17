@@ -2892,14 +2892,6 @@
             {
                 "code": "reportMissingTypeArgument",
                 "range": {
-                    "startColumn": 71,
-                    "endColumn": 75,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportMissingTypeArgument",
-                "range": {
                     "startColumn": 16,
                     "endColumn": 20,
                     "lineCount": 1

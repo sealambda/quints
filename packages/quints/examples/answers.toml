@@ -8,6 +8,7 @@
 # never hand-maintained) and that the reporting commands agree on the numbers.
 
 entity_name = "Example GmbH"
+legal_form = "gmbh"                # or "ag" / "einzelfirma"
 vat_method = "effective"
 vat_registered_since = 2026-01-01
 operating_currency = "CHF"

@@ -52,14 +52,19 @@ def _line(
     }
 
 
-def _section(rows: list[RowLine], lang: str, *, sign: int = 1) -> list[dict]:
+def _section(
+    rows: list[RowLine], lang: str, *, sign: int = 1, form: str | None = None
+) -> list[dict[str, object]]:
     lines: list[dict] = []
     for row in rows:
-        lines.append(_line(label(row.key, lang), _money(sign * row.amount, lang)))
+        lines.append(_line(label(row.key, lang, form), _money(sign * row.amount, lang)))
         for cl in row.codes:
             lines.append(
                 _line(
-                    kmu_name(cl.code, lang), _money(sign * cl.amount, lang), code=cl.code, indent=1
+                    kmu_name(cl.code, lang, form),
+                    _money(sign * cl.amount, lang),
+                    code=cl.code,
+                    indent=1,
                 )
             )
     return lines
@@ -71,7 +76,7 @@ def bilanz_lines(report: BilanzReport, lang: str) -> list[dict]:
         rows = getattr(report, section)
         if not rows:
             continue
-        lines += _section(rows, lang)
+        lines += _section(rows, lang, form=report.legal_form)
         lines.append(
             _line(
                 label(section, lang),
@@ -88,7 +93,7 @@ def bilanz_lines(report: BilanzReport, lang: str) -> list[dict]:
         rows = getattr(report, section)
         if not rows and section != "equity":
             continue
-        lines += _section(rows, lang)
+        lines += _section(rows, lang, form=report.legal_form)
         total = sum((r.amount for r in rows), Decimal("0"))
         if section == "equity":
             if report.retained_prior:

@@ -1,0 +1,9 @@
+; Currencies in use. Non-CHF commodities carry the beanprice source
+; (official BAZG/EZV daily CHF rates) that `quints prices sync` and
+; `bean-price` read.
+
+2026-01-01 commodity CHF
+2026-01-01 commodity EUR
+  price: "CHF:beanprice_bazg/EUR"
+2026-01-01 commodity USD
+  price: "CHF:beanprice_bazg/USD"

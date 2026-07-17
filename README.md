@@ -32,12 +32,21 @@ cd my-books
 quints mwst -q 2026-Q3
 ```
 
-`quints init` writes a runnable project: a Swiss KMU chart of accounts (every
-account mapped to its Kontenrahmen code), a `quints.toml`, and an `AGENTS.md`
+`quints init` writes a runnable project: a Swiss KMU chart of accounts in
+`accounts.bean` (every account mapped to its Kontenrahmen code), transactions
+in `books/<year>.bean` (one file per fiscal year), a `quints.toml`, a
+`pyproject.toml` (after `uv sync`, the plain beancount toolchain —
+`bean-check main.bean`, `fava main.bean` — works too), and an `AGENTS.md`
 that tells a coding agent how to extend the books and validate them with
-`quints check`. Drop `--samples` for empty books. Everything entity-specific
-(name, VAT registration, account names, importer rules) is configuration; VAT
-*rates* are law and ship date-ranged in code.
+`quints check`. Drop `--samples` for empty books.
+
+It asks for your legal form — `gmbh`, `ag`, or `einzelfirma` (sole
+proprietorship / freelancer) — and scaffolds the matching equity block from
+the official KMU Kontenrahmen: share capital for a GmbH/AG; owner's equity,
+capital contributions, and the Privat account for an Einzelunternehmen. The
+account namespace follows (`:CH:GmbH:`, `:CH:AG:`, `:CH:Einzelfirma:`).
+Everything entity-specific (name, VAT registration, account names, importer
+rules) is configuration; VAT *rates* are law and ship date-ranged in code.
 
 ## What it does — by the job
 

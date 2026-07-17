@@ -58,6 +58,16 @@ KMU_NAMES: dict[str, dict[str, str]] = {
         "de": "Verbindlichkeiten gegenüber Gesellschaftern",
     },
     "2800": {"en": "Share capital", "de": "Stammkapital"},
+    "2820": {
+        "en": "Capital contributions and withdrawals",
+        "de": "Kapitaleinlagen und Kapitalrückzüge",
+    },
+    "2850": {"en": "Private account", "de": "Privat"},
+    "2891": {"en": "Profit or loss for the year", "de": "Jahresgewinn oder Jahresverlust"},
+    "2900": {"en": "Statutory capital reserve", "de": "Gesetzliche Kapitalreserve"},
+    "2950": {"en": "Statutory retained earnings", "de": "Gesetzliche Gewinnreserve"},
+    "2970": {"en": "Retained earnings", "de": "Gewinnvortrag oder Verlustvortrag"},
+    "2979": {"en": "Profit or loss for the year", "de": "Jahresgewinn oder Jahresverlust"},
     "3400": {"en": "Revenue from services", "de": "Dienstleistungserlöse"},
     "4400": {"en": "Purchased services", "de": "Aufwand für bezogene Dienstleistungen"},
     "5000": {"en": "Wages and salaries", "de": "Lohnaufwand"},
@@ -72,6 +82,21 @@ KMU_NAMES: dict[str, dict[str, str]] = {
     "6900": {"en": "Financial expenses", "de": "Finanzaufwand"},
     "6940": {"en": "Bank charges", "de": "Bankspesen"},
     "6950": {"en": "Financial income", "de": "Finanzertrag"},
+}
+
+# Klasse 28 is the one place the official KMU Kontenrahmen differs per legal
+# form (veb.ch prints three variants: juristische Personen, Einzelunternehmen,
+# Personengesellschaft). These overlays adapt the shared code 2800 and the
+# statutory equity row; every other code is form-independent. Keys are
+# config.LEGAL_FORMS keys; the base tables are the GmbH reading.
+KMU_NAMES_BY_FORM: dict[str, dict[str, dict[str, str]]] = {
+    "ag": {"2800": {"en": "Share capital", "de": "Aktienkapital"}},
+    "einzelfirma": {"2800": {"en": "Owner's equity", "de": "Eigenkapital"}},
+}
+
+LABELS_BY_FORM: dict[str, dict[str, dict[str, str]]] = {
+    "ag": {"share_capital": {"en": "Share capital", "de": "Aktienkapital"}},
+    "einzelfirma": {"share_capital": {"en": "Owner's equity", "de": "Eigenkapital"}},
 }
 
 # Statutory rows: (row key, code range lo..hi inclusive). A KMU code belongs to
@@ -224,15 +249,15 @@ LABELS: dict[str, dict[str, str]] = {
 }
 
 
-def label(key: str, lang: str) -> str:
-    entry = LABELS.get(key)
+def label(key: str, lang: str, form: str | None = None) -> str:
+    entry = LABELS_BY_FORM.get(form or "", {}).get(key) or LABELS.get(key)
     if entry:
         return entry.get(lang) or entry["en"]
     return key
 
 
-def kmu_name(code: str, lang: str) -> str:
-    entry = KMU_NAMES.get(code)
+def kmu_name(code: str, lang: str, form: str | None = None) -> str:
+    entry = KMU_NAMES_BY_FORM.get(form or "", {}).get(code) or KMU_NAMES.get(code)
     if entry:
         return entry.get(lang) or entry["en"]
     return code
@@ -277,6 +302,7 @@ class BilanzReport:
     converted: dict[str, Decimal] = field(
         default_factory=dict
     )  # ccy → units valued at report-date rate
+    legal_form: str = "gmbh"  # picks the Klasse-28 label variant when rendering
 
 
 @dataclass
@@ -443,6 +469,7 @@ def compute_bilanz(ledger_path: Path, at: str, cfg: config.Config | None = None)
         total_assets=ledger.rappen(total_assets),
         total_liabilities_equity=ledger.rappen(liabilities_and_equity) + retained_prior + result,
         converted={c: ledger.rappen(v) for c, v in converted.items()},
+        legal_form=cfg.legal_form,
     )
 
 
@@ -543,12 +570,14 @@ def _statement_table(lang: str) -> Table:
     return t
 
 
-def _add_rows(t: Table, rows: list[RowLine], lang: str) -> None:
+def _add_rows(t: Table, rows: list[RowLine], lang: str, form: str | None = None) -> None:
     for row in rows:
-        t.add_row("", label(row.key, lang), ui.money(row.amount))
+        t.add_row("", label(row.key, lang, form), ui.money(row.amount))
         for cl in row.codes:
             t.add_row(
-                cl.code, f"[muted]{kmu_name(cl.code, lang)}[/]", f"[muted]{ui.money(cl.amount)}[/]"
+                cl.code,
+                f"[muted]{kmu_name(cl.code, lang, form)}[/]",
+                f"[muted]{ui.money(cl.amount)}[/]",
             )
 
 
@@ -576,7 +605,7 @@ def render_bilanz(
         if not rows:
             continue
         t.add_section()
-        _add_rows(t, rows, lang)
+        _add_rows(t, rows, lang, report.legal_form)
         t.add_row(
             "",
             f"[bold]{label(section, lang)}[/]",
@@ -594,7 +623,7 @@ def render_bilanz(
         if not rows and section != "equity":
             continue
         t.add_section()
-        _add_rows(t, rows, lang)
+        _add_rows(t, rows, lang, report.legal_form)
         total = sum((r.amount for r in rows), Decimal("0"))
         if section == "equity":
             if report.retained_prior:

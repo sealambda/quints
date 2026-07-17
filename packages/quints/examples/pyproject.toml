@@ -1,0 +1,14 @@
+# `uv sync` installs quints — which brings beancount, fava, the statement
+# importers, and the BAZG price source along as its own dependencies — so
+# the standard beancount toolchain (`bean-check main.bean`, `fava
+# main.bean`, `bean-query`) works in this repo, not only the quints CLI.
+[project]
+name = "example-gmbh"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "quints",
+]
+
+[tool.uv]
+package = false

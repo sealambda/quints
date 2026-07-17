@@ -1,0 +1,28 @@
+; 2026 — transactions for the fiscal year. Reviewed importer drafts
+; move here from staging/. main.bean includes books/*.bean, so a new
+; year just needs a new books/<year>.bean file.
+
+; ── sample activity (remove once you book your own) ───────────────────
+
+2026-01-02 * "Founders" "Share capital paid in"
+  Assets:CH:GmbH:Current:UBS:CHF                  20000.00 CHF
+  Equity:CH:GmbH:Capital:Share                   -20000.00 CHF
+
+2026-07-02 * "Acme AG" "Consulting — July" ^INV2026014
+  Assets:CH:GmbH:Receivable:Trade                  1081.00 CHF
+  Income:CH:GmbH:Consulting:External:Domestic     -1000.00 CHF
+  Liabilities:CH:GmbH:Tax:OutputVAT                 -81.00 CHF
+
+2026-07-20 * "Acme AG" "Payment INV2026014" ^INV2026014
+  Assets:CH:GmbH:Current:UBS:CHF                   1081.00 CHF
+  Assets:CH:GmbH:Receivable:Trade                 -1081.00 CHF
+
+2026-08-05 * "Globex Ltd" "Export consulting" ^INV2026015
+  Assets:CH:GmbH:Receivable:Trade                   500.00 EUR
+  Income:CH:GmbH:Consulting:External:Export        -500.00 EUR
+
+2026-08-12 * "Foreign SaaS" "Cloud hosting (reverse charge)"
+  Expenses:CH:GmbH:IT:Hosting                       100.00 EUR
+  Assets:CH:GmbH:Tax:InputVAT                         7.53 CHF @@ 8.10 EUR
+  Liabilities:CH:GmbH:Tax:Bezugsteuer                -7.53 CHF @@ 8.10 EUR
+  Assets:CH:GmbH:Current:Wise:EUR                  -100.00 EUR

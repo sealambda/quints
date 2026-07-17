@@ -28,6 +28,16 @@ else:  # pragma: no cover
 
 DEFAULT_PATH = Path("quints.toml")
 
+# Legal form → account-name component (Assets:CH:<component>:…). The keys are
+# the entity families the official KMU Kontenrahmen (veb.ch) prints Klasse-28
+# variants for: juristische Personen (gmbh, ag) and Einzelunternehmen;
+# Personengesellschaft (per-partner capital blocks) is not supported yet.
+LEGAL_FORMS: dict[str, str] = {
+    "gmbh": "GmbH",
+    "ag": "AG",
+    "einzelfirma": "Einzelfirma",
+}
+
 
 @dataclass(frozen=True)
 class UbsImport:
@@ -76,6 +86,7 @@ class StripeImport:
 class Config:
     # [entity]
     entity_name: str = "Example GmbH"
+    legal_form: str = "gmbh"  # key into LEGAL_FORMS; picks the Klasse-28 equity variant
     vat_method: str = "effective"  # "saldo" would need a different Form-310 mapping
     vat_registered_since: Date | None = None
     operating_currency: str = "CHF"
@@ -159,6 +170,7 @@ def _from_mapping(raw: dict) -> Config:
             updates[field] = cast(value) if cast else value
 
     take(entity, "name", "entity_name")
+    take(entity, "legal_form", "legal_form")
     take(entity, "vat_method", "vat_method")
     take(entity, "vat_registered_since", "vat_registered_since")
     take(entity, "operating_currency", "operating_currency")

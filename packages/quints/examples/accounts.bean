@@ -1,0 +1,43 @@
+; Chart of accounts — Swiss KMU Kontenrahmen. Every *:CH:GmbH:* account
+; must carry the four-digit kmu: code it rolls up to (enforced by
+; quints.plugins.kmu). Extend the chart by adding more open directives;
+; see AGENTS.md and `quints report konten`.
+
+2026-01-01 open Assets:CH:GmbH:Current:UBS:CHF CHF
+  kmu: "1020"  ; Bank deposits
+2026-01-01 open Assets:CH:GmbH:Receivable:Trade
+  kmu: "1100"  ; Trade receivables
+2026-01-01 open Assets:CH:GmbH:Tax:InputVAT CHF
+  kmu: "1170"  ; Input VAT
+2026-01-01 open Liabilities:CH:GmbH:Tax:OutputVAT CHF
+  kmu: "2200"  ; VAT due
+2026-01-01 open Liabilities:CH:GmbH:Tax:Bezugsteuer CHF
+  kmu: "2200"  ; VAT due
+2026-01-01 open Liabilities:CH:GmbH:Tax:PayableVAT CHF
+  kmu: "2200"  ; VAT due
+2026-01-01 open Equity:CH:GmbH:Capital:Share CHF
+  kmu: "2800"  ; Share capital
+2026-01-01 open Income:CH:GmbH:Consulting:External:Domestic
+  kmu: "3400"  ; Revenue from services
+2026-01-01 open Income:CH:GmbH:Consulting:External:Export
+  kmu: "3400"  ; Revenue from services
+2026-01-01 open Expenses:CH:GmbH:IT:Hosting
+  kmu: "6570"  ; IT expenses
+2026-01-01 open Expenses:CH:GmbH:FX:CurrencyLoss CHF
+  kmu: "6900"  ; Financial expenses
+2026-01-01 open Income:CH:GmbH:Rounding CHF
+  kmu: "6950"  ; Financial income
+2026-01-01 open Income:CH:GmbH:FX:CurrencyGain CHF
+  kmu: "6950"  ; Financial income
+2026-01-01 open Assets:CH:GmbH:Current:Wise:CHF CHF
+  kmu: "1020"  ; Bank deposits
+2026-01-01 open Assets:CH:GmbH:Current:Wise:EUR EUR
+  kmu: "1020"  ; Bank deposits
+2026-01-01 open Assets:CH:GmbH:Current:Wise:USD USD
+  kmu: "1020"  ; Bank deposits
+2026-01-01 open Expenses:CH:GmbH:BankFees:Wise
+  kmu: "6940"  ; Bank charges
+2026-01-01 open Assets:CH:GmbH:Current:Stripe:EUR EUR
+  kmu: "1020"  ; Bank deposits
+2026-01-01 open Expenses:CH:GmbH:BankFees:Stripe
+  kmu: "6940"  ; Bank charges

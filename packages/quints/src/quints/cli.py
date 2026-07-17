@@ -801,6 +801,11 @@ def init(
         Path("."), help="Target project directory (created if missing)."
     ),
     name: str | None = typer.Option(None, "--name", help="Entity name, e.g. 'Acme GmbH'."),
+    legal_form: str | None = typer.Option(
+        None,
+        "--legal-form",
+        help="Legal form: gmbh, ag, or einzelfirma (sole proprietorship / freelancer).",
+    ),
     lang: str | None = typer.Option(None, "--lang", "-l", help="Report language: en or de."),
     importers: str | None = typer.Option(
         None, "--importers", help="Comma-separated: ubs, wise, stripe (default: none)."
@@ -815,7 +820,8 @@ def init(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip prompts; accept defaults."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ):
-    """Scaffold a new quints project (chart of accounts, quints.toml, AGENTS.md).
+    """Scaffold a new quints project (chart of accounts, per-year books,
+    quints.toml, pyproject.toml, AGENTS.md).
 
     Deterministic: the same answers always produce the same files. Run
     interactively, or feed a TOML answer-file with --answers for CI/repeatable
@@ -829,6 +835,22 @@ def init(
         answers = init_mod.Answers()
 
     interactive = answers_file is None and not yes
+    if legal_form is not None:
+        answers = replace(answers, legal_form=legal_form.strip().lower())
+    elif interactive:
+        answers = replace(
+            answers,
+            legal_form=typer.prompt("Legal form (gmbh/ag/einzelfirma)", default=answers.legal_form)
+            .strip()
+            .lower(),
+        )
+    # An answer-file's entity name is authoritative; otherwise suggest one
+    # that matches the chosen legal form instead of the GmbH default.
+    example_names = {"gmbh": "Example GmbH", "ag": "Example AG", "einzelfirma": "Jane Doe"}
+    if answers_file is None and answers.entity_name == init_mod.Answers.entity_name:
+        answers = replace(
+            answers, entity_name=example_names.get(answers.legal_form, answers.entity_name)
+        )
     if name is not None:
         answers = replace(answers, entity_name=name)
     elif interactive:
@@ -875,7 +897,7 @@ def init(
     if result.written and not result.skipped:
         ui.console.print(
             f"\nScaffolded [b]{answers.entity_name}[/] in {directory}. "
-            "Next: [b]quints check[/] then [b]quints mwst -q 2026-Q3[/]."
+            "Next: [b]uv sync[/], then [b]quints check[/] and [b]quints mwst -q 2026-Q3[/]."
         )
 
 
