@@ -43,7 +43,7 @@ def _repo(tmp_path: Path) -> Path:
     return led
 
 
-def test_inbox_inventory(tmp_path):
+def test_inbox_inventory(tmp_path: Path) -> None:
     docs = inbox.compute(_repo(tmp_path))
     by_name = {d.name: d for d in docs}
     assert len(docs) == 3
@@ -54,6 +54,7 @@ def test_inbox_inventory(tmp_path):
 
     assert by_name["2026-07-06.linked.thing.pdf"].linked
     dup = by_name["scan001.pdf"]
+    assert dup.duplicate_of is not None
     assert dup.duplicate_of.endswith("2026-06-01.old.receipt.pdf")
     assert dup.date_hint is None
 
@@ -70,7 +71,7 @@ STAGING = """
 """
 
 
-def test_match_all_kinds(tmp_path):
+def test_match_all_kinds(tmp_path: Path) -> None:
     from quints.invoice.model import make_qrr
 
     led = _repo(tmp_path)
@@ -96,7 +97,22 @@ def test_match_all_kinds(tmp_path):
     assert all(m.target.get("payee") != "Linked Supplier" for m in results)
 
 
-def test_match_empty_is_quiet(tmp_path):
+def test_match_empty_is_quiet(tmp_path: Path) -> None:
     led = tmp_path / "main.bean"
     led.write_text(LEDGER)
     assert match.compute(led, today=date(2026, 7, 12), cfg=config.Config()) == []
+
+
+def test_match_skips_draft_without_amount(tmp_path: Path) -> None:
+    """A draft whose first posting elides its amount must be skipped, not crash."""
+    led = _repo(tmp_path)
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "2026-07-12-ubs.bean").write_text(
+        '2026-07-06 ! "PIXELTOOLS.AI" "card payment"\n'
+        "  Assets:CH:GmbH:Current:UBS:CHF\n"
+        "  Expenses:CH:GmbH:FIXME             40.86 CHF\n"
+    )
+    results = match.compute(led, today=date(2026, 7, 12), cfg=config.Config())
+    # no draft→inbox / payment→invoice candidates from the amount-less draft
+    assert all(m.source.get("staging_file") is None for m in results)

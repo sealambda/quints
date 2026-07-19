@@ -1,5 +1,7 @@
 """The Quint Fava extension renders the review panel (docs/plans/06)."""
 
+from pathlib import Path
+
 from fava.application import create_app
 
 LEDGER = """
@@ -21,7 +23,7 @@ LEDGER = """
 """
 
 
-def test_dashboard_renders(tmp_path):
+def test_dashboard_renders(tmp_path: Path):
     led = tmp_path / "main.bean"
     led.write_text(LEDGER)
     (tmp_path / "staging").mkdir()

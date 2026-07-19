@@ -14,11 +14,11 @@ CASH = "Assets:Bank:Checking"
 RULES = ((r"client ag", "Assets:Receivable", "*"),)
 
 
-def _importer(**kwargs):
-    return Importer(CASH, payee_rules=RULES, **kwargs)
+def _importer(iban: str | None = None) -> Importer:
+    return Importer(CASH, payee_rules=RULES, iban=iban)
 
 
-def test_identify_accepts_mt940_and_filters_by_iban(tmp_path):
+def test_identify_accepts_mt940_and_filters_by_iban(tmp_path: Path) -> None:
     assert _importer().identify(FIXTURE)
     assert _importer(iban="CH93 0076 2011 6238 5295 7").identify(FIXTURE)
     assert not _importer(iban="CH0000000000000000000").identify(FIXTURE)
@@ -27,7 +27,7 @@ def test_identify_accepts_mt940_and_filters_by_iban(tmp_path):
     assert not _importer().identify(str(other))
 
 
-def test_extract_transactions_and_balance():
+def test_extract_transactions_and_balance() -> None:
     entries = _importer().extract(FIXTURE, existing=[])
     txns = [e for e in entries if isinstance(e, data.Transaction)]
     balances = [e for e in entries if isinstance(e, data.Balance)]
@@ -40,12 +40,14 @@ def test_extract_transactions_and_balance():
     assert debit.narration == "Debit card payment"
     assert debit.flag == "!"  # no rule matched → review flag, cash leg only
     assert len(debit.postings) == 1
+    assert debit.postings[0].units is not None
     assert debit.postings[0].units.number == Decimal("-25.50")
     assert debit.meta["mt940_ref"] == "REF001"
 
     credit = txns[1]
     assert credit.flag == "*"  # rule matched
     assert [p.account for p in credit.postings] == [CASH, "Assets:Receivable"]
+    assert credit.postings[1].units is not None
     assert credit.postings[1].units.number == Decimal("-200.00")
 
     balance = balances[0]
@@ -54,7 +56,7 @@ def test_extract_transactions_and_balance():
     assert balance.account == CASH
 
 
-def test_extract_skips_references_already_in_ledger():
+def test_extract_skips_references_already_in_ledger() -> None:
     meta = data.new_metadata("ledger.bean", 1)
     meta["mt940_ref"] = "REF001"
     booked = data.Transaction(
@@ -72,5 +74,5 @@ def test_extract_skips_references_already_in_ledger():
     assert [t.meta["mt940_ref"] for t in txns] == ["REF002"]
 
 
-def test_statement_date_is_closing_date():
+def test_statement_date_is_closing_date() -> None:
     assert _importer().date(FIXTURE) == Date(2026, 1, 31)

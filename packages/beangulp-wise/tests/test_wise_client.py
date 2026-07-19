@@ -1,6 +1,9 @@
 """Tests for the thin Wise API client (no network)."""
 
+from collections.abc import Mapping
+
 import pytest
+import requests
 
 from beangulp_wise.client import ScaChallenge, WiseClient, sign_sca_token
 
@@ -32,26 +35,32 @@ def test_sign_sca_token_produces_verifiable_signature():
     )
 
 
-class _Response:
-    def __init__(self, status_code, headers=None, payload=None):
+class _Response(requests.Response):
+    def __init__(
+        self,
+        status_code: int,
+        headers: dict[str, str] | None = None,
+        payload: object = None,
+    ) -> None:
+        super().__init__()
         self.status_code = status_code
-        self.headers = headers or {}
-        self.text = ""
+        self.headers.update(headers or {})
         self._payload = payload
 
-    def json(self):
+    def json(self, **kwargs: object) -> object:
         return self._payload
 
 
-class _Session:
+class _Session(requests.Session):
     """Fake requests.Session: first GET returns the SCA 403, then 200."""
 
-    def __init__(self):
-        self.headers = {}
-        self.calls = []
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[Mapping[str, str]] = []
 
-    def get(self, url, params=None, headers=None, timeout=None):
-        self.calls.append(headers or {})
+    def get(self, url: str | bytes, *args: object, **kwargs: object) -> requests.Response:
+        headers = kwargs.get("headers")
+        self.calls.append(headers if isinstance(headers, dict) else {})
         if len(self.calls) == 1:
             return _Response(403, headers={"x-2fa-approval": "OTT-123"})
         return _Response(200, payload={"ok": True})
@@ -71,3 +80,16 @@ def test_client_raises_actionable_error_without_key():
     client = WiseClient("token", session=_Session())
     with pytest.raises(ScaChallenge):
         client.profiles()
+
+
+def test_sign_sca_token_rejects_non_rsa_key():
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    pem = ed25519.Ed25519PrivateKey.generate().private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    with pytest.raises(TypeError, match="RSA"):
+        sign_sca_token("OTT-123", pem)

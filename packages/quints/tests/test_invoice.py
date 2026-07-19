@@ -35,12 +35,12 @@ ISSUER = Issuer(
 )
 
 
-def _domestic():
+def _domestic() -> Invoice:
     return Invoice(
         number="ACME202606",
         kind="domestic",
         currency="CHF",
-        issue_date="2026-07-02",
+        issue_date=date(2026, 7, 2),
         supply="Juni 2026",
         customer=Party(name="ACME AG", address=["Bahnhofstrasse 1", "8000 Zürich"]),
         items=[
@@ -80,7 +80,7 @@ def test_compute_export_no_vat():
         number="KEI202605",
         kind="export",
         currency="EUR",
-        issue_date="2026-06-17",
+        issue_date=date(2026, 6, 17),
         supply="May 2026",
         customer=Party(
             name="nordsoft",
@@ -154,7 +154,7 @@ def test_registry_flat_and_versioned():
         reg.resolve("mover", date(2024, 1, 1))
 
 
-def test_load_invoice_resolves_customer_ref(tmp_path):
+def test_load_invoice_resolves_customer_ref(tmp_path: Path):
     (tmp_path / "customers.yaml").write_text(
         "acme:\n  name: ACME AG\n  address: [Bahnhofstrasse 1, 8000 Zürich]\n"
     )
@@ -164,12 +164,13 @@ def test_load_invoice_resolves_customer_ref(tmp_path):
     )
     reg = load_customers(tmp_path / "customers.yaml")
     inv = load_invoice(tmp_path / "inv.yaml", reg)
+    assert isinstance(inv.customer, Party)
     assert inv.customer.name == "ACME AG"
     with pytest.raises(ValueError, match="no customer registry"):
         load_invoice(tmp_path / "inv.yaml", None)
 
 
-def test_load_invoice_toml(tmp_path):
+def test_load_invoice_toml(tmp_path: Path):
     (tmp_path / "inv.toml").write_text(
         'number = "X2"\nkind = "export"\ncurrency = "EUR"\n'
         'issue_date = 2026-06-17\n\n[customer]\nname = "nordsoft"\n'
@@ -216,7 +217,7 @@ LEDGER = """
 """
 
 
-def test_cross_check_ignores_payment_leg(tmp_path):
+def test_cross_check_ignores_payment_leg(tmp_path: Path):
     led = tmp_path / "m.bean"
     led.write_text(LEDGER)
     cc = verify.cross_check(led, _domestic(), compute(_domestic()))
@@ -224,7 +225,7 @@ def test_cross_check_ignores_payment_leg(tmp_path):
     assert cc.date == "2026-07-02" and cc.date_ok
 
 
-def test_cross_check_flags_conflict(tmp_path):
+def test_cross_check_flags_conflict(tmp_path: Path):
     led = tmp_path / "m.bean"
     led.write_text(LEDGER)
     inv = _domestic()
@@ -233,7 +234,7 @@ def test_cross_check_flags_conflict(tmp_path):
     assert cc.found and not cc.ok
 
 
-def test_cross_check_missing(tmp_path):
+def test_cross_check_missing(tmp_path: Path):
     led = tmp_path / "m.bean"
     led.write_text(LEDGER)
     inv = _domestic()
@@ -261,12 +262,12 @@ def test_party_rejects_bad_vat_id():
         Party(name="Bad AG", address=["Weg 1", "8000 Zürich"], vat_id="CHE-111.111.111 MWST")
 
 
-def _export(**overrides):
-    kw = {
+def _export(**overrides: object) -> Invoice:
+    kw: dict[str, object] = {
         "number": "KEI202605",
         "kind": "export",
         "currency": "EUR",
-        "issue_date": "2026-06-17",
+        "issue_date": date(2026, 6, 17),
         "customer": Party(
             name="nordsoft",
             address=["Tornimäe tn 1", "15551 Tallinn"],
@@ -279,10 +280,10 @@ def _export(**overrides):
         "round_5": False,
     }
     kw.update(overrides)
-    return Invoice(**kw)
+    return Invoice.model_validate(kw)
 
 
-def test_reverse_charge_requires_customer_vat(tmp_path):
+def test_reverse_charge_requires_customer_vat(tmp_path: Path):
     from quints.invoice import render
 
     no_vat = Party(name="Acme Inc", address=["1 Main St", "94105 San Francisco"], country="US")
@@ -313,12 +314,13 @@ def test_json_schemas_expose_authoring_shape():
     assert "additionalProperties" in CustomerRegistry.model_json_schema()
 
 
-def test_render_produces_pdf(tmp_path):
+def test_render_produces_pdf(tmp_path: Path):
     from quints.invoice import render
 
     out = tmp_path / "inv.pdf"
     _path, totals, payload = render.render(_domestic(), ISSUER, out)
     assert out.exists() and out.read_bytes()[:5] == b"%PDF-"
+    assert payload is not None  # domestic invoices always carry a QR payload
     assert payload.startswith("SPC") and totals.grand_total == Decimal("5059.10")
 
 
@@ -403,7 +405,7 @@ def test_render_spanish_from_swiss_issuer(tmp_path: Path):
     assert path.exists() and out.read_bytes()[:5] == b"%PDF-"
 
 
-def test_render_embeds_bundled_font(tmp_path):
+def test_render_embeds_bundled_font(tmp_path: Path):
     from pathlib import Path as P
 
     import pytest

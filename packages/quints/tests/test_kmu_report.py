@@ -3,6 +3,7 @@
 import dataclasses
 import json
 from decimal import Decimal
+from pathlib import Path
 
 from quints import kmu
 
@@ -50,13 +51,13 @@ _LEDGER = """
 """
 
 
-def _ledger_file(tmp_path):
+def _ledger_file(tmp_path: Path) -> Path:
     f = tmp_path / "main.bean"
     f.write_text(_LEDGER)
     return f
 
 
-def test_bilanz_balances_and_splits_result(tmp_path):
+def test_bilanz_balances_and_splits_result(tmp_path: Path) -> None:
     r = kmu.compute_bilanz(_ledger_file(tmp_path), "2026-06-30")
     # cash: 990 CHF + 200 EUR @ 0.90 (report-date rate) = 1170
     assert r.total_assets == Decimal("1170.00")
@@ -71,7 +72,7 @@ def test_bilanz_balances_and_splits_result(tmp_path):
     assert [c.code for c in cash.codes] == ["1020"]
 
 
-def test_erfolg_flows_at_transaction_rates(tmp_path):
+def test_erfolg_flows_at_transaction_rates(tmp_path: Path) -> None:
     r = kmu.compute_erfolg(_ledger_file(tmp_path), "2026-01-01", "2026-12-31")
     assert r.revenue[0].amount == Decimal("190.00")  # 200 EUR @ 0.95
     assert r.ebit == Decimal("190.00")
@@ -79,13 +80,13 @@ def test_erfolg_flows_at_transaction_rates(tmp_path):
     assert r.result == Decimal("180.00")
 
 
-def test_erfolg_excludes_prior_year(tmp_path):
+def test_erfolg_excludes_prior_year(tmp_path: Path) -> None:
     r = kmu.compute_erfolg(_ledger_file(tmp_path), "2025-01-01", "2025-12-31")
     assert r.result == Decimal("-50.00")
     assert not r.revenue
 
 
-def test_konten_lists_all_touched_codes(tmp_path):
+def test_konten_lists_all_touched_codes(tmp_path: Path) -> None:
     r = kmu.compute_konten(_ledger_file(tmp_path), "2026-01-01", "2026-12-31")
     assert [k.code for k in r.konten] == ["1020", "1100", "2800", "3400", "6940"]
     revenue = next(k for k in r.konten if k.code == "3400")
@@ -100,7 +101,7 @@ def test_labels_are_bilingual():
     assert kmu.kmu_name("9999", "en") == "9999"  # unknown code degrades, never errors
 
 
-def test_reports_serialize_to_json(tmp_path):
+def test_reports_serialize_to_json(tmp_path: Path) -> None:
     r = kmu.compute_bilanz(_ledger_file(tmp_path), "2026-06-30")
     payload = json.loads(json.dumps(dataclasses.asdict(r), default=str))
     assert payload["total_assets"] == "1170.00"

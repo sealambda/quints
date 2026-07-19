@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
+from typing import TypedDict
 
 import typst
 from babel.dates import format_date
@@ -16,6 +18,25 @@ from .labels import labels as get_labels
 from .model import Invoice, Issuer, Totals, compute, make_scor, money, number
 
 TEMPLATE = Path(__file__).parent / "template.typ"
+
+
+class InvoiceContext(TypedDict):
+    """The data context handed to the Typst template as ``data.json``."""
+
+    reverse_charge: bool
+    lang: str
+    kind: str
+    currency: str
+    labels: dict[str, str]
+    issuer: dict[str, str | list[str] | None]
+    customer: dict[str, str | list[str] | None]
+    invoice: dict[str, str]
+    terms: str | None
+    items: list[dict[str, str | int]]
+    totals: dict[str, str | bool]
+    payment: Mapping[str, str | None]
+    notes: list[str]
+    brand: dict[str, str | int | None]
 
 
 def _fmt_iban(iban: str) -> str:
@@ -30,9 +51,15 @@ def _fmt_date(d: date, locale: str) -> str:
 
 
 def build_context(
-    inv: Invoice, issuer: Issuer, totals: Totals, payment: dict, reverse_charge: bool = False
-) -> dict:
+    inv: Invoice,
+    issuer: Issuer,
+    totals: Totals,
+    payment: Mapping[str, str | None],
+    reverse_charge: bool = False,
+    logo: str | None = None,
+) -> InvoiceContext:
     lbl = get_labels(inv.language)
+    customer = inv.resolved_customer
     return {
         "reverse_charge": reverse_charge,
         "lang": inv.language,
@@ -48,10 +75,10 @@ def build_context(
             "phone": issuer.phone,
         },
         "customer": {
-            "name": inv.customer.name,
-            "address": inv.customer.address,
-            "country": inv.customer.country,
-            "vat_id": inv.customer.vat_id,
+            "name": customer.name,
+            "address": customer.address,
+            "country": customer.country,
+            "vat_id": customer.vat_id,
         },
         "invoice": {
             "number": inv.number,
@@ -86,24 +113,27 @@ def build_context(
             "font": issuer.brand.font,
             "font_display": issuer.brand.font_display or issuer.brand.font,
             "display_stretch": issuer.brand.font_display_stretch,
-            "logo": None,
+            "logo": logo,
         },
     }
 
 
-def _compile(main: Path, output: Path, root: Path, font_paths: list) -> None:
+def _compile(main: Path, output: Path, root: Path, font_paths: list[Path]) -> None:
     """Compile to PDF/A-2b (archival) when supported, else a plain PDF."""
-    kwargs = {"output": str(output), "root": str(root), "font_paths": [str(p) for p in font_paths]}
+    fonts = [str(p) for p in font_paths]
     try:
-        typst.compile(str(main), pdf_standards="a-2b", **kwargs)
+        typst.compile(
+            str(main), output=str(output), root=str(root), font_paths=fonts, pdf_standards="a-2b"
+        )
     except (TypeError, ValueError):  # older typst-py, or standard unsupported
-        typst.compile(str(main), **kwargs)
+        typst.compile(str(main), output=str(output), root=str(root), font_paths=fonts)
 
 
 def render(inv: Invoice, issuer: Issuer, out_path: Path) -> tuple[Path, Totals, str | None]:
     """Render to `out_path`. Returns (path, totals, qr_payload|None)."""
     totals = compute(inv)
     account = issuer.account(inv.currency)
+    customer = inv.resolved_customer
 
     # Reverse charge needs a VAT-identified recipient: Art. 196 EU VAT Directive,
     # and Art. 226(4)+(11a) require the customer's VAT number + mention on the
@@ -111,10 +141,10 @@ def render(inv: Invoice, issuer: Issuer, out_path: Path) -> tuple[Path, Totals, 
     reverse_charge = False
     if inv.kind == "export":
         reverse_charge = True if inv.reverse_charge is None else inv.reverse_charge
-        if reverse_charge and not inv.customer.vat_id:
+        if reverse_charge and not customer.vat_id:
             raise ValueError(
                 f"export invoice {inv.number} claims reverse charge but customer "
-                f"{inv.customer.name!r} has no vat_id — add their VAT number, or "
+                f"{customer.name!r} has no vat_id — add their VAT number, or "
                 f"set `reverse_charge: false` if they are outside a reverse-charge "
                 f"regime (Art. 196 / Art. 226(4) EU VAT Directive)"
             )
@@ -142,13 +172,14 @@ def render(inv: Invoice, issuer: Issuer, out_path: Path) -> tuple[Path, Totals, 
                 "reference": _fmt_iban(inv.reference or make_scor(inv.number)),
             }
 
-        ctx = build_context(inv, issuer, totals, payment, reverse_charge)
         logo = issuer.brand.logo
+        logo_name = None
         if logo and Path(logo).exists():
             dest = work / ("logo" + Path(logo).suffix)
             shutil.copy(logo, dest)
-            ctx["brand"]["logo"] = dest.name
+            logo_name = dest.name
 
+        ctx = build_context(inv, issuer, totals, payment, reverse_charge, logo=logo_name)
         (work / "data.json").write_text(json.dumps(ctx, ensure_ascii=False, indent=2))
         shutil.copy(TEMPLATE, work / "template.typ")
 

@@ -31,6 +31,7 @@ import json
 import re
 from collections.abc import Sequence
 from decimal import Decimal
+from typing import TypedDict, TypeGuard
 
 import beangulp
 from beancount.core import data, flags
@@ -48,23 +49,94 @@ __all__ = [
 ]
 
 
-def _decimal(value) -> Decimal:
+# ── statement shapes (the fields the importer reads; everything defensive) ───
+
+
+class _Money(TypedDict):
+    value: float | str
+    currency: str
+
+
+class _Fees(TypedDict, total=False):
+    value: float | str | None
+    currency: str | None
+
+
+class _Merchant(TypedDict, total=False):
+    name: str | None
+
+
+class _Recipient(TypedDict, total=False):
+    name: str | None
+
+
+class _Details(TypedDict, total=False):
+    type: str
+    merchant: _Merchant | None
+    recipient: _Recipient | None
+    senderName: str | None
+    description: str | None
+    paymentReference: str | None
+
+
+class _TxnOptional(TypedDict, total=False):
+    referenceNumber: str | None
+    details: _Details | None
+    totalFees: _Fees | None
+
+
+class _Txn(_TxnOptional):
+    amount: _Money
+    date: str
+
+
+class _QueryOptional(TypedDict, total=False):
+    intervalEnd: str | None
+
+
+class _Query(_QueryOptional):
+    currency: str
+
+
+class _Holder(TypedDict, total=False):
+    businessName: str | None
+    fullName: str | None
+
+
+class _StatementOptional(TypedDict, total=False):
+    accountHolder: _Holder | None
+    endOfStatementBalance: _Money | None
+
+
+class _Statement(_StatementOptional):
+    transactions: list[_Txn]
+    query: _Query
+
+
+def _is_statement(raw: object) -> TypeGuard[_Statement]:
+    return isinstance(raw, dict) and "transactions" in raw
+
+
+def _decimal(value: object) -> Decimal:
     return Decimal(str(value))
 
 
-def _payee(details: dict) -> str:
+def _payee(details: _Details) -> str:
     kind = details.get("type", "")
     if kind == "CARD":
         merchant = details.get("merchant") or {}
-        if merchant.get("name"):
-            return merchant["name"]
+        name = merchant.get("name")
+        if name:
+            return name
     if kind == "TRANSFER":
         recipient = details.get("recipient") or {}
         name = recipient.get("name") or details.get("senderName")
         if name:
             return name
-    if kind in ("DEPOSIT", "MONEY_ADDED") and details.get("senderName"):
-        return details["senderName"]
+    if kind in ("DEPOSIT", "MONEY_ADDED"):
+        sender = details.get("senderName")
+        if sender:
+            return sender
     if kind == "CONVERSION":
         return "Wise"
     return (details.get("description") or "").strip()
@@ -95,22 +167,23 @@ class Importer(beangulp.Importer):
 
     # ── beangulp interface ───────────────────────────────────────────────────
 
-    def _load(self, filepath: str) -> dict | None:
+    def _load(self, filepath: str) -> _Statement | None:
         try:
             with open(filepath, encoding="utf-8") as f:
-                statement = json.load(f)
+                raw: object = json.load(f)
         except (OSError, ValueError):
             return None
-        if not isinstance(statement, dict) or "transactions" not in statement:
+        if not _is_statement(raw):
             return None
-        if (statement.get("query") or {}).get("currency") not in self._accounts:
+        query = raw.get("query")
+        if not query or query.get("currency") not in self._accounts:
             return None
         if self._holder:
-            holder = statement.get("accountHolder") or {}
+            holder = raw.get("accountHolder") or {}
             name = holder.get("businessName") or holder.get("fullName")
             if name != self._holder:
                 return None
-        return statement
+        return raw
 
     def identify(self, filepath: str) -> bool:
         return self._load(filepath) is not None
@@ -119,12 +192,11 @@ class Importer(beangulp.Importer):
         statement = self._load(filepath)
         return self._accounts[statement["query"]["currency"]] if statement else ""
 
-    def date(self, filepath: str):
+    def date(self, filepath: str) -> dt.date | None:
         statement = self._load(filepath)
-        if statement and (statement.get("query") or {}).get("intervalEnd"):
-            return dt.datetime.fromisoformat(
-                statement["query"]["intervalEnd"].replace("Z", "+00:00")
-            ).date()
+        end = statement["query"].get("intervalEnd") if statement else None
+        if end:
+            return dt.datetime.fromisoformat(end.replace("Z", "+00:00")).date()
         return None
 
     def filename(self, filepath: str) -> str:
@@ -195,7 +267,7 @@ class Importer(beangulp.Importer):
 
         entries.sort(key=lambda e: e.date)
         closing = statement.get("endOfStatementBalance")
-        end = (statement.get("query") or {}).get("intervalEnd")
+        end = statement["query"].get("intervalEnd")
         if closing and end:
             end_date = dt.datetime.fromisoformat(end.replace("Z", "+00:00")).date()
             entries.append(
@@ -211,6 +283,16 @@ class Importer(beangulp.Importer):
         return entries
 
 
+def _cash_value(txn: data.Transaction) -> tuple[Decimal, str] | None:
+    """Number and currency of the drafted cash leg (first posting), if priced."""
+    if not txn.postings:
+        return None
+    units = txn.postings[0].units
+    if units is None or units.number is None:
+        return None
+    return units.number, units.currency
+
+
 def merge_conversions(entries: data.Entries, meta_key: str = "wise_id") -> data.Entries:
     """Join the two single-currency legs of each Wise conversion.
 
@@ -220,32 +302,43 @@ def merge_conversions(entries: data.Entries, meta_key: str = "wise_id") -> data.
     of fees, so the transaction balances exactly and the effective rate is the
     booked one.
     """
-    by_ref: dict[str, list[int]] = {}
+    by_ref: dict[str, list[tuple[int, data.Transaction]]] = {}
     for i, entry in enumerate(entries):
         if isinstance(entry, data.Transaction) and entry.meta.get("conversion"):
             ref = entry.meta.get(meta_key)
             if ref:
-                by_ref.setdefault(ref, []).append(i)
+                by_ref.setdefault(ref, []).append((i, entry))
 
     merged: data.Entries = []
     drop: set[int] = set()
-    for indexes in by_ref.values():
-        if len(indexes) != 2:
+    for legs in by_ref.values():
+        if len(legs) != 2:
             continue  # counterpart not in this batch; leave the leg for review
-        a, b = (entries[i] for i in indexes)
-        out_leg, in_leg = (a, b) if a.postings[0].units.number < 0 else (b, a)
+        (index_a, a), (index_b, b) = legs
+        a_cash = _cash_value(a)
+        b_cash = _cash_value(b)
+        if a_cash is None or b_cash is None:
+            continue  # a leg has no cash amount; leave both for review
+        out_leg, (out_number, out_currency) = (a, a_cash) if a_cash[0] < 0 else (b, b_cash)
+        in_leg = b if out_leg is a else a
         out_cash = out_leg.postings[0]
+        in_cash = in_leg.postings[0]
         fees = list(out_leg.postings[1:] + in_leg.postings[1:])
         fee_total = sum(
-            (p.units.number for p in fees if p.units.currency == out_cash.units.currency),
+            (
+                units.number
+                for p in fees
+                if (units := p.units) is not None
+                and units.number is not None
+                and units.currency == out_currency
+            ),
             Decimal("0"),
         )
-        in_cash = in_leg.postings[0]
         priced_in = data.Posting(
             in_cash.account,
             in_cash.units,
             None,
-            Amount(-out_cash.units.number - fee_total, out_cash.units.currency),
+            Amount(-out_number - fee_total, out_currency),
             None,
             None,
         )
@@ -263,7 +356,7 @@ def merge_conversions(entries: data.Entries, meta_key: str = "wise_id") -> data.
                 [out_cash, priced_in, *fees],
             )
         )
-        drop.update(indexes)
+        drop.update((index_a, index_b))
 
     result = [e for i, e in enumerate(entries) if i not in drop]
     result.extend(merged)

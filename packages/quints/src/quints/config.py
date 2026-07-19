@@ -120,67 +120,80 @@ class Config:
     import_stripe: StripeImport | None = None
 
 
-def _rules(section: dict) -> tuple[tuple[str, str, str], ...]:
-    return tuple((r[0], r[1], r[2]) for r in section.get("rules", ()))
+def _rules(section: dict[str, object]) -> tuple[tuple[str, str, str], ...]:
+    rules = section.get("rules")
+    if not isinstance(rules, list):
+        return ()
+    return tuple((r[0], r[1], r[2]) for r in rules)
 
 
-def _accounts_map(section: dict, default) -> tuple[tuple[str, str], ...]:
-    if "accounts" not in section:
+def _accounts_map(
+    section: dict[str, object], default: tuple[tuple[str, str], ...]
+) -> tuple[tuple[str, str], ...]:
+    accounts = section.get("accounts")
+    if not isinstance(accounts, dict):
         return default
-    return tuple(sorted(section["accounts"].items()))
+    return tuple(sorted(accounts.items()))
 
 
-def _import_sections(raw: dict) -> dict:
-    imports = raw.get("import") or {}
-    updates: dict = {}
-    if "ubs" in imports:
-        s = imports["ubs"]
+def _import_sections(raw: dict[str, object]) -> dict[str, object]:
+    imports = raw.get("import")
+    if not isinstance(imports, dict):
+        return {}
+    updates: dict[str, object] = {}
+    ubs = imports.get("ubs")
+    if isinstance(ubs, dict):
         updates["import_ubs"] = UbsImport(
-            account=s.get("account", UbsImport.account),
-            iban=s.get("iban"),
-            currency=s.get("currency", UbsImport.currency),
-            rules=_rules(s),
+            account=ubs.get("account", UbsImport.account),
+            iban=ubs.get("iban"),
+            currency=ubs.get("currency", UbsImport.currency),
+            rules=_rules(ubs),
         )
-    if "wise" in imports:
-        s = imports["wise"]
+    wise = imports.get("wise")
+    if isinstance(wise, dict):
         updates["import_wise"] = WiseImport(
-            accounts=_accounts_map(s, WiseImport.accounts),
-            fees_account=s.get("fees_account", WiseImport.fees_account),
-            holder=s.get("holder"),
-            rules=_rules(s),
+            accounts=_accounts_map(wise, WiseImport.accounts),
+            fees_account=wise.get("fees_account", WiseImport.fees_account),
+            holder=wise.get("holder"),
+            rules=_rules(wise),
         )
-    if "stripe" in imports:
-        s = imports["stripe"]
+    stripe = imports.get("stripe")
+    if isinstance(stripe, dict):
         updates["import_stripe"] = StripeImport(
-            accounts=_accounts_map(s, StripeImport.accounts),
-            fees_account=s.get("fees_account", StripeImport.fees_account),
-            tax_account=s.get("tax_account", StripeImport.tax_account),
-            account_id=s.get("account_id"),
-            rules=_rules(s),
+            accounts=_accounts_map(stripe, StripeImport.accounts),
+            fees_account=stripe.get("fees_account", StripeImport.fees_account),
+            tax_account=stripe.get("tax_account", StripeImport.tax_account),
+            account_id=stripe.get("account_id"),
+            rules=_rules(stripe),
         )
     return updates
 
 
-def _from_mapping(raw: dict) -> Config:
-    entity = raw.get("entity") or {}
-    ledger_ = raw.get("ledger") or {}
-    accounts = raw.get("accounts") or {}
-    report = raw.get("report") or {}
-    cfg = Config()
-    updates: dict = {}
+def _from_mapping(raw: dict[str, object]) -> Config:
+    def section(key: str) -> dict[str, object]:
+        value = raw.get(key)
+        return value if isinstance(value, dict) else {}
 
-    def take(section: dict, key: str, field: str, cast=None):
+    entity = section("entity")
+    ledger_ = section("ledger")
+    accounts = section("accounts")
+    report = section("report")
+    cfg = Config()
+    updates: dict[str, object] = {}
+
+    def take(section: dict[str, object], key: str, field: str) -> None:
         if key in section:
-            value = section[key]
-            updates[field] = cast(value) if cast else value
+            updates[field] = section[key]
 
     take(entity, "name", "entity_name")
     take(entity, "legal_form", "legal_form")
     take(entity, "vat_method", "vat_method")
     take(entity, "vat_registered_since", "vat_registered_since")
     take(entity, "operating_currency", "operating_currency")
-    take(ledger_, "main", "ledger_main", Path)
-    take(ledger_, "prices", "ledger_prices", Path)
+    if "main" in ledger_:
+        updates["ledger_main"] = Path(str(ledger_["main"]))
+    if "prices" in ledger_:
+        updates["ledger_prices"] = Path(str(ledger_["prices"]))
     for key in (
         "input_vat",
         "output_vat",

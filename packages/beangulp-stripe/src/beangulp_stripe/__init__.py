@@ -44,6 +44,7 @@ import json
 import re
 from collections.abc import Sequence
 from decimal import Decimal
+from typing import TypedDict, TypeGuard
 
 import beangulp
 from beancount.core import data, flags
@@ -52,6 +53,67 @@ from beancount.core.amount import Amount
 from .client import StripeClient, StripeError  # re-export
 
 __all__ = ["Importer", "StripeClient", "StripeError", "major_units"]
+
+
+class _FeeDetail(TypedDict, total=False):
+    amount: int
+    type: str
+
+
+class _Billing(TypedDict, total=False):
+    name: str | None
+    email: str | None
+
+
+class _Source(TypedDict, total=False):
+    billing_details: _Billing
+
+
+class _Txn(TypedDict, total=False):
+    id: str
+    object: str
+    type: str
+    currency: str
+    created: int
+    net: int
+    fee: int
+    description: str | None
+    source: _Source | str | None
+    fee_details: list[_FeeDetail]
+
+
+class _BalanceFunds(TypedDict, total=False):
+    amount: int
+    currency: str
+
+
+class _BalanceSnapshot(TypedDict, total=False):
+    as_of: str
+    available: list[_BalanceFunds]
+    pending: list[_BalanceFunds]
+
+
+class _AccountInfo(TypedDict, total=False):
+    id: str
+
+
+class _Document(TypedDict, total=False):
+    data: list[_Txn]
+    balance: _BalanceSnapshot
+    account: _AccountInfo
+
+
+def _is_document(obj: object) -> TypeGuard[_Document]:
+    if not isinstance(obj, dict):
+        return False
+    transactions = obj.get("data")
+    if not isinstance(transactions, list):
+        return False
+    return all(
+        isinstance(t, dict) and t.get("object", "balance_transaction") == "balance_transaction"
+        for t in transactions
+    )
+
 
 # Currencies whose minor unit is not 1/100 (Stripe docs: currencies guide).
 ZERO_DECIMAL = frozenset(
@@ -87,12 +149,12 @@ def major_units(amount: int, currency: str) -> Decimal:
     return Decimal(amount).scaleb(-exponent)
 
 
-def _payee(txn: dict) -> str:
+def _payee(txn: _Txn) -> str:
     if txn.get("type") in FEE_TYPES:
         return "Stripe"
     source = txn.get("source")
     if isinstance(source, dict):
-        billing = source.get("billing_details") or {}
+        billing: _Billing = source.get("billing_details") or {}
         name = billing.get("name") or billing.get("email")
         if name:
             return name
@@ -128,7 +190,7 @@ class Importer(beangulp.Importer):
 
     # ── beangulp interface ───────────────────────────────────────────────────
 
-    def _load(self, filepath: str) -> dict | None:
+    def _load(self, filepath: str) -> _Document | None:
         try:
             with open(filepath, encoding="utf-8") as f:
                 document = json.load(f)
@@ -136,22 +198,18 @@ class Importer(beangulp.Importer):
             return None
         if isinstance(document, list):
             document = {"data": document}
-        if not isinstance(document, dict) or not isinstance(document.get("data"), list):
+        if not _is_document(document):
             return None
-        transactions = document["data"]
-        if not all(
-            isinstance(t, dict) and t.get("object", "balance_transaction") == "balance_transaction"
-            for t in transactions
-        ):
-            return None
+        transactions = document.get("data") or []
         currencies = {(t.get("currency") or "").upper() for t in transactions}
-        snapshot = document.get("balance") or {}
-        for bucket in ("available", "pending"):
-            currencies |= {(p.get("currency") or "").upper() for p in snapshot.get(bucket) or []}
+        snapshot: _BalanceSnapshot = document.get("balance") or {}
+        for parts in (snapshot.get("available"), snapshot.get("pending")):
+            currencies |= {(p.get("currency") or "").upper() for p in parts or []}
         if not currencies & self._accounts.keys():
             return None
         if self._account_id:
-            held = (document.get("account") or {}).get("id")
+            account: _AccountInfo = document.get("account") or {}
+            held = account.get("id")
             if held and held != self._account_id:
                 return None
         return document
@@ -163,16 +221,17 @@ class Importer(beangulp.Importer):
         document = self._load(filepath)
         if not document:
             return ""
-        for txn in document["data"]:
+        for txn in document.get("data") or []:
             mapped = self._accounts.get((txn.get("currency") or "").upper())
             if mapped:
                 return mapped
         return next(iter(self._accounts.values()), "")
 
-    def date(self, filepath: str):
+    def date(self, filepath: str) -> dt.date | None:
         document = self._load(filepath)
-        if document and document["data"]:
-            newest = max(t.get("created") or 0 for t in document["data"])
+        transactions = document.get("data") if document else None
+        if transactions:
+            newest = max(t.get("created") or 0 for t in transactions)
             if newest:
                 return dt.datetime.fromtimestamp(newest, tz=dt.timezone.utc).date()
         return None
@@ -187,7 +246,7 @@ class Importer(beangulp.Importer):
         seen = _existing_references(existing, self._meta_key)
 
         entries: data.Entries = []
-        for index, txn in enumerate(document["data"]):
+        for index, txn in enumerate(document.get("data") or []):
             currency = (txn.get("currency") or "").upper()
             cash_account = self._accounts.get(currency)
             if cash_account is None:
@@ -224,7 +283,7 @@ class Importer(beangulp.Importer):
                             self._fees_account, Amount(fee - tax, currency), None, None, None, None
                         )
                     )
-                if tax:
+                if tax and self._tax_account:
                     postings.append(
                         data.Posting(
                             self._tax_account, Amount(tax, currency), None, None, None, None
@@ -272,15 +331,15 @@ class Importer(beangulp.Importer):
         entries.extend(self._balance_assertions(document, filepath, len(entries)))
         return entries
 
-    def _balance_assertions(self, document: dict, filepath: str, offset: int) -> data.Entries:
-        snapshot = document.get("balance") or {}
+    def _balance_assertions(self, document: _Document, filepath: str, offset: int) -> data.Entries:
+        snapshot: _BalanceSnapshot = document.get("balance") or {}
         as_of = snapshot.get("as_of")
         if not as_of:
             return []
         date = dt.date.fromisoformat(as_of[:10]) + dt.timedelta(days=1)
         totals: dict[str, Decimal] = {}
-        for bucket in ("available", "pending"):
-            for part in snapshot.get(bucket) or []:
+        for parts in (snapshot.get("available"), snapshot.get("pending")):
+            for part in parts or []:
                 currency = (part.get("currency") or "").upper()
                 if currency in self._accounts:
                     totals[currency] = totals.get(currency, Decimal(0)) + major_units(

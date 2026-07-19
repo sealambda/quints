@@ -9,6 +9,7 @@ assertions in books/ rely on.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date as Date
 from datetime import datetime, timezone
@@ -46,39 +47,50 @@ def invoice_id(e: data.Transaction) -> str | None:
     return links[0] if len(links) == 1 else None
 
 
-def compute_from_entries(entries, at: Date, cfg: config.Config) -> list[OpenInvoice]:
-    # (number, currency) → [net, invoice_date, payee]
-    groups: dict[tuple, list] = {}
+@dataclass
+class _Group:
+    """Mutable accumulator per (invoice number, currency)."""
+
+    net: Decimal = Decimal("0")
+    invoice_date: Date | None = None
+    payee: str = ""
+
+
+def compute_from_entries(
+    entries: Sequence[data.Directive], at: Date, cfg: config.Config
+) -> list[OpenInvoice]:
+    groups: dict[tuple[str, str], _Group] = {}
     for e in entries:
         if not isinstance(e, data.Transaction) or e.date > at:
             continue
         txn_number = invoice_id(e)
         for p in e.postings:
-            if p.account != cfg.receivable:
+            if p.account != cfg.receivable or p.units is None or p.units.number is None:
                 continue
             # posting-level invoice: metadata wins — it lets one transaction
             # reallocate between invoices (e.g. a payment applied to the
             # wrong invoice, fixed by a zero-sum relink entry)
-            number = (p.meta or {}).get("invoice") or txn_number
+            posting_invoice = (p.meta or {}).get("invoice")
+            number = str(posting_invoice) if posting_invoice else txn_number
             if number is None:
                 continue
-            g = groups.setdefault((number, p.units.currency), [Decimal("0"), None, ""])
-            g[0] += p.units.number
-            if p.units.number > 0 and g[1] is None:  # the invoicing leg
-                g[1], g[2] = e.date, e.payee or ""
+            g = groups.setdefault((number, p.units.currency), _Group())
+            g.net += p.units.number
+            if p.units.number > 0 and g.invoice_date is None:  # the invoicing leg
+                g.invoice_date, g.payee = e.date, e.payee or ""
 
-    out = []
-    for (number, currency), (net, inv_date, payee) in groups.items():
-        if abs(net) <= _TOL:
+    out: list[OpenInvoice] = []
+    for (number, currency), g in groups.items():
+        if abs(g.net) <= _TOL:
             continue
-        inv_date = inv_date or at
+        inv_date = g.invoice_date or at
         out.append(
             OpenInvoice(
                 number=number,
-                payee=payee,
+                payee=g.payee,
                 invoice_date=inv_date,
                 currency=currency,
-                open_amount=net,
+                open_amount=g.net,
                 age_days=(at - inv_date).days,
             )
         )

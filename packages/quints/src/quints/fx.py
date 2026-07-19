@@ -73,7 +73,7 @@ def compute(ledger_path: Path, at: str, cfg: config.Config | None = None) -> lis
             root = p.account.split(":", 1)[0]
             if cfg.entity_marker not in p.account or root not in ("Assets", "Liabilities"):
                 continue
-            if p.units.currency == "CHF":
+            if p.units is None or p.units.currency == "CHF":
                 continue
             inventories.setdefault(p.account, Inventory()).add_position(p)
             weight = bc_convert.get_weight(p)
@@ -90,11 +90,14 @@ def compute(ledger_path: Path, at: str, cfg: config.Config | None = None) -> lis
     revaluations: list[Revaluation] = []
     for account, inv in sorted(inventories.items()):
         for pos in inv:
-            units = pos.units.number.quantize(Decimal("0.01"))
+            number = pos.units.number
+            if number is None:
+                continue
+            units = number.quantize(Decimal("0.01"))
             if not units:
                 continue
             rate_date, rate = ledger.rate(price_map, pos.units.currency, on)
-            if rate is None:
+            if rate is None or rate_date is None:
                 raise RateUnavailable(pos.units.currency, on)
             market = ledger.rappen(units * Decimal(rate))
             book_value = ledger.rappen(book.get((account, pos.units.currency), Decimal("0")))

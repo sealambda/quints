@@ -26,6 +26,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from beancount.core import data
+from beancount.core.amount import Amount
 from beancount.parser import parser as raw_parser
 from rich import box
 from rich.console import Console
@@ -43,12 +44,12 @@ _TOL = Decimal("0.005")
 class Match:
     kind: str  # payment→invoice | draft→inbox | inbox→booked
     score: float
-    source: dict
-    target: dict
-    reasons: list
+    source: dict[str, str | None]
+    target: dict[str, str | None]
+    reasons: list[str]
 
 
-def reference_index(open_invoices) -> dict[str, str]:
+def reference_index(open_invoices: list[receivables.OpenInvoice]) -> dict[str, str]:
     """Every reference form an incoming payment may carry → invoice number."""
     idx: dict[str, str] = {}
     for inv in open_invoices:
@@ -85,15 +86,17 @@ def load_staging(staging_dir: Path) -> list[tuple[str, data.Transaction]]:
     return out
 
 
-def _txn_dict(staging_file: str | None, t: data.Transaction) -> dict:
+def _txn_dict(staging_file: str | None, t: data.Transaction) -> dict[str, str | None]:
     units = t.postings[0].units
     return {
         "staging_file": staging_file,
         "date": str(t.date),
         "payee": t.payee,
         "narration": t.narration,
-        "amount": str(units.number),
-        "currency": units.currency,
+        "amount": str(units.number)
+        if isinstance(units, Amount) and units.number is not None
+        else None,
+        "currency": units.currency if isinstance(units, Amount) else None,
     }
 
 
@@ -117,7 +120,7 @@ def compute(
     ref_idx = reference_index(opens)
     by_number = {o.number: o for o in opens}
 
-    def inv_dict(o) -> dict:
+    def inv_dict(o: receivables.OpenInvoice) -> dict[str, str | None]:
         return {
             "invoice": o.number,
             "payee": o.payee,
@@ -128,6 +131,8 @@ def compute(
 
     for fname, t in drafts:
         units = t.postings[0].units
+        if not isinstance(units, Amount) or units.number is None:
+            continue  # draft's first posting has no explicit amount — nothing to score
         src = _txn_dict(fname, t)
 
         if units.number > 0:  # incoming → open invoice
@@ -179,7 +184,7 @@ def compute(
                     matches.append(Match("draft→inbox", score, src, {"document": d.name}, reasons))
 
     # inbox document → booked transaction still missing its document link
-    dated_docs = [d for d in docs if d.date_hint]
+    dated_docs = [(d, Date.fromisoformat(d.date_hint)) for d in docs if d.date_hint]
     if dated_docs:
         for e in entries:
             if not isinstance(e, data.Transaction):
@@ -188,8 +193,8 @@ def compute(
                 continue
             if not any(p.account.startswith(("Expenses:", "Income:")) for p in e.postings):
                 continue
-            for d in dated_docs:
-                dsc = date_score(e.date, Date.fromisoformat(d.date_hint), 7)
+            for d, d_date in dated_docs:
+                dsc = date_score(e.date, d_date, 7)
                 if dsc == 0.0:
                     continue
                 psim = similarity(e.payee, d.payee_hint or d.name)

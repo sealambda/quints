@@ -41,7 +41,7 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
 
 
-def _linked_basenames(entries) -> set[str]:
+def _linked_basenames(entries: data.Directives) -> set[str]:
     names: set[str] = set()
     for e in entries:
         if not isinstance(e, data.Transaction) or not e.meta:
@@ -52,7 +52,7 @@ def _linked_basenames(entries) -> set[str]:
     return names
 
 
-def scan(root: Path, entries) -> list[InboxDoc]:
+def scan(root: Path, entries: data.Directives) -> list[InboxDoc]:
     box_dir = root / "inbox"
     if not box_dir.is_dir():
         return []
@@ -75,7 +75,7 @@ def scan(root: Path, entries) -> list[InboxDoc]:
                 filed_by_hash.setdefault(_sha(p), p)
 
     linked = _linked_basenames(entries)
-    out = []
+    out: list[InboxDoc] = []
     for p in files:
         m = _NAMED.match(p.name)
         dup = filed_by_hash.get(_sha(p))

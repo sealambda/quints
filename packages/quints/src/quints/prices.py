@@ -39,7 +39,7 @@ class PricePoint(Protocol):
     @property
     def price(self) -> Decimal: ...
     @property
-    def time(self) -> datetime: ...
+    def time(self) -> datetime | None: ...
 
 
 class SeriesSource(Protocol):
@@ -62,7 +62,9 @@ _PRICE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2}) price (\w+)\s+(\S+) CHF\s*$")
 
 @dataclass
 class SyncResult:
-    per_currency: dict = field(default_factory=dict)  # ccy -> (added, last_date)
+    per_currency: dict[str, tuple[int, Date | None]] = field(
+        default_factory=dict
+    )  # ccy -> (added, last_date)
     added: int = 0
     out: Path = ledger.DEFAULT_PRICES
     wrote: bool = False
@@ -87,7 +89,7 @@ def _ticker(progress: ProgressFn | None, ccy: str, total: int) -> Callable[[Date
     return tick
 
 
-def _read(out: Path):
+def _read(out: Path) -> tuple[list[str], dict[tuple[str, Date], str]]:
     """Return (header_lines, {(ccy, date): price_str}) from an existing file."""
     header: list[str] = []
     entries: dict[tuple[str, Date], str] = {}
@@ -104,7 +106,12 @@ def _read(out: Path):
     return header, entries
 
 
-def _write(out: Path, header: list[str], entries: dict, currencies) -> None:
+def _write(
+    out: Path,
+    header: list[str],
+    entries: dict[tuple[str, Date], str],
+    currencies: Sequence[str],
+) -> None:
     lines = list(header)
     while lines and not lines[-1].strip():  # trim trailing blank header lines
         lines.pop()
@@ -147,6 +154,8 @@ def sync(
         if start <= today:
             tick = _ticker(progress, ccy, total=(today - start).days + 1)
             for sp in src.get_prices_series(ccy, _utc(start), _utc(today), progress=tick):
+                if sp.time is None:  # dateless quote — cannot be placed in the file
+                    continue
                 d = sp.time.date()
                 if (ccy, d) in entries:  # skip present (dedups weekend echoes + repair)
                     continue

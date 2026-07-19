@@ -1,6 +1,7 @@
 """Tests for the MWST report computation (Form 310 Ziffern)."""
 
 from decimal import Decimal
+from pathlib import Path
 
 from quints import mwst
 
@@ -33,13 +34,13 @@ _LEDGER = """
 """
 
 
-def _compute(tmp_path):
+def _compute(tmp_path: Path) -> mwst.MwstReport:
     led = tmp_path / "m.bean"
     led.write_text(_LEDGER)
     return mwst.compute(led, "2026-07-01", "2026-09-30")
 
 
-def test_bezugsteuer_ziffer_382(tmp_path):
+def test_bezugsteuer_ziffer_382(tmp_path: Path) -> None:
     r = _compute(tmp_path)
     assert r.z382_tax == Decimal("7.53")
     assert r.z382_net == Decimal("92.96")  # 7.53 / 0.081, rappen-rounded
@@ -48,7 +49,7 @@ def test_bezugsteuer_ziffer_382(tmp_path):
     assert (line.original, line.currency) == (Decimal("8.10"), "EUR")
 
 
-def test_totals_include_bezugsteuer(tmp_path):
+def test_totals_include_bezugsteuer(tmp_path: Path) -> None:
     r = _compute(tmp_path)
     assert r.z303_tax == Decimal("81.00")
     assert r.z399 == Decimal("88.53")  # 81.00 output + 7.53 Bezugsteuer
@@ -59,7 +60,7 @@ def test_totals_include_bezugsteuer(tmp_path):
     assert r.z200 == Decimal("1000.00") + r.z221
 
 
-def test_settlement_debit_is_not_an_accrual(tmp_path):
+def test_settlement_debit_is_not_an_accrual(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text(
         _LEDGER

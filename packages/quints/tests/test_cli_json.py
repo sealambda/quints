@@ -1,6 +1,7 @@
 """JSON-output contract for the CLI (plan 5.2: machine-readable everywhere)."""
 
 import json
+from pathlib import Path
 
 from typer.testing import CliRunner
 
@@ -14,7 +15,7 @@ LEDGER = """
 """
 
 
-def test_vat_json(tmp_path):
+def test_vat_json(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text(LEDGER)
     res = runner.invoke(
@@ -27,7 +28,7 @@ def test_vat_json(tmp_path):
     assert "Bezugsteuer" in d["posting_text"]
 
 
-def test_check_json_ok_and_errors(tmp_path):
+def test_check_json_ok_and_errors(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text(LEDGER)
     res = runner.invoke(app, ["check", "--json", "-f", str(led)])
@@ -39,7 +40,7 @@ def test_check_json_ok_and_errors(tmp_path):
     assert res.exit_code == 1 and d["ok"] is False and d["errors"][0]["line"]
 
 
-def test_receivables_json(tmp_path):
+def test_receivables_json(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text("""
 2024-01-01 open Assets:CH:GmbH:Receivable:Trade

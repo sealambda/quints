@@ -33,22 +33,26 @@ API notes (discovered empirically):
 
 from __future__ import annotations
 
-from collections import namedtuple
 from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from typing import NamedTuple
 from xml.etree import ElementTree
 
 import requests
 
-try:  # Use beanprice's types when available, but stay importable/testable without it.
-    from beanprice import source as _bp_source  # pyright: ignore[reportMissingImports]
 
-    _Base = _bp_source.Source
-    SourcePrice = _bp_source.SourcePrice
-except ImportError:  # pragma: no cover - exercised only when beanprice is absent
-    _Base = object
-    SourcePrice = namedtuple("SourcePrice", "price time quote_currency")
+class SourcePrice(NamedTuple):
+    """Structurally identical to ``beanprice.source.SourcePrice``.
+
+    Defined locally so the module stays importable/testable without beanprice;
+    beanprice consumes the fields by attribute, so this is a drop-in value.
+    """
+
+    price: Decimal
+    time: datetime | None
+    quote_currency: str | None
+
 
 __all__ = ["BAZGError", "Source", "SourcePrice"]
 
@@ -69,7 +73,7 @@ def _localname(tag: str) -> str:
 _session: requests.Session | None = None
 
 
-def _http_get(url: str, params: dict) -> str:
+def _http_get(url: str, params: dict[str, str]) -> str:
     """Single network seam — monkeypatched in tests.
 
     One shared Session: a series fetch is one request per day, and reusing the
@@ -136,8 +140,13 @@ def _parse_date(text: str) -> datetime:
     return datetime(year, month, day, tzinfo=timezone.utc)
 
 
-class Source(_Base):
-    """beanprice source for BAZG daily CHF rates."""
+class Source:
+    """beanprice source for BAZG daily CHF rates.
+
+    Implements the ``beanprice.source.Source`` interface structurally;
+    beanprice instantiates and calls it duck-typed, so no base class is
+    needed and the module stays importable without beanprice.
+    """
 
     def get_latest_price(self, ticker: str) -> SourcePrice:
         # No ``d`` param → current published rate.

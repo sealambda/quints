@@ -2,6 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 from quints import config, receivables
 
@@ -30,7 +31,7 @@ LEDGER = """
 """
 
 
-def test_open_invoices_and_aging(tmp_path):
+def test_open_invoices_and_aging(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text(LEDGER)
     open_invoices, _at = receivables.compute(led, date(2026, 7, 1), config.Config())
@@ -41,7 +42,7 @@ def test_open_invoices_and_aging(tmp_path):
     assert o.payee == "ACME" and o.currency == "CHF"
 
 
-def test_at_date_excludes_later_payments(tmp_path):
+def test_at_date_excludes_later_payments(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text(LEDGER)
     open_invoices, _ = receivables.compute(led, date(2026, 5, 15), config.Config())
@@ -50,7 +51,7 @@ def test_at_date_excludes_later_payments(tmp_path):
     }
 
 
-def test_posting_level_invoice_metadata_reallocates(tmp_path):
+def test_posting_level_invoice_metadata_reallocates(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text(
         LEDGER

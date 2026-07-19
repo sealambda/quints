@@ -12,8 +12,12 @@ dependencies = [
 
 [project.optional-dependencies]
 # beanprice is a runtime peer: needed to actually plug into `bean-price`, but the
-# module stays importable/testable without it (falls back to a local SourcePrice).
+# module stays importable/testable without it (Source implements the interface
+# structurally and SourcePrice is a local drop-in — never imported here).
 beanprice = ["beanprice"]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["beanprice"] # runtime peer, deliberately never imported (see above)
 
 [dependency-groups]
 dev = ["pytest>=8"]

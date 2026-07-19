@@ -1,32 +1,34 @@
 """Tests for the thin Stripe API client (stubbed session, no network)."""
 
 import pytest
+import requests
 
 from beangulp_stripe.client import StripeClient, StripeError
 
 
-class StubResponse:
-    def __init__(self, status_code, payload):
+class StubResponse(requests.Response):
+    def __init__(self, status_code: int, payload: object) -> None:
+        super().__init__()
         self.status_code = status_code
         self._payload = payload
-        self.text = str(payload)
 
-    def json(self):
+    def json(self, **kwargs: object) -> object:
         return self._payload
 
 
-class StubSession:
-    def __init__(self, responses):
-        self.headers = {}
-        self.calls = []
+class StubSession(requests.Session):
+    def __init__(self, responses: list[StubResponse]) -> None:
+        super().__init__()
+        self.calls: list[tuple[str, dict[str, object]]] = []
         self._responses = list(responses)
 
-    def get(self, url, params=None, timeout=None):
-        self.calls.append((url, dict(params or {})))
+    def get(self, url: str | bytes, *args: object, **kwargs: object) -> requests.Response:
+        params = kwargs.get("params")
+        self.calls.append((str(url), dict(params) if isinstance(params, dict) else {}))
         return self._responses.pop(0)
 
 
-def test_balance_transactions_paginates_and_sorts_ascending():
+def test_balance_transactions_paginates_and_sorts_ascending() -> None:
     session = StubSession(
         [
             StubResponse(
@@ -59,7 +61,7 @@ def test_balance_transactions_paginates_and_sorts_ascending():
     assert second[1]["starting_after"] == "txn_2"
 
 
-def test_auth_header_and_error_message():
+def test_auth_header_and_error_message() -> None:
     session = StubSession(
         [
             StubResponse(401, {"error": {"message": "Invalid API Key provided"}}),

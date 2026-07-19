@@ -16,10 +16,11 @@ def _slug(text: str) -> str:
 def build_draft(inv: Invoice, totals: Totals, cfg: config.Config | None = None) -> str:
     """A balanced receivable booking matching what `verify.cross_check` expects."""
     cfg = cfg or config.get()
+    customer = inv.resolved_customer
     ccy = inv.currency
     income = cfg.income_export if inv.kind == "export" else cfg.income_domestic
     narration = f"{inv.supply} invoiced".strip() if inv.supply else f"Invoice {inv.number}"
-    doc = f"{inv.issue_date}.{_slug(inv.customer.name)}.{_slug(inv.supply or inv.number)}.pdf"
+    doc = f"{inv.issue_date}.{_slug(customer.name)}.{_slug(inv.supply or inv.number)}.pdf"
 
     legs: list[tuple[str, str]] = [(cfg.receivable, f"{totals.grand_total:>10.2f} {ccy}")]
     legs.append((income, f"{-totals.subtotal:>10.2f} {ccy}"))
@@ -30,7 +31,7 @@ def build_draft(inv: Invoice, totals: Totals, cfg: config.Config | None = None) 
 
     width = max(len(a) for a, _ in legs) + 4
     lines = [
-        f'{inv.issue_date} * "{inv.customer.name}" "{narration}" ^{inv.number}',
+        f'{inv.issue_date} * "{customer.name}" "{narration}" ^{inv.number}',
         f'    invoice: "{inv.number}"',
         f'    document: "{doc}"  ; TODO file the PDF under documents/{income.replace(":", "/")}/',
     ]

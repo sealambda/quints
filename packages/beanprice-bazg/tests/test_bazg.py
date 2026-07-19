@@ -1,6 +1,7 @@
 """Unit tests for beanprice_bazg — offline by default (HTTP is monkeypatched)."""
 
 import os
+from collections.abc import Callable
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -37,11 +38,11 @@ DAILY_XML = """<?xml version="1.0" encoding="UTF-8"?>
 WEEKEND_XML = DAILY_XML.replace("<datum>03.06.2026</datum>", "<datum>05.06.2026</datum>")
 
 
-def _fixed(xml):
+def _fixed(xml: str) -> Callable[[str, dict[str, str]], str]:
     return lambda url, params: xml
 
 
-def test_parse_per_unit_currency(monkeypatch):
+def test_parse_per_unit_currency(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(bazg, "_http_get", _fixed(DAILY_XML))
     sp = bazg.Source().get_latest_price("USD")
     assert sp.price == Decimal("0.79588")
@@ -49,27 +50,27 @@ def test_parse_per_unit_currency(monkeypatch):
     assert sp.time == datetime(2026, 6, 3, tzinfo=timezone.utc)
 
 
-def test_ticker_is_case_insensitive(monkeypatch):
+def test_ticker_is_case_insensitive(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(bazg, "_http_get", _fixed(DAILY_XML))
     assert bazg.Source().get_latest_price("eur").price == Decimal("0.92526")
 
 
-def test_per_100_currency_is_divided(monkeypatch):
+def test_per_100_currency_is_divided(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(bazg, "_http_get", _fixed(DAILY_XML))
     # 1.66619 CHF per 100 EGP  ->  0.0166619 CHF per EGP
     assert bazg.Source().get_latest_price("EGP").price == Decimal("0.0166619")
 
 
-def test_unknown_currency_raises(monkeypatch):
+def test_unknown_currency_raises(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(bazg, "_http_get", _fixed(DAILY_XML))
     with pytest.raises(bazg.BAZGError):
         bazg.Source().get_latest_price("XYZ")
 
 
-def test_historical_passes_date_param(monkeypatch):
-    seen = {}
+def test_historical_passes_date_param(monkeypatch: pytest.MonkeyPatch):
+    seen: dict[str, str] = {}
 
-    def fake(url, params):
+    def fake(url: str, params: dict[str, str]) -> str:
         seen.update(params)
         return DAILY_XML
 
@@ -89,9 +90,9 @@ def test_series_reports_progress_per_requested_day(monkeypatch: pytest.MonkeyPat
     assert seen == [datetime(2026, 6, d).date() for d in (5, 6, 7)]
 
 
-def test_series_dedupes_by_actual_rate_date(monkeypatch):
+def test_series_dedupes_by_actual_rate_date(monkeypatch: pytest.MonkeyPatch):
     # Fri 05.06 returns its own date; Sat/Sun echo Fri -> one point, not three.
-    def fake(url, params):
+    def fake(url: str, params: dict[str, str]) -> str:
         return WEEKEND_XML
 
     monkeypatch.setattr(bazg, "_http_get", fake)

@@ -123,6 +123,8 @@ class Customer(BaseModel):
     def at(self, on: date) -> Party:
         """The party data in force on `on` (for re-rendering old invoices)."""
         if not self.versions:
+            if self.name is None or self.address is None:
+                raise ValueError("flat customer entry needs both `name` and `address`")
             return Party(
                 name=self.name, address=self.address, country=self.country, vat_id=self.vat_id
             )
@@ -216,6 +218,18 @@ class Invoice(BaseModel):
         return self.locale.split("_")[0]
 
     @property
+    def resolved_customer(self) -> Party:
+        """The customer as a full `Party`; raises if it is still an unresolved
+        registry reference (load via `load_invoice` with a customer registry)."""
+        if isinstance(self.customer, str):
+            raise ValueError(
+                f"invoice {self.number} customer {self.customer!r} is an unresolved "
+                f"registry reference — load it through `load_invoice` with a "
+                f"customer registry"
+            )
+        return self.customer
+
+    @property
     def vat_rate(self) -> Decimal:
         return self.vat.rate
 
@@ -276,7 +290,7 @@ class Totals(BaseModel):
 # ── loading ───────────────────────────────────────────────────────────────────
 
 
-def load_mapping(path: Path) -> dict:
+def load_mapping(path: Path) -> dict[str, object]:
     """Parse a .yaml/.yml/.toml/.json file into a plain mapping."""
     suffix = path.suffix.lower()
     if suffix in (".yaml", ".yml"):

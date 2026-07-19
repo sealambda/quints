@@ -27,7 +27,7 @@ _CODE = re.compile(r"^\d{4}$")
 
 
 class KmuError(NamedTuple):
-    source: dict
+    source: data.Meta
     message: str
     entry: data.Open
 

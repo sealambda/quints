@@ -15,8 +15,6 @@ No write scopes are needed — the importer only ever reads.
 
 from __future__ import annotations
 
-from typing import Any
-
 import requests
 
 API_HOST = "https://api.stripe.com"
@@ -24,6 +22,15 @@ API_HOST = "https://api.stripe.com"
 
 class StripeError(RuntimeError):
     """Unexpected Stripe API response."""
+
+
+def _created_key(txn: dict[str, object]) -> tuple[int, str]:
+    created = txn.get("created")
+    txn_id = txn.get("id")
+    return (
+        created if isinstance(created, int) else 0,
+        txn_id if isinstance(txn_id, str) else "",
+    )
 
 
 class StripeClient:
@@ -40,7 +47,7 @@ class StripeClient:
             {"Authorization": f"Bearer {api_key}", "User-Agent": "beangulp-stripe"}
         )
 
-    def _get(self, path: str, params: dict | None = None) -> Any:
+    def _get(self, path: str, params: dict[str, str | int] | None = None) -> dict[str, object]:
         response = self._session.get(self._host + path, params=params, timeout=30)
         if response.status_code != 200:
             try:
@@ -57,14 +64,14 @@ class StripeClient:
         *,
         expand_source: bool = True,
         page_size: int = 100,
-    ) -> list[dict]:
+    ) -> list[dict[str, object]]:
         """All balance transactions in the window, oldest first.
 
         ``created_gte``/``created_lte`` are unix timestamps. Stripe pages
         newest-first with ``starting_after`` cursors; the result is re-sorted
         ascending so drafts read chronologically.
         """
-        params: dict[str, Any] = {"limit": page_size}
+        params: dict[str, str | int] = {"limit": page_size}
         if created_gte is not None:
             params["created[gte]"] = created_gte
         if created_lte is not None:
@@ -72,20 +79,25 @@ class StripeClient:
         if expand_source:
             params["expand[]"] = "data.source"
 
-        transactions: list[dict] = []
+        transactions: list[dict[str, object]] = []
         while True:
             page = self._get("/v1/balance_transactions", params)
-            transactions.extend(page.get("data") or [])
+            batch = page.get("data")
+            if isinstance(batch, list):
+                transactions.extend(t for t in batch if isinstance(t, dict))
             if not page.get("has_more"):
                 break
-            params = dict(params, starting_after=transactions[-1]["id"])
-        transactions.sort(key=lambda t: (t.get("created") or 0, t.get("id") or ""))
+            last_id = transactions[-1].get("id") if transactions else None
+            if not isinstance(last_id, str):
+                raise StripeError("balance transaction page without string ids")
+            params = dict(params, starting_after=last_id)
+        transactions.sort(key=_created_key)
         return transactions
 
-    def balance(self) -> dict:
+    def balance(self) -> dict[str, object]:
         """Current balance (``available`` + ``pending`` per currency)."""
         return self._get("/v1/balance")
 
-    def account(self) -> dict:
+    def account(self) -> dict[str, object]:
         """The account the key belongs to (id, business profile)."""
         return self._get("/v1/account")

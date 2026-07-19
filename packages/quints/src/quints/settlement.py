@@ -47,12 +47,16 @@ class Settlement:
     bezugsteuer: Decimal = Decimal("0")
 
 
-def _payable_balance(entries, upto: Date, cfg: config.Config) -> Decimal:
+def _payable_balance(entries: data.Directives, upto: Date, cfg: config.Config) -> Decimal:
     bal = Decimal("0")
     for e in entries:
         if isinstance(e, data.Transaction) and e.date <= upto:
             for p in e.postings:
-                if p.account == cfg.payable_vat:
+                if (
+                    p.account == cfg.payable_vat
+                    and p.units is not None
+                    and p.units.number is not None
+                ):
                     bal += p.units.number
     return bal
 
@@ -121,7 +125,7 @@ class Liability:
     days_left: int | None
 
 
-def _as_date(v):
+def _as_date(v: object) -> Date | None:
     if isinstance(v, Date):
         return v
     try:
@@ -131,8 +135,11 @@ def _as_date(v):
 
 
 def outstanding(
-    ledger_path: Path, today: Date | None = None, cfg: config.Config | None = None, entries=None
-):
+    ledger_path: Path,
+    today: Date | None = None,
+    cfg: config.Config | None = None,
+    entries: data.Directives | None = None,
+) -> tuple[list[Liability], Decimal, Decimal, Date]:
     """Return (liabilities, unlinked_owed, total_owed, today).
 
     Groups PayableVAT movements by their ``^VAT-*`` link; a link nets to zero once
@@ -145,7 +152,8 @@ def outstanding(
     if entries is None:
         entries, _ = ledger.load_entries(ledger_path)
 
-    groups: dict[str, list] = {}  # link -> [net, due]
+    nets: dict[str, Decimal] = {}  # link -> net PayableVAT movement
+    dues: dict[str, object] = {}  # link -> due date (raw metadata value)
     unlinked = Decimal("0")
     for e in entries:
         if not isinstance(e, data.Transaction):
@@ -155,19 +163,21 @@ def outstanding(
         for p in e.postings:
             if p.account != cfg.payable_vat:
                 continue
+            number = p.units.number if p.units is not None else None
+            if number is None:
+                continue
             if link:
-                g = groups.setdefault(link, [Decimal("0"), None])
-                g[0] += p.units.number
+                nets[link] = nets.get(link, Decimal("0")) + number
                 if due is not None:
-                    g[1] = due
+                    dues[link] = due
             else:
-                unlinked += p.units.number
+                unlinked += number
 
-    liabilities = []
-    for link, (net, due) in groups.items():
+    liabilities: list[Liability] = []
+    for link, net in nets.items():
         if net == 0:
             continue  # fully paid
-        due_date = _as_date(due)
+        due_date = _as_date(dues.get(link))
         liabilities.append(
             Liability(
                 period=link,
@@ -194,7 +204,13 @@ def render_settlement(s: Settlement, console: Console | None = None) -> None:
     console.print()
 
 
-def render_status(liabilities, unlinked, total, today, console: Console | None = None) -> None:
+def render_status(
+    liabilities: list[Liability],
+    unlinked: Decimal,
+    total: Decimal,
+    today: Date,
+    console: Console | None = None,
+) -> None:
     console = console or ui.console
     console.print()
     console.rule(f"[bold]VAT status[/]  ·  {today}")

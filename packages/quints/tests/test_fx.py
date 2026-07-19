@@ -1,6 +1,7 @@
 """Tests for the year-end FX revaluation helper."""
 
 from decimal import Decimal
+from pathlib import Path
 
 from quints import fx
 
@@ -21,13 +22,13 @@ _LEDGER = """
 """
 
 
-def _ledger_file(tmp_path):
+def _ledger_file(tmp_path: Path) -> Path:
     f = tmp_path / "main.bean"
     f.write_text(_LEDGER)
     return f
 
 
-def test_compute_delta_book_vs_market(tmp_path):
+def test_compute_delta_book_vs_market(tmp_path: Path) -> None:
     (r,) = fx.compute(_ledger_file(tmp_path), "2026-12-31")
     assert r.currency == "EUR"
     assert r.units == Decimal("200.00")
@@ -36,7 +37,7 @@ def test_compute_delta_book_vs_market(tmp_path):
     assert r.delta == Decimal("-10.00")
 
 
-def test_revaluation_text_balances(tmp_path):
+def test_revaluation_text_balances(tmp_path: Path) -> None:
     revaluations = fx.compute(_ledger_file(tmp_path), "2026-12-31")
     text = fx.revaluation_text(revaluations, "2026-12-31")
     assert '"Year-end FX revaluation EUR (Art. 960 OR)"' in text
@@ -47,7 +48,7 @@ def test_revaluation_text_balances(tmp_path):
     # weights: -190 + 180 + 10 = 0 — the transaction balances
 
 
-def test_booked_text_zeroes_future_revaluation(tmp_path):
+def test_booked_text_zeroes_future_revaluation(tmp_path: Path) -> None:
     f = tmp_path / "main.bean"
     text = fx.revaluation_text(fx.compute(_ledger_file(tmp_path), "2026-12-31"), "2026-12-31")
     f.write_text(_LEDGER + "\n" + text + "\n")

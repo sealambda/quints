@@ -12,15 +12,38 @@ Enable in the beancount file:
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
+from beancount.core import data
+from fava.beans import abc as fava_abc
 from fava.ext import FavaExtensionBase
 
 from .. import config, receivables, settlement
 from .. import inbox as inbox_mod
 
 _DRAFT_LINE = re.compile(r"^\d{4}-\d{2}-\d{2} +([*!]) ", re.M)
+
+_BEANCOUNT_DIRECTIVES = (
+    data.Open,
+    data.Close,
+    data.Commodity,
+    data.Pad,
+    data.Balance,
+    data.Transaction,
+    data.Note,
+    data.Event,
+    data.Query,
+    data.Price,
+    data.Document,
+    data.Custom,
+)
+
+
+def _entries(entries: Sequence[fava_abc.Directive]) -> data.Directives:
+    """Re-type fava's ``abc.Directive`` view of the same beancount objects."""
+    return [e for e in entries if isinstance(e, _BEANCOUNT_DIRECTIVES)]
 
 
 class QuintDashboard(FavaExtensionBase):
@@ -46,11 +69,13 @@ class QuintDashboard(FavaExtensionBase):
         return settlement.outstanding(
             Path(self.ledger.beancount_file_path),
             cfg=self._cfg,
-            entries=self.ledger.all_entries,
+            entries=_entries(self.ledger.all_entries),
         )
 
     def open_receivables(self):
-        return receivables.compute_from_entries(self.ledger.all_entries, self.today(), self._cfg)
+        return receivables.compute_from_entries(
+            _entries(self.ledger.all_entries), self.today(), self._cfg
+        )
 
     def staging(self):
         """Pending staging drafts: (file name, total drafts, flagged drafts)."""
@@ -62,4 +87,4 @@ class QuintDashboard(FavaExtensionBase):
 
     def inbox(self):
         """Inbox inventory (hints + duplicate/linked status) — see quints.inbox."""
-        return inbox_mod.scan(self._root, self.ledger.all_entries)
+        return inbox_mod.scan(self._root, _entries(self.ledger.all_entries))

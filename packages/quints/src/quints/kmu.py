@@ -345,7 +345,7 @@ class KontenReport:
 # ── compute ──────────────────────────────────────────────────────────────────
 
 
-def kmu_map(entries, marker: str) -> dict[str, str]:
+def kmu_map(entries: data.Entries, marker: str) -> dict[str, str]:
     """account → kmu code, from the entity's open directives."""
     mapping: dict[str, str] = {}
     for e in entries:
@@ -356,14 +356,20 @@ def kmu_map(entries, marker: str) -> dict[str, str]:
     return mapping
 
 
-def _to_chf(units: Amount, on: Date, price_map) -> Decimal:
+def _to_chf(units: Amount, on: Date, price_map: bc_prices.PriceMap) -> Decimal:
+    if units.number is None:  # incomplete amount — cannot occur in a loaded ledger
+        return Decimal("0")
     if units.currency == "CHF":
         return units.number
     conv = bc_convert.convert_amount(units, "CHF", price_map, date=on)
-    return conv.number if conv.currency == "CHF" else Decimal("0")
+    if conv.currency == "CHF" and conv.number is not None:
+        return conv.number
+    return Decimal("0")
 
 
-def _posting_chf(p: data.Posting, on: Date, fallback: Date, price_map) -> Decimal:
+def _posting_chf(
+    p: data.Posting, on: Date, fallback: Date, price_map: bc_prices.PriceMap
+) -> Decimal:
     """CHF value of a P&L posting at its transaction date.
 
     The posting's own ``@``/``@@`` annotation wins (it is the booked rate);
@@ -372,13 +378,17 @@ def _posting_chf(p: data.Posting, on: Date, fallback: Date, price_map) -> Decima
     corrupt totals.
     """
     weight = bc_convert.get_weight(p)
+    if weight.number is None:  # incomplete posting — cannot occur in a loaded ledger
+        return Decimal("0")
     if weight.currency == "CHF":
         return weight.number
     conv = bc_convert.convert_amount(weight, "CHF", price_map, date=on)
-    if conv.currency == "CHF":
+    if conv.currency == "CHF" and conv.number is not None:
         return conv.number
     conv = bc_convert.convert_amount(weight, "CHF", price_map, date=fallback)
-    return conv.number if conv.currency == "CHF" else Decimal("0")
+    if conv.currency == "CHF" and conv.number is not None:
+        return conv.number
+    return Decimal("0")
 
 
 def _rows_from(
@@ -540,7 +550,7 @@ def compute_konten(
             continue
         for p in e.postings:
             code = mapping.get(p.account)
-            if code is None:
+            if code is None or p.units is None or p.units.number is None:
                 continue
             chf = _posting_chf(p, e.date, d1, price_map)
             konto = konten.setdefault(code, Konto(code, [], Decimal("0")))

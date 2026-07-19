@@ -49,7 +49,7 @@ def build_price_map(ledger: Path):
     return prices.build_price_map(entries), errors
 
 
-def rate(price_map, ccy: str, on: Date):
+def rate(price_map: prices.PriceMap, ccy: str, on: Date) -> tuple[Date | None, Decimal | None]:
     """(rate_date, Decimal) for 1 <ccy> = X CHF on/before ``on``.
 
     Returns (on, 1) for CHF and (None, None) when no rate is available.

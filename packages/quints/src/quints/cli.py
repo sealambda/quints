@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import date as Date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
+
+if TYPE_CHECKING:
+    from _typeshed import DataclassInstance
 
 from . import (
     config as config_mod,
@@ -66,7 +71,7 @@ def _print_version(value: bool) -> None:
 
 
 @app.callback()
-def _main(
+def root(
     config: Path | None = typer.Option(
         None, "--config", help="quints.toml path (default: ./quints.toml, else built-in defaults)."
     ),
@@ -103,7 +108,9 @@ def _lang_option() -> str:
     )
 
 
-def _emit(report, render, lang: str | None, as_json: bool) -> None:
+def _emit(
+    report: DataclassInstance, render: Callable[..., object], lang: str | None, as_json: bool
+) -> None:
     lang = lang or config_mod.get().report_language
     if as_json:
         import dataclasses
@@ -126,7 +133,7 @@ def _parse_date(text: str) -> Date:
         raise typer.Exit(1) from None
 
 
-def _json_out(payload) -> None:
+def _json_out(payload: object) -> None:
     """Emit a machine-readable payload (Decimals/dates as strings)."""
     import json
 
@@ -535,11 +542,13 @@ def import_wise(
             raise typer.Exit(1)
         _parse_date(from_)
         _parse_date(to)
+        from beangulp_wise import ScaChallenge, WiseError
+
         try:
             statements = importing_mod.fetch_wise(from_, to, out)
-        except importing_mod.WiseError as e:
+        except WiseError as e:
             typer.secho(f"ERROR: {e}", fg="red", err=True)
-            if isinstance(e, importing_mod.ScaChallenge):
+            if isinstance(e, ScaChallenge):
                 typer.secho(
                     "Statements are SCA-protected: upload .wise/public.pem in Wise "
                     "(Settings → API tokens → Manage public keys) and set "
@@ -608,18 +617,19 @@ def import_stripe(
     _report_import(result, as_json)
 
 
-def _report_import(result, as_json: bool = False) -> None:
+def _report_import(result: importing_mod.ImportResult, as_json: bool = False) -> None:
     if as_json:
+        from beancount.core import data
 
-        def txn(t):
+        def txn(t: data.Transaction) -> dict[str, object]:
             u = t.postings[0].units
             return {
                 "date": str(t.date),
                 "flag": t.flag,
                 "payee": t.payee,
                 "narration": t.narration,
-                "amount": u.number,
-                "currency": u.currency,
+                "amount": u.number if u else None,
+                "currency": u.currency if u else None,
             }
 
         _json_out(
@@ -789,6 +799,8 @@ def invoice(
                 print(ledger_draft)
                 print()
             elif cc.ok:
+                if cc.ledger_total is None:  # unreachable: found implies totals are set
+                    raise ValueError(f"cross-check for {inv.number} lost its ledger total")
                 ui.console.print(
                     f"[ok]Ledger match[/] ({cc.date}): {inv.currency} {m.money(cc.ledger_total)}"
                 )
@@ -797,6 +809,9 @@ def invoice(
                         f"[warn]booking date {cc.date} ≠ invoice date {inv.issue_date}[/]"
                     )
             else:
+                if cc.ledger_total is None or cc.invoice_total is None:
+                    # unreachable: found implies totals are set, but narrows the Optionals
+                    raise ValueError(f"cross-check for {inv.number} lost its totals")
                 ui.console.print(
                     f"[err]Ledger CONFLICT[/] ({cc.date}): {inv.number} is already booked "
                     f"at {m.money(cc.ledger_total)} but the invoice says "
@@ -812,7 +827,7 @@ def invoice(
                 "kind": inv.kind,
                 "currency": inv.currency,
                 "issue_date": inv.issue_date,
-                "customer": inv.customer.name,
+                "customer": inv.resolved_customer.name,
                 "pdf": str(path),
                 "totals": totals.model_dump(),
                 "qr_payload_ok": qr_ok,

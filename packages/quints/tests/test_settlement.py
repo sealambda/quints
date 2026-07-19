@@ -1,33 +1,34 @@
 """Tests for VAT settlement generation and outstanding-liability tracking."""
 
+import dataclasses
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 from quints import settlement
 from quints.mwst import MwstReport
 
 
-def _report(**overrides):
+def _report(**overrides: str | Decimal) -> MwstReport:
     z = Decimal("0")
-    kwargs = {
-        "date_from": "2026-04-01",
-        "date_to": "2026-06-30",
-        "z200": z,
-        "z221": z,
-        "z289": z,
-        "z299": z,
-        "z303_net": z,
-        "z303_tax": Decimal("747.63"),
-        "z399": Decimal("747.63"),
-        "z400": Decimal("34.74"),
-        "z479": Decimal("34.74"),
-        "z500": Decimal("712.89"),
-    }
-    kwargs.update(overrides)
-    return MwstReport(**kwargs)
+    base = MwstReport(
+        date_from="2026-04-01",
+        date_to="2026-06-30",
+        z200=z,
+        z221=z,
+        z289=z,
+        z299=z,
+        z303_net=z,
+        z303_tax=Decimal("747.63"),
+        z399=Decimal("747.63"),
+        z400=Decimal("34.74"),
+        z479=Decimal("34.74"),
+        z500=Decimal("712.89"),
+    )
+    return dataclasses.replace(base, **overrides)
 
 
-def test_build_settlement(tmp_path):
+def test_build_settlement(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text("2024-01-01 open Liabilities:CH:GmbH:Tax:PayableVAT CHF\n")
     s = settlement.build_settlement(led, _report(), "2026-Q2")
@@ -46,7 +47,7 @@ def test_build_settlement(tmp_path):
     assert "Bezugsteuer" not in text
 
 
-def test_settlement_with_bezugsteuer(tmp_path):
+def test_settlement_with_bezugsteuer(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text("2024-01-01 open Liabilities:CH:GmbH:Tax:PayableVAT CHF\n")
     report = _report(
@@ -86,7 +87,7 @@ _PAYMENT = """
 """
 
 
-def test_outstanding_unpaid(tmp_path):
+def test_outstanding_unpaid(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text(_SETTLE)
     libs, unlinked, total, _today = settlement.outstanding(led, today=date(2026, 7, 7))
@@ -97,7 +98,7 @@ def test_outstanding_unpaid(tmp_path):
     assert total == Decimal("712.89") and unlinked == Decimal("0")
 
 
-def test_outstanding_clears_after_payment(tmp_path):
+def test_outstanding_clears_after_payment(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text(_SETTLE + _PAYMENT)
     libs, _unlinked, total, _today = settlement.outstanding(led, today=date(2026, 7, 7))

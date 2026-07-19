@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import date as Date
 from decimal import Decimal
 
+from beancount.core import prices as bc_prices
+
 from . import config, ledger
 
 
@@ -53,7 +55,7 @@ def convert(
     amount: Decimal,
     currency: str,
     on: Date,
-    price_map,
+    price_map: bc_prices.PriceMap,
     net: bool = False,
     cfg: config.Config | None = None,
 ) -> VatPosting:

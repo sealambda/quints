@@ -43,9 +43,11 @@ class ScaChallenge(WiseError):
 def sign_sca_token(one_time_token: str, private_key_pem: bytes) -> str:
     """RSA-SHA256 (PKCS#1 v1.5) signature of the SCA one-time token, base64."""
     from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
     key = serialization.load_pem_private_key(private_key_pem, password=None)
+    if not isinstance(key, rsa.RSAPrivateKey):
+        raise TypeError("Wise SCA signing requires an RSA private key")
     signature = key.sign(one_time_token.encode("ascii"), padding.PKCS1v15(), hashes.SHA256())
     return base64.b64encode(signature).decode("ascii")
 
@@ -66,7 +68,7 @@ class WiseClient:
             {"Authorization": f"Bearer {token}", "User-Agent": "beangulp-wise"}
         )
 
-    def _get(self, path: str, params: dict | None = None) -> Any:
+    def _get(self, path: str, params: dict[str, str] | None = None) -> Any:
         response = self._session.get(self._host + path, params=params, timeout=30)
         ott = response.headers.get("x-2fa-approval")
         if response.status_code == 403 and ott:
@@ -91,17 +93,20 @@ class WiseClient:
             raise WiseError(f"GET {path} → {response.status_code}: {response.text[:200]}")
         return response.json()
 
-    def profiles(self) -> list[dict]:
+    def profiles(self) -> list[dict[str, object]]:
         return self._get("/v2/profiles")
 
     def profile_id(self, business_name: str) -> int:
         """Profile id by business name (a token may see several entities)."""
         for profile in self.profiles():
             if profile.get("businessName") == business_name:
-                return profile["id"]
+                ident = profile["id"]
+                if not isinstance(ident, int):
+                    raise WiseError(f"profile {business_name!r} has a non-integer id: {ident!r}")
+                return ident
         raise WiseError(f"no profile named {business_name!r} visible to this token")
 
-    def balances(self, profile_id: int) -> list[dict]:
+    def balances(self, profile_id: int) -> list[dict[str, object]]:
         return self._get(f"/v4/profiles/{profile_id}/balances", {"types": "STANDARD"})
 
     def balance_statement(
@@ -112,7 +117,7 @@ class WiseClient:
         interval_start: str,
         interval_end: str,
         statement_type: str = "COMPACT",
-    ) -> dict:
+    ) -> dict[str, object]:
         """Balance statement JSON for one currency balance.
 
         ``interval_start``/``interval_end`` are ISO instants

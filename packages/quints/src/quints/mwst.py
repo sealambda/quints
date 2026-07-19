@@ -101,10 +101,10 @@ class MwstReport:
     z500: Decimal
     z382_net: Decimal = Decimal("0")
     z382_tax: Decimal = Decimal("0")
-    vat_lines: list = field(default_factory=list)
-    bezugsteuer_lines: list = field(default_factory=list)
-    domestic: list = field(default_factory=list)
-    export: list = field(default_factory=list)
+    vat_lines: list[VatLine] = field(default_factory=list)
+    bezugsteuer_lines: list[VatLine] = field(default_factory=list)
+    domestic: list[RevenueLine] = field(default_factory=list)
+    export: list[RevenueLine] = field(default_factory=list)
 
     @property
     def domestic_total(self) -> Decimal:
@@ -118,12 +118,16 @@ class MwstReport:
 # ── compute ───────────────────────────────────────────────────────────────────
 
 
-def _to_chf(units: Amount, date: Date, price_map) -> Decimal:
+def _to_chf(units: Amount, date: Date, price_map: bc_prices.PriceMap) -> Decimal:
     """Value an amount in CHF at ``date`` (prior-date fallback via price map)."""
+    if units.number is None:  # incomplete amount — cannot occur in a loaded ledger
+        return Decimal("0")
     if units.currency == "CHF":
         return units.number
     conv = bc_convert.convert_amount(units, "CHF", price_map, date=date)
-    return conv.number if conv.currency == "CHF" else Decimal("0")
+    if conv.currency == "CHF" and conv.number is not None:
+        return conv.number
+    return Decimal("0")
 
 
 def compute(
@@ -151,6 +155,8 @@ def compute(
         if not isinstance(e, data.Transaction) or not (d0 <= e.date <= d1):
             continue
         for p in e.postings:
+            if p.units is None or p.units.number is None:
+                continue  # incomplete posting — cannot occur in a loaded ledger
             n = p.units.number
             acct = p.account
 
@@ -163,7 +169,9 @@ def compute(
             elif acct == cfg.bezugsteuer and n < 0:
                 tax = -n
                 bezugsteuer += tax
-                if p.price is not None:  # e.g. "-7.52 CHF @@ 8.10 EUR" → original in EUR
+                if (  # e.g. "-7.52 CHF @@ 8.10 EUR" → original in EUR
+                    p.price is not None and p.price.number is not None
+                ):
                     original = (tax * p.price.number).quantize(Decimal("0.01"))
                     currency = p.price.currency
                     rate = (tax / original) if original else Decimal("0")
@@ -179,7 +187,9 @@ def compute(
             # (settlement + pre-liability reversal are credits → excluded).
             elif acct == cfg.input_vat and n > 0:
                 input_vat += n
-                if p.price is not None:  # e.g. "6.39 CHF @@ 8.10 USD" → original in USD
+                if (  # e.g. "6.39 CHF @@ 8.10 USD" → original in USD
+                    p.price is not None and p.price.number is not None
+                ):
                     original = (n * p.price.number).quantize(Decimal("0.01"))
                     currency = p.price.currency
                     rate = (n / original) if original else Decimal("0")
@@ -195,7 +205,7 @@ def compute(
             elif acct.startswith(cfg.income_prefix) and n < 0:
                 gross = Amount(-n, p.units.currency)
                 chf = _to_chf(gross, e.date, price_map)
-                line = RevenueLine(str(e.date), e.payee or "", gross.number, gross.currency, chf)
+                line = RevenueLine(str(e.date), e.payee or "", -n, p.units.currency, chf)
                 (export if cfg.export_marker in acct else domestic).append(line)
 
     domestic_total = sum((r.chf for r in domestic), Decimal("0"))
@@ -252,7 +262,13 @@ def render(
     main.add_column("Umsatz CHF", justify="right", no_wrap=True)
     main.add_column("Steuer CHF", justify="right", no_wrap=True)
 
-    def row(z, label, umsatz=None, steuer=None, style=None):
+    def row(
+        z: str,
+        label: str,
+        umsatz: Decimal | None = None,
+        steuer: Decimal | None = None,
+        style: str | None = None,
+    ) -> None:
         u = ui.money(umsatz) if umsatz is not None else ""
         s = ui.money(steuer) if steuer is not None else ""
         if style:
@@ -340,7 +356,7 @@ def _revenue_table(report: MwstReport) -> Table:
     t.add_column("Original", justify="right", no_wrap=True)
     t.add_column("CHF", justify="right", no_wrap=True)
 
-    def group(title, rows, subtotal, ziffer):
+    def group(title: str, rows: list[RevenueLine], subtotal: Decimal, ziffer: str) -> None:
         t.add_row(f"[bold]{title}[/]", "", "", "")
         for r in rows:
             t.add_row(r.date, r.payee, f"{r.original:,.2f} {r.currency}", ui.money(r.chf))

@@ -1,7 +1,11 @@
 """Integration test for `quints import ubs` (fixture statement → staging drafts)."""
 
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
+
+from beancount.core import data
+from beancount.core.amount import Amount
 
 from quints import config, importing
 
@@ -39,7 +43,7 @@ _LEDGER = """
 """
 
 
-def test_run_ubs_dedups_and_stages(tmp_path):
+def test_run_ubs_dedups_and_stages(tmp_path: Path) -> None:
     ledger_file = tmp_path / "main.bean"
     ledger_file.write_text(_LEDGER)
 
@@ -54,6 +58,7 @@ def test_run_ubs_dedups_and_stages(tmp_path):
     assert len(result.balances) == 1
     assert result.balances[0].amount.number == Decimal("30407.14")
 
+    assert result.out_path is not None
     staged = result.out_path.read_text()
     assert 'ubs_ref: "9902063AR6387321"' in staged  # share-capital draft
     assert 'ubs_ref: "9930635BN7487612"' not in staged  # already imported
@@ -100,7 +105,7 @@ _WISE_USD = """{
 }"""
 
 
-def test_run_wise_merges_conversions_and_dedups(tmp_path):
+def test_run_wise_merges_conversions_and_dedups(tmp_path: Path) -> None:
     ledger_file = tmp_path / "main.bean"
     ledger_file.write_text(
         "2024-01-01 open Assets:CH:GmbH:Current:Wise:EUR EUR\n"
@@ -131,16 +136,19 @@ def test_run_wise_merges_conversions_and_dedups(tmp_path):
         "Assets:CH:GmbH:Current:Wise:USD",
         "Expenses:CH:GmbH:BankFees:Wise",
     ]
-    assert conversion.postings[1].price.number == Decimal("49.76")  # 50.00 − 0.24 fee
+    price = conversion.postings[1].price
+    assert price is not None
+    assert price.number == Decimal("49.76")  # 50.00 − 0.24 fee
 
     # One closing-balance assertion per currency file.
     assert len(result.balances) == 2
+    assert result.out_path is not None
     staged = result.out_path.read_text()
     assert "2026-07-11 balance Assets:CH:GmbH:Current:Wise:EUR" in staged
     assert "2026-07-11 balance Assets:CH:GmbH:Current:Wise:USD" in staged
 
 
-def test_rules_draft_counter_legs(tmp_path):
+def test_rules_draft_counter_legs(tmp_path: Path) -> None:
     ledger_file = tmp_path / "main.bean"
     ledger_file.write_text("2024-01-01 open Assets:CH:GmbH:Current:UBS:CHF CHF\n")
 
@@ -173,13 +181,12 @@ _RECV_LEDGER = """
 """
 
 
-def _draft(payee, narration, amount, meta=None):
-    from beancount.core import data
-    from beancount.core.amount import Amount
-
+def _draft(
+    payee: str, narration: str, amount: str, meta: dict[str, str] | None = None
+) -> data.Transaction:
     return data.Transaction(
         meta=dict(meta or {}),
-        date=__import__("datetime").date(2026, 7, 20),
+        date=date(2026, 7, 20),
         flag="!",
         payee=payee,
         narration=narration,
@@ -201,7 +208,7 @@ def _draft(payee, narration, amount, meta=None):
     )
 
 
-def test_match_receivables_by_qrr_and_scor(tmp_path):
+def test_match_receivables_by_qrr_and_scor() -> None:
     from beancount.loader import load_string
 
     from quints import config
@@ -218,7 +225,7 @@ def test_match_receivables_by_qrr_and_scor(tmp_path):
         _draft("ACME AG", f"refund {qrr}", "-50.00"),  # outgoing → untouched
         _draft("Somebody", "unrelated", "12.00"),
     ]
-    importing._match_receivables(result, entries, config.Config())
+    importing.match_receivables(result, entries, config.Config())
 
     assert [n for n, _ in result.receivable_matches] == ["ACME202606", "ACME202606"]
     matched = result.drafts[0]

@@ -16,6 +16,7 @@ import shutil
 import tempfile
 from decimal import Decimal
 from pathlib import Path
+from typing import TypedDict
 
 import typst
 import yaml
@@ -25,6 +26,17 @@ from .kmu import BilanzReport, ErfolgReport, RowLine, kmu_name, label
 
 TEMPLATE = Path(__file__).parent / "report.typ"
 DEFAULT_ISSUER = Path("invoicing/issuer.yaml")
+
+
+class Line(TypedDict):
+    """One flat display line of a statement (the Typst template's unit)."""
+
+    code: str
+    label: str
+    amount: str
+    indent: int
+    bold: bool
+    rule: bool
 
 
 def _money(value: Decimal, lang: str) -> str:
@@ -41,7 +53,7 @@ def _line(
     indent: int = 0,
     bold: bool = False,
     rule: bool = False,
-) -> dict:
+) -> Line:
     return {
         "code": code,
         "label": label_,
@@ -54,8 +66,8 @@ def _line(
 
 def _section(
     rows: list[RowLine], lang: str, *, sign: int = 1, form: str | None = None
-) -> list[dict[str, object]]:
-    lines: list[dict] = []
+) -> list[Line]:
+    lines: list[Line] = []
     for row in rows:
         lines.append(_line(label(row.key, lang, form), _money(sign * row.amount, lang)))
         for cl in row.codes:
@@ -70,7 +82,7 @@ def _section(
     return lines
 
 
-def bilanz_lines(report: BilanzReport, lang: str) -> list[dict]:
+def bilanz_lines(report: BilanzReport, lang: str) -> list[Line]:
     lines = [_line(label("assets", lang), bold=True)]
     for section in ("current_assets", "noncurrent_assets"):
         rows = getattr(report, section)
@@ -115,7 +127,7 @@ def bilanz_lines(report: BilanzReport, lang: str) -> list[dict]:
     return lines
 
 
-def erfolg_lines(report: ErfolgReport, lang: str) -> list[dict]:
+def erfolg_lines(report: ErfolgReport, lang: str) -> list[Line]:
     lines = _section(report.revenue, lang)
     lines += _section(report.expenses, lang, sign=-1)
     lines.append(_line(label("ebit", lang), _money(report.ebit, lang), bold=True, rule=True))
@@ -125,7 +137,7 @@ def erfolg_lines(report: ErfolgReport, lang: str) -> list[dict]:
     return lines
 
 
-def _load_issuer(path: Path) -> dict:
+def _load_issuer(path: Path) -> dict[str, object]:
     data = yaml.safe_load(path.read_text()) if path.exists() else {}
     return {
         "name": data.get("name", ""),
@@ -138,7 +150,7 @@ def _load_issuer(path: Path) -> dict:
 
 def build_context(
     bilanz: BilanzReport, erfolg: ErfolgReport, lang: str, issuer_path: Path = DEFAULT_ISSUER
-) -> dict:
+) -> dict[str, object]:
     fx_note = ""
     if bilanz.converted:
         parts = ", ".join(f"{_money(v, lang)} {c}" for c, v in sorted(bilanz.converted.items()))

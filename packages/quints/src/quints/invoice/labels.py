@@ -78,7 +78,7 @@ LABELS = {
 }
 
 
-def labels(language: str) -> dict:
+def labels(language: str) -> dict[str, str]:
     """Label set for `language` (a locale's language subtag). `Invoice.locale`
     is validated at load, so the fallback only guards programmatic callers."""
     return LABELS.get(language, LABELS["de"])

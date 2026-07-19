@@ -25,9 +25,12 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date as TodayDate
+from decimal import Decimal
 from pathlib import Path
+from typing import TypeVar
 
 from beancount.core import data
 from beancount.parser import printer
@@ -45,7 +48,10 @@ LEGACY_WINDOW_DAYS = 3
 DEFAULT_STAGING = Path("staging")
 
 
-def _require(section, name: str, *keys: str):
+_Section = TypeVar("_Section", config.UbsImport, config.WiseImport, config.StripeImport)
+
+
+def _require(section: _Section | None, name: str, *keys: str) -> _Section:
     """The importer's entity data ([import.<name>] in quints.toml) is config."""
     if section is None:
         raise ValueError(f"[import.{name}] is not configured — add it to quints.toml")
@@ -100,38 +106,54 @@ def stripe_importer(cfg: config.Config | None = None) -> StripeImporter:
 class ImportResult:
     source: str
     out_path: Path | None = None
-    drafts: list = field(default_factory=list)  # Transactions written to staging
-    balances: list = field(default_factory=list)  # closing-balance assertions
+    drafts: list[data.Transaction] = field(default_factory=list)  # written to staging
+    balances: list[data.Balance] = field(default_factory=list)  # closing-balance assertions
     skipped_ref: int = 0  # deduped by reference metadata
-    legacy_matches: list = field(default_factory=list)  # (draft, booked date) pairs
-    receivable_matches: list = field(default_factory=list)  # (invoice number, draft)
+    legacy_matches: list[tuple[data.Transaction, TodayDate]] = field(
+        default_factory=list
+    )  # (draft, booked date) pairs
+    receivable_matches: list[tuple[str, data.Transaction]] = field(
+        default_factory=list
+    )  # (invoice number, draft)
 
 
-def _cash_pool(entries, accounts: set[str]) -> list[tuple]:
+def _cash_pool(
+    entries: Sequence[data.Directive], accounts: set[str]
+) -> list[tuple[TodayDate, Decimal, str]]:
     """Mutable pool of (date, amount, account) cash postings for legacy matching."""
-    pool = []
+    pool: list[tuple[TodayDate, Decimal, str]] = []
     for e in entries:
         if not isinstance(e, data.Transaction):
             continue
         for p in e.postings:
-            if p.account in accounts:
+            if p.account in accounts and p.units is not None and p.units.number is not None:
                 pool.append((e.date, p.units.number, p.account))
     return pool
 
 
-def _split(result: ImportResult, extracted, pool) -> None:
+def _split(
+    result: ImportResult,
+    extracted: Sequence[data.Directive],
+    pool: list[tuple[TodayDate, Decimal, str]],
+) -> None:
     """Sort extracted entries into drafts / legacy matches / balance assertions."""
     for entry in extracted:
         if isinstance(entry, data.Balance):
             result.balances.append(entry)
             continue
+        if not isinstance(entry, data.Transaction):
+            continue
         cash = entry.postings[0]
+        if cash.units is None or cash.units.number is None:
+            result.drafts.append(entry)  # no amount to match on — review by hand
+            continue
+        cash_number = cash.units.number
         match = next(
             (
                 (d, n, a)
                 for d, n, a in pool
                 if a == cash.account
-                and n == cash.units.number
+                and n == cash_number
                 and abs((d - entry.date).days) <= LEGACY_WINDOW_DAYS
             ),
             None,
@@ -143,7 +165,9 @@ def _split(result: ImportResult, extracted, pool) -> None:
             result.drafts.append(entry)
 
 
-def _match_receivables(result: ImportResult, existing, cfg: config.Config) -> None:
+def match_receivables(
+    result: ImportResult, existing: Sequence[data.Directive], cfg: config.Config
+) -> None:
     """Link incoming drafts to open invoices (docs/plans/02 §2.1).
 
     `quints invoice` derives the QRR (QR-bill) and SCOR/RF (SEPA) references
@@ -160,7 +184,7 @@ def _match_receivables(result: ImportResult, existing, cfg: config.Config) -> No
 
     for i, draft in enumerate(result.drafts):
         cash = draft.postings[0]
-        if cash.units is None or cash.units.number <= 0:
+        if cash.units is None or cash.units.number is None or cash.units.number <= 0:
             continue  # only incoming payments clear receivables
         blob = " ".join(
             [draft.payee or "", draft.narration or ""]
@@ -208,8 +232,9 @@ def run_ubs(
 ) -> ImportResult:
     cfg = cfg or config.get()
     importer = ubs_importer(cfg)
+    ubs = _require(cfg.import_ubs, "ubs", "iban")
     if not importer.identify(str(statement)):
-        raise ValueError(f"{statement} is not an MT940 statement for {cfg.import_ubs.iban}")
+        raise ValueError(f"{statement} is not an MT940 statement for {ubs.iban}")
 
     existing, _ = ledger.load_entries(ledger_path)
     total = len(importer.extract(str(statement), existing=[]))
@@ -217,8 +242,8 @@ def run_ubs(
 
     result = ImportResult(source=str(statement))
     result.skipped_ref = total - len(extracted)
-    _split(result, extracted, _cash_pool(existing, {cfg.import_ubs.account}))
-    _match_receivables(result, existing, cfg)
+    _split(result, extracted, _cash_pool(existing, {ubs.account}))
+    match_receivables(result, existing, cfg)
     _write_staging(result, out_dir, "ubs")
     return result
 
@@ -231,7 +256,7 @@ def run_wise(
 ) -> ImportResult:
     cfg = cfg or config.get()
     importer = wise_importer(cfg)
-    wise = cfg.import_wise
+    wise = _require(cfg.import_wise, "wise")
     for statement in statements:
         if not importer.identify(str(statement)):
             raise ValueError(
@@ -240,8 +265,8 @@ def run_wise(
             )
 
     existing, _ = ledger.load_entries(ledger_path)
-    raw: list = []  # without ledger dedup, to count reference skips
-    deduped: list = []
+    raw: data.Directives = []  # without ledger dedup, to count reference skips
+    deduped: data.Directives = []
     for statement in statements:
         raw += importer.extract(str(statement), existing=[])
         deduped += importer.extract(str(statement), existing=existing)
@@ -249,7 +274,7 @@ def run_wise(
     result = ImportResult(source=", ".join(str(s) for s in statements))
     result.skipped_ref = _txn_count(raw) - _txn_count(deduped)
     _split(result, merge_conversions(deduped), _cash_pool(existing, set(wise.account_map.values())))
-    _match_receivables(result, existing, cfg)
+    match_receivables(result, existing, cfg)
     _write_staging(result, out_dir, "wise")
     return result
 
@@ -262,7 +287,7 @@ def run_stripe(
 ) -> ImportResult:
     cfg = cfg or config.get()
     importer = stripe_importer(cfg)
-    stripe = cfg.import_stripe
+    stripe = _require(cfg.import_stripe, "stripe", "account_id")
     for statement in statements:
         if not importer.identify(str(statement)):
             raise ValueError(
@@ -271,8 +296,8 @@ def run_stripe(
             )
 
     existing, _ = ledger.load_entries(ledger_path)
-    raw: list = []  # without ledger dedup, to count reference skips
-    deduped: list = []
+    raw: data.Directives = []  # without ledger dedup, to count reference skips
+    deduped: data.Directives = []
     for statement in statements:
         raw += importer.extract(str(statement), existing=[])
         deduped += importer.extract(str(statement), existing=existing)
@@ -280,12 +305,12 @@ def run_stripe(
     result = ImportResult(source=", ".join(str(s) for s in statements))
     result.skipped_ref = _txn_count(raw) - _txn_count(deduped)
     _split(result, deduped, _cash_pool(existing, set(stripe.account_map.values())))
-    _match_receivables(result, existing, cfg)
+    match_receivables(result, existing, cfg)
     _write_staging(result, out_dir, "stripe")
     return result
 
 
-def _txn_count(entries) -> int:
+def _txn_count(entries: Sequence[data.Directive]) -> int:
     return sum(1 for e in entries if isinstance(e, data.Transaction))
 
 
@@ -297,6 +322,9 @@ def fetch_wise(
 ) -> list[Path]:
     """Download one statement.json per currency balance into ``out_dir``."""
     wise = _require((cfg or config.get()).import_wise, "wise", "holder")
+    holder = wise.holder
+    if not holder:  # unreachable: _require checked, but narrows the Optional
+        raise ValueError("[import.wise] needs 'holder' in quints.toml")
     _load_env()
     token = os.environ.get("QUINTS_WISE_API_TOKEN")
     if not token:
@@ -307,16 +335,19 @@ def fetch_wise(
         pem = Path(key_path).read_bytes()
 
     client = WiseClient(token, private_key_pem=pem)
-    profile = client.profile_id(wise.holder)
+    profile = client.profile_id(holder)
     paths: list[Path] = []
     out_dir.mkdir(exist_ok=True)
     for balance in client.balances(profile):
         currency = balance["currency"]
-        if currency not in wise.account_map:
+        if not isinstance(currency, str) or currency not in wise.account_map:
             continue
+        balance_id = balance["id"]
+        if not isinstance(balance_id, int):
+            raise ValueError(f"Wise balance for {currency} has a non-integer id: {balance_id!r}")
         statement = client.balance_statement(
             profile,
-            balance["id"],
+            balance_id,
             currency,
             f"{interval_start}T00:00:00.000Z",
             f"{interval_end}T23:59:59.999Z",
@@ -362,7 +393,7 @@ def fetch_stripe(
             moment += dt.timedelta(days=1)
         return int(moment.timestamp()) - (1 if end else 0)
 
-    wrapper: dict = {
+    wrapper: dict[str, object] = {
         "account": {"id": account.get("id")},
         "data": client.balance_transactions(_ts(interval_start, False), _ts(interval_end, True)),
     }

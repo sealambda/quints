@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import warnings
+from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from qrbill import QRBill
 from .model import BankAccount, Invoice, Issuer, make_qrr, make_scor
 
 
-def _structured(name: str, lines, country: str) -> dict:
+def _structured(name: str, lines: Sequence[str], country: str) -> dict[str, str | None]:
     """Parse free-form address lines into qrbill's structured address dict."""
     lines = [ln.strip() for ln in lines if ln and ln.strip()]
     street = house = pcode = city = ""
@@ -45,14 +46,18 @@ def reference_for(inv: Invoice, account: BankAccount) -> str | None:
 
 
 def build_bill(inv: Invoice, issuer: Issuer, account: BankAccount, grand: Decimal) -> QRBill:
+    customer = inv.resolved_customer
+    currency = inv.currency
+    if currency not in ("CHF", "EUR"):
+        raise ValueError(f"Swiss QR-bill supports only CHF or EUR, not {currency!r}")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         return QRBill(
             account=account.qr_iban or account.iban,
             creditor=_structured(issuer.name, issuer.address, issuer.country),
-            debtor=_structured(inv.customer.name, inv.customer.address, inv.customer.country),
+            debtor=_structured(customer.name, customer.address, customer.country),
             amount=f"{grand:.2f}",
-            currency=inv.currency,
+            currency=currency,
             reference_number=reference_for(inv, account),
             additional_information=f"{inv.number}",
         )
