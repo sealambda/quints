@@ -1,6 +1,6 @@
 [project]
 name = "beangulp-stripe"
-version = "0.1.0"
+version = "0.1.1"
 description = "beangulp importer for Stripe balance transactions, with a thin API client: idempotent drafts via balance-transaction ids, minor-unit conversion, fee splitting, balance-snapshot assertions"
 readme = "README.md"
 requires-python = ">=3.10"

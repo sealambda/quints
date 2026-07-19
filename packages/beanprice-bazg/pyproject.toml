@@ -1,6 +1,6 @@
 [project]
 name = "beanprice-bazg"
-version = "0.2.0"
+version = "0.2.1"
 description = "beanprice source for official Swiss BAZG/EZV (Federal Customs) daily FX rates, quoted in CHF"
 readme = "README.md"
 requires-python = ">=3.10"

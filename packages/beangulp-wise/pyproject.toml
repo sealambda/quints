@@ -1,6 +1,6 @@
 [project]
 name = "beangulp-wise"
-version = "0.1.0"
+version = "0.1.1"
 description = "beangulp importer for Wise balance statements (statement.json), with a thin SCA-capable API client: idempotent drafts via referenceNumber, conversion-leg merging, fee splitting, closing-balance assertions"
 readme = "README.md"
 requires-python = ">=3.10"
