@@ -41,6 +41,7 @@ jane-books/
 ├── quints.toml        # everything entity-specific
 ├── pyproject.toml     # so uv sync makes bean-check and fava work
 ├── AGENTS.md          # playbook for an AI coding agent
+├── CLAUDE.md          # @AGENTS.md — auto-loads the playbook in Claude Code
 ├── inbox/             # drop source documents here
 ├── staging/           # importer drafts land here (gitignored)
 └── documents/         # filed documents, mirroring the account tree
@@ -49,6 +50,11 @@ jane-books/
 The generated project is a normal beancount ledger. After `uv sync` in it,
 the standard toolchain works — `bean-check main.bean`, `fava main.bean` —
 not only `quints`.
+
+It is also a git repository: `quints init` commits the pristine scaffold, so
+every later change — yours or an agent's — is a reviewable diff. Pass
+`--no-git` to opt out; scaffolding inside an existing repository never
+creates a nested one.
 
 ## First commands
 
@@ -75,8 +81,8 @@ it rolls up to:
   kmu: "6600"  ; Advertising
 ```
 
-`quints report konten` shows the codes already in use; `quints check` rejects
-an entity account without a valid code.
+`quints report konten --year 2026` shows the codes already in use;
+`quints check` rejects an entity account without a valid code.
 
 ## Next
 

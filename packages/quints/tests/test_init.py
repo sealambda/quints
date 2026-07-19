@@ -8,6 +8,7 @@ against it, asserting known figures. That is the end-to-end smoke test the CI
 
 import json
 import re
+import subprocess
 import sys
 from datetime import date as Date
 
@@ -242,15 +243,104 @@ def test_cli_scaffold_to_invoice_end_to_end(tmp_path: Path, monkeypatch: pytest.
         assert (proj / rel).exists(), f"scaffold did not create {rel}:\n{res.output}"
 
     monkeypatch.chdir(proj)
-    for invoice_file, number in (("acme-2026-07", "INV2026014"), ("globex-2026-08", "INV2026015")):
+    # Rendered invoices are filed per the beancount documents convention:
+    # documents/<income account tree>/<date>.<customer>.<number>.pdf.
+    income = proj / "documents/Income/CH/Einzelfirma/Consulting/External"
+    for invoice_file, filed in (
+        ("acme-2026-07", income / "Domestic/2026-07-02.acme-ag.INV2026014.pdf"),
+        ("globex-2026-08", income / "Export/2026-08-05.globex-ltd.INV2026015.pdf"),
+    ):
         res = runner.invoke(app, ["invoice", f"invoicing/{invoice_file}.yaml"])
         assert res.exit_code == 0, res.output
         assert "Ledger match" in res.output, res.output
-        assert (proj / f"{number}.pdf").exists()
+        assert filed.exists(), res.output
 
 
 def test_no_invoicing_files_without_samples():
     assert not any(f.path.parts[0] == "invoicing" for f in init.plan(init.Answers()))
+
+
+def test_agent_payload_is_loaded_and_accurate():
+    # CLAUDE.md @-includes AGENTS.md so Claude Code sessions start with the
+    # instructions in context; the commands AGENTS.md quotes must be complete
+    # (konten needs a period), and the sample checklist only appears when
+    # there is sample data to replace.
+    files = _files(init.Answers(include_samples=True, importers=("ubs", "wise")))
+    assert files["CLAUDE.md"] == "@AGENTS.md\n"
+    agents = files["AGENTS.md"]
+    assert "quints report konten --year 2026" in agents
+    assert "Sample data — replace before the books are real" in agents
+    assert "QUINTS_WISE_API_TOKEN" in agents
+    assert "quints import stripe" not in agents  # only the configured roster
+    bare = _files(init.Answers())["AGENTS.md"]
+    assert "Sample data" not in bare
+    assert "quints.toml` (supported: ubs, wise, stripe)" in bare
+
+
+def test_invoicing_yaml_carries_hosted_schema_modeline():
+    files = _files(init.Answers(include_samples=True))
+    for name, schema in [
+        ("issuer.yaml", "issuer"),
+        ("customers.yaml", "customers"),
+        ("acme-2026-07.yaml", "invoice"),
+        ("globex-2026-08.yaml", "invoice"),
+    ]:
+        first = files[name].splitlines()[0]
+        assert first == (
+            f"# yaml-language-server: $schema={config.DOCS_URL}/schema/{schema}.schema.json"
+        ), f"{name} lacks the schema modeline: {first}"
+
+
+def test_gitignore_keeps_documents_tree_committed():
+    # A blanket *.pdf ignore would silently exclude documents/ — the filed
+    # sources and rendered invoices the ledger links to must be committable.
+    gitignore = _files(init.Answers())[".gitignore"]
+    assert "*.pdf" not in gitignore
+    assert "/staging/" in gitignore
+
+
+def test_cli_init_commits_pristine_scaffold(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # No git identity is configured in CI — provide one via the environment.
+    for var in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.setenv(var, "quints test")
+    for var in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(var, "test@example.invalid")
+    proj = tmp_path / "books"
+    res = runner.invoke(app, ["init", str(proj), "--yes", "--json"])
+    assert res.exit_code == 0, res.output
+    payload = json.loads(res.output)
+    assert payload["git"] == {"initialized": True, "committed": True, "detail": ""}
+    assert (proj / ".git").is_dir()
+    log = subprocess.run(  # noqa: S603 — fixed git argv in a test
+        ["git", "-C", str(proj), "log", "--format=%s"],  # noqa: S607
+        capture_output=True,
+        text=True,
+    )
+    assert log.stdout.strip() == "Scaffold books with quints init"
+    status = subprocess.run(  # noqa: S603 — fixed git argv in a test
+        ["git", "-C", str(proj), "status", "--porcelain"],  # noqa: S607
+        capture_output=True,
+        text=True,
+    )
+    assert status.stdout == ""  # the initial commit captured the whole scaffold
+
+
+def test_cli_init_never_nests_a_repo_inside_one(tmp_path: Path):
+    subprocess.run(["git", "init", "--quiet", str(tmp_path)], check=True)  # noqa: S603, S607
+    proj = tmp_path / "books"
+    res = runner.invoke(app, ["init", str(proj), "--yes", "--json"])
+    assert res.exit_code == 0, res.output
+    git = json.loads(res.output)["git"]
+    assert git["initialized"] is False and "already inside" in git["detail"]
+    assert not (proj / ".git").exists()
+
+
+def test_cli_init_no_git_opts_out(tmp_path: Path):
+    proj = tmp_path / "books"
+    res = runner.invoke(app, ["init", str(proj), "--yes", "--no-git", "--json"])
+    assert res.exit_code == 0, res.output
+    assert json.loads(res.output)["git"] is None
+    assert not (proj / ".git").exists()
 
 
 def test_cli_init_without_tty_aborts_cleanly_before_writing(tmp_path: Path):

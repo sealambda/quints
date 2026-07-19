@@ -717,7 +717,10 @@ def check(
 def invoice(
     data: Path = typer.Argument(..., help="Invoice file (.yaml/.toml/.json)."),
     out: Path | None = typer.Option(
-        None, "--out", "-o", help="Output PDF (default: <number>.pdf)."
+        None,
+        "--out",
+        "-o",
+        help="Output PDF (default: filed under documents/<income account>/).",
     ),
     issuer: Path = typer.Option(
         Path("invoicing/issuer.yaml"), "--issuer", help="Issuer config (.yaml/.toml/.json)."
@@ -749,7 +752,12 @@ def invoice(
     registry = m.load_customers(customers) if customers.exists() else None
     inv = m.load_invoice(data, registry)
     iss = m.load_issuer(issuer)
-    out = out or Path(f"{inv.number}.pdf")
+    if out is None:
+        # File the PDF the way beancount documents are filed: under the income
+        # account's folder, date-prefixed, next to the ledger's other evidence.
+        cfg = config_mod.get()
+        account = cfg.income_export if inv.kind == "export" else cfg.income_domestic
+        out = m.document_path(inv, account)
     path, totals, payload = r.render(inv, iss, out)
 
     qr_ok = None
@@ -823,7 +831,9 @@ def schema(
     """Write JSON Schemas for the invoice, issuer, and customers files.
 
     Point an editor at them (yaml-language-server modeline) for completion
-    and validation; any future UI can consume the same contract."""
+    and validation; any future UI can consume the same contract. The same
+    schemas are published on the docs site, so scaffolded YAMLs reference
+    them without running this command."""
     import json as _json
 
     from .invoice import model as m
@@ -837,6 +847,7 @@ def schema(
         path = out / f"{name}.schema.json"
         path.write_text(_json.dumps(mdl.model_json_schema(), indent=2) + "\n")
         ui.console.print(f"[ok]Wrote[/] {path}")
+    ui.console.print(f"[muted]Also hosted at {config_mod.DOCS_URL}/schema/[/]")
 
 
 @app.command()
@@ -859,6 +870,11 @@ def init(
     ),
     answers_file: Path | None = typer.Option(
         None, "--answers", help="TOML answer-file for non-interactive scaffolding."
+    ),
+    use_git: bool = typer.Option(
+        True,
+        "--git/--no-git",
+        help="git init + commit the pristine scaffold (skipped inside an existing repo).",
     ),
     force: bool = typer.Option(False, "--force", help="Overwrite existing files."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip prompts; accept defaults."),
@@ -923,14 +939,18 @@ def init(
         typer.secho(f"ERROR: {e}", fg="red", err=True)
         raise typer.Exit(1) from None
     result = init_mod.write(directory, files, force=force)
+    git_result = init_mod.init_git(directory) if use_git and result.written else None
 
     if as_json:
+        import dataclasses
+
         _json_out(
             {
                 "directory": str(directory),
                 "entity": answers.entity_name,
                 "written": [str(p) for p in result.written],
                 "skipped": [str(p) for p in result.skipped],
+                "git": dataclasses.asdict(git_result) if git_result else None,
             }
         )
         return
@@ -938,6 +958,11 @@ def init(
         ui.console.print(f"[ok]created[/] {path}")
     for path in result.skipped:
         ui.console.print(f"[warn]exists, skipped[/] {path} (use --force to overwrite)")
+    if git_result:
+        if git_result.committed:
+            ui.console.print("[ok]git[/] initialised repository, committed the scaffold")
+        else:
+            ui.console.print(f"[warn]git[/] {git_result.detail}")
     if result.written and not result.skipped:
         ui.console.print(
             f"\nScaffolded [b]{answers.entity_name}[/] in {directory}. "

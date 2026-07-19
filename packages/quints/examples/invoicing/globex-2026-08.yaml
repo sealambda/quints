@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://sealambda.github.io/quints/schema/invoice.schema.json
 # Sample export invoice — foreign currency, reverse charge, no QR part.
 # Ties to the ^INV2026015 booking in books/2026.bean (500.00 EUR).
 number: INV2026015

@@ -9,6 +9,7 @@ one contract.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
@@ -286,6 +287,20 @@ def load_mapping(path: Path) -> dict:
     if suffix == ".json":
         return json.loads(path.read_text())
     raise ValueError(f"unsupported invoice file format {suffix!r} (use .yaml/.toml/.json)")
+
+
+def document_path(inv: Invoice, income_account: str, root: Path = Path("documents")) -> Path:
+    """Where the rendered PDF is filed, per the beancount documents convention.
+
+    `option "documents"` discovery wants `<root>/<Account/Tree>/YYYY-MM-DD.…`;
+    the date prefix is what links the file to the account, and the
+    `<payee>.<number>` tail keeps the folder scannable:
+    `documents/Income/…/Domestic/2026-07-02.acme-ag.INV2026014.pdf`.
+    """
+    customer = inv.customer.name if isinstance(inv.customer, Party) else inv.customer
+    slug = re.sub(r"[^a-z0-9]+", "-", customer.lower()).strip("-") or "customer"
+    name = f"{inv.issue_date.isoformat()}.{slug}.{inv.number}.pdf"
+    return root.joinpath(*income_account.split(":")) / name
 
 
 def load_issuer(path: Path) -> Issuer:

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://sealambda.github.io/quints/schema/issuer.schema.json
 # Issuer identity for `quints invoice` — name, address, VAT ID, and one
 # bank account per invoicing currency. Sample data: replace the VAT ID
 # and IBANs with your own before issuing a real invoice.

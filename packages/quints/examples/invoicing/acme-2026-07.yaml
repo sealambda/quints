@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://sealambda.github.io/quints/schema/invoice.schema.json
 # Sample domestic invoice — a Swiss QR-bill. It ties to the ^INV2026014
 # booking in books/2026.bean (net 1'000.00 + 8.1% VAT = 1'081.00), so
 # `quints invoice` cross-checks it clean against the ledger.

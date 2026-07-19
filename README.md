@@ -47,8 +47,10 @@ quints mwst -q 2026-Q3
 in `books/<year>.bean` (one file per fiscal year), a `quints.toml`, a
 `pyproject.toml` (after `uv sync`, the plain beancount toolchain —
 `bean-check main.bean`, `fava main.bean` — works too), and an `AGENTS.md`
-that tells a coding agent how to extend the books and validate them with
-`quints check`. Drop `--samples` for empty books.
+(plus a `CLAUDE.md` that auto-loads it in Claude Code) that tells a coding
+agent how to extend the books and validate them with `quints check`. The
+project starts as a git repository with the pristine scaffold committed, so
+every change is a reviewable diff. Drop `--samples` for empty books.
 
 It asks for your legal form — `gmbh`, `ag`, or `einzelfirma` (sole
 proprietorship / freelancer) — and scaffolds the matching equity block from
@@ -114,7 +116,8 @@ quints invoice <invoice.yaml>         # QR-bill PDF, cross-checked against the l
 
 Renders a QR-bill PDF (domestic or export / reverse-charge) and reconciles the
 total against the matching booking in your ledger, so an invoice can't silently
-diverge from your books.
+diverge from your books. The PDF is filed under `documents/` in the income
+account's folder, date-prefixed — where beancount and Fava expect documents.
 
 <img src="docs/assets/invoice-qr-bill.png" alt="Generated Swiss QR-bill invoice PDF with payment part" width="440">
 

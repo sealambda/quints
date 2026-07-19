@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://sealambda.github.io/quints/schema/customers.schema.json
 # Customer registry — invoices reference these entries by key. A customer
 # is a flat entry, or a dated `versions` history for address changes.
 acme:

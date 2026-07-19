@@ -1,0 +1,119 @@
+{
+  "$defs": {
+    "Customer": {
+      "description": "Registry entry: a flat party, or a dated `versions` history.",
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "address": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Address"
+        },
+        "country": {
+          "default": "CH",
+          "title": "Country",
+          "type": "string"
+        },
+        "vat_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vat Id"
+        },
+        "versions": {
+          "items": {
+            "$ref": "#/$defs/CustomerVersion"
+          },
+          "title": "Versions",
+          "type": "array"
+        }
+      },
+      "title": "Customer",
+      "type": "object"
+    },
+    "CustomerVersion": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "address": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Address",
+          "type": "array"
+        },
+        "country": {
+          "default": "CH",
+          "title": "Country",
+          "type": "string"
+        },
+        "vat_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vat Id"
+        },
+        "valid_from": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid From"
+        }
+      },
+      "required": [
+        "name",
+        "address"
+      ],
+      "title": "CustomerVersion",
+      "type": "object"
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/Customer"
+  },
+  "title": "CustomerRegistry",
+  "type": "object"
+}

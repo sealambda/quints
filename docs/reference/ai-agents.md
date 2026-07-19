@@ -14,13 +14,23 @@ a VAT figure is a bug; the playbook tells it to compute instead.
 ## AGENTS.md
 
 `quints init` scaffolds an `AGENTS.md` into every project: the layout, the
-KMU-code rule, the review loop, and the machine-readable surfaces. Point your
-agent at the project and it knows how to work. The loop it follows:
+KMU-code rule, both halves of the loop (bank statements in, invoices out),
+the configured importer roster with its credentials, and the
+machine-readable surfaces. A one-line `CLAUDE.md` (`@AGENTS.md`) sits next
+to it, so a Claude Code session loads the playbook automatically — other
+agents find `AGENTS.md` by convention. The fenced commands in the generated
+file run in CI against the example project, like every page of these docs.
+
+The statement loop the playbook describes:
 
 1. `quints import …` drafts statements into `staging/`.
 2. The agent reviews each draft — VAT decision, linked document — and moves
    it to `books/<year>.bean`.
-3. `quints check` before the books are considered consistent. Always.
+3. `quints check` before the books are considered consistent.
+
+The scaffold is also a git repository with the pristine project as its
+initial commit — "what did the agent change" is always one `git diff` away,
+and a wrong edit is a revert, not an archaeology dig. Always.
 
 ## Machine-readable surfaces
 
@@ -40,7 +50,10 @@ quints schema
 ```
 
 writes JSON Schemas for the invoice/issuer/customers files, so agents (and
-editors) validate invoice YAML before rendering.
+editors) validate invoice YAML before rendering. The same schemas are
+published with this site under `/quints/schema/`, and scaffolded YAMLs point
+their `$schema` modelines there — validation works before anyone runs the
+command.
 
 ## Determinism as a guarantee
 

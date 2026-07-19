@@ -416,9 +416,17 @@ _SAMPLE_IBAN = "CH93 0076 2011 6238 5295 7"
 _SAMPLE_CUSTOMER_VAT_ID = "IE1234567T"
 
 
+def _modeline(schema: str) -> str:
+    """A yaml-language-server modeline pointing at the hosted JSON Schema, so
+    editors and agents get field-level validation without running `quints
+    schema` first. The schemas are published by the docs build."""
+    return f"# yaml-language-server: $schema={config.DOCS_URL}/schema/{schema}.schema.json"
+
+
 def _issuer_yaml(answers: Answers) -> str:
     return "\n".join(
         [
+            _modeline("issuer"),
             "# Issuer identity for `quints invoice` — name, address, VAT ID, and one",
             "# bank account per invoicing currency. Sample data: replace the VAT ID",
             "# and IBANs with your own before issuing a real invoice.",
@@ -443,6 +451,7 @@ def _issuer_yaml(answers: Answers) -> str:
 def _customers_yaml(_answers: Answers) -> str:
     return "\n".join(
         [
+            _modeline("customers"),
             "# Customer registry — invoices reference these entries by key. A customer",
             "# is a flat entry, or a dated `versions` history for address changes.",
             "acme:",
@@ -467,6 +476,7 @@ def _invoice_acme_yaml(answers: Answers) -> str:
     year = _open_date(answers).year
     return "\n".join(
         [
+            _modeline("invoice"),
             f"# Sample domestic invoice — a Swiss QR-bill. It ties to the ^INV{year}014",
             f"# booking in books/{year}.bean (net 1'000.00 + 8.1% VAT = 1'081.00), so",
             "# `quints invoice` cross-checks it clean against the ledger.",
@@ -491,6 +501,7 @@ def _invoice_globex_yaml(answers: Answers) -> str:
     year = _open_date(answers).year
     return "\n".join(
         [
+            _modeline("invoice"),
             "# Sample export invoice — foreign currency, reverse charge, no QR part.",
             f"# Ties to the ^INV{year}015 booking in books/{year}.bean (500.00 EUR).",
             f"number: INV{year}015",
@@ -643,10 +654,67 @@ def _import_section(importer: str, answers: Answers) -> str:
 
 # ── AGENTS.md — the AI-first payload ─────────────────────────────────────────
 
+# Per-importer usage lines for AGENTS.md — command first, credentials after,
+# so an agent can run the roster without probing quints.toml or .env.
+_IMPORTER_USAGE = {
+    "ubs": (
+        "`quints import ubs <statement.mt940>` — the MT940 export from UBS "
+        "e-banking; no credentials."
+    ),
+    "wise": (
+        "`quints import wise --fetch --from <date> --to <date>` — needs "
+        "`QUINTS_WISE_API_TOKEN` in `.env` (plus `QUINTS_WISE_PRIVATE_KEY` for "
+        "SCA-protected profiles; the key pair lives in `.wise/`, git-ignored)."
+    ),
+    "stripe": (
+        "`quints import stripe --fetch --from <date> --to <date>` — needs "
+        "`QUINTS_STRIPE_API_KEY` in `.env` (a restricted read-only key for the "
+        "`[import.stripe]` account)."
+    ),
+}
+
+
+def _agents_import_step(answers: Answers) -> str:
+    if not answers.importers:
+        return (
+            "1. Draft bank/PSP activity into `staging/` with `quints import`. No\n"
+            "   importer is configured yet — add an `[import.<name>]` section to\n"
+            "   `quints.toml` (supported: ubs, wise, stripe)."
+        )
+    lines = ["1. Draft bank/PSP activity into `staging/`. Configured importers:"]
+    lines += [f"   - {_IMPORTER_USAGE[name]}" for name in answers.importers]
+    return "\n".join(lines)
+
+
+def _agents_sample_section(answers: Answers) -> str:
+    if not answers.include_samples:
+        return ""
+    year = _open_date(answers).year
+    lines = [
+        "",
+        "## Sample data — replace before the books are real",
+        "",
+        "The scaffold seeded a demo quarter so every command has data. Before",
+        "booking real activity:",
+        "",
+        f"- [ ] `invoicing/issuer.yaml` — the VAT ID ({_SAMPLE_VAT_ID}) and both",
+        "      IBANs are checksum-valid fakes; put the real ones in.",
+        "- [ ] `invoicing/customers.yaml` — replace the demo customers (acme, globex).",
+        f"- [ ] `invoicing/acme-{year}-07.yaml` and `invoicing/globex-{year}-08.yaml`",
+        "      — delete the demo invoices.",
+        f"- [ ] `books/{year}.bean` — delete the block marked *sample activity*.",
+        "- [ ] `prices.bean` — drop the demo EUR rates, then `quints prices sync`.",
+    ]
+    if "ubs" in answers.importers:
+        lines.append("- [ ] `quints.toml` — the placeholder IBAN under `[import.ubs]`.")
+    return "\n".join(lines) + "\n"
+
 
 def _agents_md(answers: Answers) -> str:
-    marker = _cfg(answers).entity_marker
+    cfg = _cfg(answers)
+    marker = cfg.entity_marker
     year = _open_date(answers).year
+    bank = _sub(_PRIMARY_BANK, _component(answers))
     return f"""# Working on {answers.entity_name}'s books with an AI agent
 
 These are plain-text ([beancount](https://beancount.github.io)) books managed
@@ -660,6 +728,10 @@ extend and maintain the ledger; `quints` validates and reports on it.
 Then `uv run quints check` (or activate the venv and call `quints` and the
 standard beancount tools directly).
 
+This project is a git repository; `quints init` committed the pristine
+scaffold. Work in reviewable steps: `git diff` before moving drafts into
+`books/`, commit once `quints check` passes — the history is the audit trail.
+
 ## Layout
 
 - `main.bean` — options, plugins, includes; the entry point every tool loads.
@@ -672,8 +744,13 @@ standard beancount tools directly).
   `quints prices sync`.
 - `quints.toml` — entity config (name, legal form, VAT, importer rules). VAT
   *rates* are law and live in code, not here.
-- `staging/` — importer drafts land here; `inbox/` — incoming source
-  documents; `documents/` — filed documents, mirroring the account tree.
+- `staging/` — importer drafts land here (git-ignored, transient).
+- `inbox/` — incoming source documents, not yet filed.
+- `documents/` — filed documents, mirroring the account tree as
+  `documents/<Account/Tree>/YYYY-MM-DD.payee.description.pdf`. Committed:
+  the ledger links to these files (`fava.plugins.link_documents`).
+- `invoicing/` — issuer identity (`issuer.yaml`), customer registry
+  (`customers.yaml`), one YAML per issued invoice.
 
 ## Extending the chart of accounts (the part that needs judgement)
 
@@ -685,35 +762,79 @@ Add income/expense sub-trees for this business as `open` directives in
   kmu: "6600"  ; Advertising
 ```
 
-Run `quints report konten` to see the codes already in use. Pick codes from the
-KMU Kontenrahmen; `quints check` fails on a `{marker}` account with no valid
-`kmu:` code.
+See the codes already in use:
 
-## The loop
+```bash
+quints report konten --year {year}
+```
 
-1. Draft bank/PSP activity: `quints import ubs <file>` → `staging/`.
-2. Review, add the VAT decision (InputVAT / Bezugsteuer / none) and a linked
-   document, then move drafts into `books/{year}.bean`.
+Pick codes from the KMU Kontenrahmen; `quints check` fails on a `{marker}`
+account with no valid `kmu:` code.
+
+## The loop — money out (statements → books)
+
+{_agents_import_step(answers)}
+2. Review each draft in `staging/`. A draft is a flagged (`!`) transaction
+   with only the cash leg known:
+
+```beancount
+{year}-07-20 ! "ACME AG" "Payment order"
+  {bank}  -250.00 CHF
+```
+
+   Complete the counter leg, decide the VAT treatment (InputVAT /
+   Bezugsteuer / none), link the source document, flip `!` to `*`, and move
+   it into `books/{year}.bean`. `quints match` scores staging drafts and
+   inbox documents against invoices and bookings.
 3. **Always** `quints check` before you consider the books consistent.
+
+## The loop — money in (invoice → receivable → payment)
+
+1. Describe the invoice as a YAML file in `invoicing/` (each file carries a
+   `$schema` modeline, so schema-aware editors validate it as you type).
+2. `quints invoice invoicing/<file>.yaml` renders the PDF into `documents/`
+   under the income account and cross-checks the total against the ledger.
+   Not booked yet? It prints the receivable draft to paste into
+   `books/{year}.bean`.
+3. The payment arrives with the next bank import; the draft is matched to
+   the open invoice by its QR/SCOR reference. `quints receivables` shows
+   what is still open.
 
 ## Machine-readable surfaces (prefer these over scraping text)
 
-- Every reporting command takes `--json`: `quints mwst -q 2026-Q3 --json`,
-  `quints status --json`, `quints report bilanz --json`.
-- `quints schema` writes JSON Schemas for the invoice/issuer/customer files.
+Every reporting command takes `--json` — stable keys, ISO dates, decimal
+strings:
+
+```bash
+quints check --json
+quints mwst -q {year}-Q3 --json
+quints status --json
+quints report bilanz --at {year}-12-31 --json
+quints receivables --json
+```
+
+JSON Schemas for the invoicing files are hosted at
+{config.DOCS_URL}/schema/ (`quints schema` writes them
+locally to `invoicing/schema/`).
 
 Never invent VAT numbers or rates — compute them with `quints mwst`.
-"""
+{_agents_sample_section(answers)}"""
+
+
+def _claude_md() -> str:
+    # Claude Code auto-loads CLAUDE.md; the @-include pulls AGENTS.md into
+    # context so the instructions work without the agent going looking.
+    return "@AGENTS.md\n"
 
 
 def _gitignore() -> str:
     return "\n".join(
         [
-            "# quints working directories",
+            "# quints working directories. documents/ (filed sources and rendered",
+            "# invoices) is deliberately NOT ignored — the ledger links to it.",
             "/staging/",
             ".env",
             "__pycache__/",
-            "*.pdf",  # rendered invoices/statements — regenerate from source
             ".venv/",
             ".DS_Store",
             ".wise/",  # Wise SCA signing keys
@@ -749,6 +870,7 @@ def plan(answers: Answers) -> list[ScaffoldFile]:
         ScaffoldFile(Path(f"books/{year}.bean"), _books_bean(answers)),
         *invoicing,
         ScaffoldFile(Path("AGENTS.md"), _agents_md(answers)),
+        ScaffoldFile(Path("CLAUDE.md"), _claude_md()),
         ScaffoldFile(Path(".gitignore"), _gitignore()),
         ScaffoldFile(Path("inbox/.gitkeep"), ""),
         ScaffoldFile(Path("staging/.gitkeep"), ""),
@@ -793,3 +915,48 @@ def write(target: Path, files: list[ScaffoldFile], *, force: bool = False) -> Wr
         dest.write_text(f.content)
         result.written.append(dest)
     return result
+
+
+@dataclass(frozen=True)
+class GitResult:
+    initialized: bool  # a fresh repository was created
+    committed: bool  # the pristine scaffold is the initial commit
+    detail: str = ""  # why a step was skipped or failed, for the caller to show
+
+
+def init_git(target: Path) -> GitResult:
+    """``git init`` + an initial commit of the pristine scaffold.
+
+    The repository is what makes agent edits reviewable — diff before drafts
+    move into ``books/``, revert when a change was wrong — and the initial
+    commit makes "what did the agent change" answerable from day one. A
+    ``target`` already inside a work tree (e.g. scaffolding a subdirectory of
+    an existing repo) is left alone.
+    """
+    import shutil
+    import subprocess
+
+    git = shutil.which("git")
+    if git is None:
+        return GitResult(False, False, "git not installed")
+    inside = subprocess.run(  # noqa: S603 — fixed argv, git resolved via shutil.which
+        [git, "-C", str(target), "rev-parse", "--is-inside-work-tree"],
+        capture_output=True,
+        text=True,
+    )
+    if inside.returncode == 0 and inside.stdout.strip() == "true":
+        return GitResult(False, False, "already inside a git repository")
+    for argv in ([git, "init", "--quiet"], [git, "add", "--all"]):
+        step = subprocess.run(argv, cwd=target, capture_output=True, text=True)  # noqa: S603 — fixed argv
+        if step.returncode != 0:
+            return GitResult(True, False, step.stderr.strip() or f"git {argv[1]} failed")
+    commit = subprocess.run(  # noqa: S603 — fixed argv
+        [git, "commit", "--quiet", "-m", "Scaffold books with quints init"],
+        cwd=target,
+        capture_output=True,
+        text=True,
+    )
+    if commit.returncode != 0:
+        # Most likely no git identity — leave the repo with everything staged.
+        return GitResult(True, False, commit.stderr.strip() or "git commit failed")
+    return GitResult(True, True)

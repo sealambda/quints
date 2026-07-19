@@ -1,0 +1,153 @@
+{
+  "$defs": {
+    "BankAccount": {
+      "properties": {
+        "iban": {
+          "default": "",
+          "title": "Iban",
+          "type": "string"
+        },
+        "qr_iban": {
+          "default": "",
+          "title": "Qr Iban",
+          "type": "string"
+        },
+        "bic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bic"
+        }
+      },
+      "title": "BankAccount",
+      "type": "object"
+    },
+    "Brand": {
+      "properties": {
+        "accent": {
+          "default": "#123c3a",
+          "title": "Accent",
+          "type": "string"
+        },
+        "font": {
+          "default": "Liberation Sans",
+          "title": "Font",
+          "type": "string"
+        },
+        "font_display": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Display"
+        },
+        "font_display_stretch": {
+          "default": 100,
+          "title": "Font Display Stretch",
+          "type": "integer"
+        },
+        "font_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Dir"
+        },
+        "logo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Logo"
+        }
+      },
+      "title": "Brand",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "address": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Address",
+      "type": "array"
+    },
+    "vat_id": {
+      "title": "Vat Id",
+      "type": "string"
+    },
+    "country": {
+      "default": "CH",
+      "title": "Country",
+      "type": "string"
+    },
+    "email": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Email"
+    },
+    "phone": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Phone"
+    },
+    "bank": {
+      "additionalProperties": {
+        "$ref": "#/$defs/BankAccount"
+      },
+      "title": "Bank",
+      "type": "object"
+    },
+    "brand": {
+      "$ref": "#/$defs/Brand"
+    }
+  },
+  "required": [
+    "name",
+    "address",
+    "vat_id"
+  ],
+  "title": "Issuer",
+  "type": "object"
+}

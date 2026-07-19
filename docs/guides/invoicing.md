@@ -12,6 +12,15 @@ already booked at a different amount, you get a conflict, not a silent
 divergence. If it isn't booked yet, quints prints the draft transaction to
 paste into `books/<year>.bean`.
 
+The PDF is filed the way beancount documents are filed — under the income
+account's folder, date-prefixed, so `option "documents"` and Fava pick it up:
+
+```text
+documents/Income/CH/GmbH/Consulting/External/Domestic/2026-07-02.acme-ag.INV2026014.pdf
+```
+
+`--out` overrides the location when you need to.
+
 ![Rendering the two sample invoices — domestic QR-bill and EUR export — each cross-checked against the ledger](../assets/invoice.gif)
 
 ![The generated Swiss QR-bill PDF, with receipt and payment part](../assets/invoice-qr-bill.png){ width="480" }
@@ -61,13 +70,18 @@ sample quarter so the cross-check reconciles.
 
 ## Editor validation
 
+The invoice, issuer, and customers files have JSON Schemas, published with
+this site at
+[`/quints/schema/`](https://sealambda.github.io/quints/schema/invoice.schema.json).
+Scaffolded YAMLs already carry the matching `yaml-language-server: $schema=`
+modeline, so schema-aware editors (and agents) validate fields as you type.
+To work offline:
+
 ```bash
 quints schema
 ```
 
-Writes JSON Schemas for the invoice, issuer, and customers files to
-`invoicing/schema/`. Point your editor at them (yaml-language-server
-modeline) for completion and validation while you write invoices.
+writes the same schemas to `invoicing/schema/`.
 
 ## Who owes you
 

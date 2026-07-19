@@ -41,7 +41,10 @@ REPO = Path(__file__).resolve().parents[3]
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 
 DOC_PAGES = sorted(p.relative_to(REPO) for p in (REPO / "docs").rglob("*.md"))
-PAGES = [Path("README.md"), *DOC_PAGES]
+# The generated AGENTS.md is a doc page too — the one an agent actually reads.
+# Its fenced commands run against the example project like every other page.
+AGENTS_MD = EXAMPLES.relative_to(REPO) / "AGENTS.md"
+PAGES = [Path("README.md"), AGENTS_MD, *DOC_PAGES]
 
 _FENCE = re.compile(r"^```(\w*)")
 _NO_TEST = re.compile(r"<!--.*no-test.*-->")
@@ -110,3 +113,25 @@ def test_extractor_sees_the_docs() -> None:
     assert len(DOC_PAGES) >= 8, f"docs/ pages missing: found only {DOC_PAGES}"
     total = sum(len(_commands((REPO / p).read_text())) for p in PAGES)
     assert total >= 25, f"only {total} documented commands extracted — extractor broken?"
+    agents = len(_commands((REPO / AGENTS_MD).read_text()))
+    assert agents >= 5, f"AGENTS.md yields only {agents} runnable commands"
+
+
+def test_hosted_schemas_are_in_sync() -> None:
+    # The scaffold's yaml-language-server modelines point at
+    # <site>/schema/<name>.schema.json; the committed docs/schema/ files that
+    # publish there must match the Pydantic models. Regenerate: `make docs`.
+    import json
+
+    from quints.invoice import model as m
+
+    for name, mdl in (
+        ("invoice", m.Invoice),
+        ("issuer", m.Issuer),
+        ("customers", m.CustomerRegistry),
+    ):
+        path = REPO / "docs" / "schema" / f"{name}.schema.json"
+        assert path.exists(), f"{path} missing — run `make docs`"
+        assert json.loads(path.read_text()) == mdl.model_json_schema(), (
+            f"docs/schema/{name}.schema.json is stale — run `make docs`"
+        )

@@ -1,8 +1,8 @@
-# quints working directories
+# quints working directories. documents/ (filed sources and rendered
+# invoices) is deliberately NOT ignored — the ledger links to it.
 /staging/
 .env
 __pycache__/
-*.pdf
 .venv/
 .DS_Store
 .wise/

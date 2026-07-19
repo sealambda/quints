@@ -32,8 +32,13 @@ trap 'rm -rf "$work"' EXIT
     quints invoice invoicing/acme-2026-07.yaml
     quints invoice invoicing/globex-2026-08.yaml
     quints report statements --year 2026 --lang de
-    pdftoppm -png -singlefile -r 110 -f 1 -l 1 INV2026014.pdf "$ASSETS/invoice-qr-bill"
-    pdftoppm -png -singlefile -r 110 -f 1 -l 1 INV2026015.pdf "$ASSETS/invoice-export"
+    # Invoices are filed like any other beancount document: under the income
+    # account's folder in documents/, date-prefixed.
+    income="documents/Income/CH/GmbH/Consulting/External"
+    pdftoppm -png -singlefile -r 110 -f 1 -l 1 \
+        "$income/Domestic/2026-07-02.acme-ag.INV2026014.pdf" "$ASSETS/invoice-qr-bill"
+    pdftoppm -png -singlefile -r 110 -f 1 -l 1 \
+        "$income/Export/2026-08-05.globex-ltd.INV2026015.pdf" "$ASSETS/invoice-export"
     pdftoppm -png -singlefile -r 110 -f 1 -l 1 statements-2026-de.pdf "$ASSETS/statements"
 )
 

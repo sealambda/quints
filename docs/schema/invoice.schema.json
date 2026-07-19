@@ -1,0 +1,227 @@
+{
+  "$defs": {
+    "LineItem": {
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "quantity": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Quantity"
+        },
+        "unit_price": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Unit Price"
+        },
+        "unit": {
+          "default": "",
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "quantity",
+        "unit_price"
+      ],
+      "title": "LineItem",
+      "type": "object"
+    },
+    "Party": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "address": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Address",
+          "type": "array"
+        },
+        "country": {
+          "default": "CH",
+          "title": "Country",
+          "type": "string"
+        },
+        "vat_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vat Id"
+        }
+      },
+      "required": [
+        "name",
+        "address"
+      ],
+      "title": "Party",
+      "type": "object"
+    },
+    "VatBlock": {
+      "properties": {
+        "rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "default": "8.1",
+          "title": "Rate"
+        }
+      },
+      "title": "VatBlock",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "number": {
+      "title": "Number",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "domestic",
+        "export"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "currency": {
+      "pattern": "^[A-Z]{3}$",
+      "title": "Currency",
+      "type": "string"
+    },
+    "issue_date": {
+      "format": "date",
+      "title": "Issue Date",
+      "type": "string"
+    },
+    "customer": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/Party"
+        }
+      ],
+      "title": "Customer"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/LineItem"
+      },
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+    },
+    "supply": {
+      "default": "",
+      "title": "Supply",
+      "type": "string"
+    },
+    "locale": {
+      "default": "de_CH",
+      "title": "Locale",
+      "type": "string"
+    },
+    "vat": {
+      "$ref": "#/$defs/VatBlock"
+    },
+    "reference": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reference"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "round_5": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Round 5"
+    },
+    "terms_days": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": 30,
+      "title": "Terms Days"
+    },
+    "reverse_charge": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reverse Charge"
+    }
+  },
+  "required": [
+    "number",
+    "kind",
+    "currency",
+    "issue_date",
+    "customer",
+    "items"
+  ],
+  "title": "Invoice",
+  "type": "object"
+}

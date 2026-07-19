@@ -33,8 +33,11 @@ typebaseline:
 
 # Docs site (Zensical → site/). Every quints command in docs/ and README.md
 # is executed by tests/test_docs.py — `make check` guards the content,
-# `make docs` the build.
+# `make docs` the build. The invoicing JSON Schemas are regenerated into
+# docs/schema/ (committed; sync-tested) and published with the site, so
+# scaffolded YAMLs can point their $schema modelines at stable URLs.
 docs:
+	uv run quints schema --out docs/schema
 	uv run --only-group docs zensical build --clean
 
 docs-serve:
