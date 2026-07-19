@@ -55,6 +55,31 @@ currencies = ["EUR"]
 tickers = { EUR = "EUR-CHF" }   # 1 EUR = x CHF
 ```
 
+## Why `quints prices sync` and not `bean-price`?
+
+Both read the same commodity metadata and drive the same sources —
+`bean-price` works fine against a quints ledger, and quints' own
+`beanprice-bazg` source is tested against it. The difference is what happens
+around the fetch:
+
+- **The file is maintained, not just appended to.** `bean-price` prints
+  directives for you to paste; sync owns `prices.bean` — sorted, one entry
+  per day, weekend echoes de-duplicated, manual overrides left alone.
+- **Gaps heal themselves.** `bean-price` fetches the dates you ask for.
+  Every sync run re-checks the whole history and fills any missing day, so
+  a stretch lost to a laptop shutdown or a source outage doesn't stay
+  missing silently. Days the source genuinely has no rate for (weekends,
+  holidays) are recorded in the file header and checked exactly once.
+- **Interrupts are cheap.** Rates are written as they arrive; killing a
+  2-year backfill loses at most one window, and the next run resumes.
+- **Full precision.** `bean-price --update` rounds through the ledger's
+  `display_precision`; sync writes the raw source rate (BAZG publishes five
+  decimals), which is what the ESTV-accepted daily rate actually is.
+- **Tax rates are daily rates.** Swiss VAT wants the official rate of the
+  transaction day, not the latest quote — so the unit of work here is "keep
+  a complete daily series current", which is a loop and a file format, not
+  a one-shot fetch.
+
 ## Year-end revaluation
 
 ```bash
