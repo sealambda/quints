@@ -12,6 +12,10 @@ operating_currency = "CHF"
 main = "main.bean"
 prices = "prices.bean"
 
+# `quints prices sync` reads the commodity price metadata in
+# commodities.bean (same as bean-price). A [prices] section here only
+# matters for ledgers that declare none — see the FX guide.
+
 [accounts]
 entity_marker = ":CH:GmbH:"         # scopes KMU statements and the plugin
 input_vat = "Assets:CH:GmbH:Tax:InputVAT"

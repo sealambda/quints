@@ -7,23 +7,53 @@ rates. quints fetches them into `prices.bean` at full precision.
 
 <!-- no-test: needs network -->
 ```bash
-quints prices sync                     # extend each currency forward to today
-quints prices sync --from 2026-01-01   # repair mode: fill any missing days
+quints prices sync                     # fill gaps and extend to today
+quints prices sync --from 2026-01-01   # repair mode: re-check every day
 ```
 
-Needs network. The BAZG API has no bulk endpoint — the fetch is one request
-per calendar day per currency, so a first backfill takes a while; a live
-per-currency progress bar shows how far along it is. Rates already in the
-file are never touched — manual overrides survive a sync. Which currencies to fetch comes from
-`commodities.bean`:
+Needs network. Every run extends each currency forward to today **and**
+fills interior gaps — days missing anywhere in the file's history are
+fetched too. Days the source has no rate for (weekends, holidays) are
+checked once and recorded in a `; quints: verified …` comment in the file
+header, so they are never re-fetched. The file is written as rates arrive:
+interrupt a long backfill and the next run resumes where it left off.
+`--from` ignores the verified record and re-checks the whole range.
+
+The BAZG API has no bulk endpoint — the fetch is one request per calendar
+day per currency, so a first backfill takes a while; a live per-currency
+progress bar shows how far along it is. Rates already in the file are never
+touched — manual overrides survive a sync.
+
+Which currencies to fetch, and from which source, comes from the ledger —
+the same commodity `price:` metadata `bean-price` reads, with the same
+syntax, so quints and the standard beancount tooling always agree on where
+rates come from:
 
 ```beancount
 2026-01-01 commodity EUR
   price: "CHF:beanprice_bazg/EUR"
 ```
 
-`bean-price` reads the same metadata, so the standard beancount tooling
-agrees with quints on where rates come from.
+Any [beanprice](https://github.com/beancount/beanprice) source works —
+bundled ones by short name (`ecbrates/EUR-CHF`), third-party ones by module
+path — whether it serves bulk series or single days; quints drives it
+day-by-day when it has to. The full bean-price syntax is supported: fallback
+chains (`"CHF:beanprice_bazg/EUR,ecbrates/EUR-CHF"` — the first source that
+answers wins), inverted pairs (`^` prefix stores the reciprocal rate),
+several quote currencies separated by spaces, and `price: ""` to opt a
+commodity out. quints additionally refuses rates quoted in the wrong
+currency, so a wrong ticker fails loudly instead of corrupting the file.
+
+When the ledger declares no priced commodities (or you run outside a
+ledger), a `[prices]` section in `quints.toml` supplies the plan instead —
+and `--source MODULE` forces a specific module either way:
+
+```toml
+[prices]
+source = "ecbrates"             # ECB reference rates, "BASE-SYMBOL" tickers
+currencies = ["EUR"]
+tickers = { EUR = "EUR-CHF" }   # 1 EUR = x CHF
+```
 
 ## Year-end revaluation
 

@@ -1761,6 +1761,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "basedpyright" },
+    { name = "beanprice" },
     { name = "deptry" },
     { name = "import-linter" },
     { name = "pytest" },
@@ -1784,6 +1785,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "basedpyright", specifier = ">=1.39.9" },
+    { name = "beanprice", specifier = ">=2.1" },
     { name = "deptry", specifier = ">=0.25.1" },
     { name = "import-linter", specifier = ">=2.13" },
     { name = "pytest", specifier = ">=8" },

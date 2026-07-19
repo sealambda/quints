@@ -14,6 +14,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "basedpyright>=1.39.9",
+    "beanprice>=2.1",
     "deptry>=0.25.1",
     "import-linter>=2.13",
     "pytest>=8",

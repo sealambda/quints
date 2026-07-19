@@ -30,6 +30,11 @@ dependencies = [
 [project.scripts]
 quints = "quints.cli:main"
 
+[tool.deptry.per_rule_ignores]
+# The default price source: `prices sync` resolves it by module name at
+# runtime (importlib), so deptry sees no static import.
+DEP002 = ["beanprice-bazg"]
+
 [dependency-groups]
 dev = ["pytest>=8"]
 

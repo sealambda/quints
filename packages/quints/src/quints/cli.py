@@ -86,7 +86,10 @@ def root(
     config_mod.set_path(config)
 
 
-prices_app = typer.Typer(no_args_is_help=True, help="Price database (BAZG daily CHF rates).")
+prices_app = typer.Typer(
+    no_args_is_help=True,
+    help="Price database (daily FX rates from any beanprice source; BAZG by default).",
+)
 app.add_typer(prices_app, name="prices")
 report_app = typer.Typer(
     no_args_is_help=True,
@@ -337,20 +340,31 @@ def match(
 
 @prices_app.command("sync")
 def prices_sync(
-    out: Path = typer.Option(
-        ledger.DEFAULT_PRICES, "--out", help="Price file (default: prices.bean)."
+    out: Path | None = typer.Option(
+        None, "--out", help="Price file (default: [ledger].prices from quints.toml, prices.bean)."
     ),
     from_: str | None = typer.Option(
         None,
         "--from",
-        help="Repair: re-scan from this date and fill ANY missing days (heals interior gaps).",
+        help="Repair: re-check every day from this date, even days already verified.",
+    ),
+    source: str | None = typer.Option(
+        None,
+        "--source",
+        help="beanprice source module (default: [prices].source from quints.toml, beanprice_bazg).",
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ):
-    """Fetch new BAZG daily CHF rates into the price file (full precision, gap-aware).
+    """Fetch daily rates into the price file (full precision, resumable, gap-aware).
 
-    Without --from: extend each currency forward to today (fast, daily use).
-    With --from DATE: re-scan the whole range and fill any missing days.
+    What to fetch comes from the ledger's commodity `price:` metadata — the
+    same declarations bean-price reads — or, when the ledger declares none,
+    from [prices] in quints.toml. Every run extends each currency forward to
+    today AND fills interior gaps; days the source has no rate for (weekends,
+    holidays) are checked once and recorded as verified in the file header.
+    The file is written as rates arrive, so an interrupted sync resumes where
+    it left off.
+    With --from DATE: re-check the whole range, ignoring the verified record.
     """
     from rich.progress import (
         BarColumn,
@@ -361,10 +375,24 @@ def prices_sync(
         TimeRemainingColumn,
     )
 
+    cfg = config_mod.get()
+    out = out if out is not None else cfg.ledger_prices
     repair = _parse_date(from_) if from_ else None
-    # BAZG has no bulk endpoint — the fetch is one request per calendar day per
-    # currency, so a backfill takes a while: show a live per-currency bar
-    # (stderr, transient) unless the caller asked for machine-readable output.
+    # bean-price mode: commodity `price:` metadata declares what to fetch.
+    # --source forces config mode; a metadata-less ledger falls back to it too.
+    jobs = None
+    if source is None and cfg.ledger_main.exists():
+        entries, _errors = ledger.load_entries(cfg.ledger_main)
+
+        def bad_meta(ccy: str, message: str) -> None:
+            typer.secho(
+                f"{ccy}: skipping unusable price metadata — {message}", fg="yellow", err=True
+            )
+
+        jobs = prices_mod.jobs_from_ledger(entries, on_error=bad_meta) or None
+    # Sources without a bulk endpoint fetch one request per day per currency,
+    # so a backfill takes a while: show a live per-currency bar (stderr,
+    # transient) unless the caller asked for machine-readable output.
     with Progress(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
@@ -382,7 +410,16 @@ def prices_sync(
                 tasks[ccy] = bars.add_task(ccy, total=total)
             bars.update(tasks[ccy], completed=done)
 
-        result = prices_mod.sync(out, repair_from=repair, progress=on_progress)
+        result = prices_mod.sync(
+            out,
+            repair_from=repair,
+            currencies=cfg.prices_currencies,
+            source=source if source is not None else cfg.prices_source,
+            quote=cfg.operating_currency,
+            tickers=dict(cfg.prices_tickers),
+            progress=on_progress,
+            jobs=jobs,
+        )
     if as_json:
         _json_out(
             {
@@ -390,15 +427,27 @@ def prices_sync(
                 "wrote": result.wrote,
                 "added": result.added,
                 "per_currency": {
-                    ccy: {"added": added, "had_through": last}
-                    for ccy, (added, last) in result.per_currency.items()
+                    ccy: {
+                        "added": s.added,
+                        "healed": s.healed,
+                        "unavailable": s.unavailable,
+                        "had_through": s.last,
+                    }
+                    for ccy, s in result.per_currency.items()
                 },
             }
         )
         return
-    for ccy, (added, last) in result.per_currency.items():
-        where = f"had through {last}" if last else "was empty"
-        typer.echo(f"{ccy}: +{added} rate(s) ({where}).")
+    for ccy, s in result.per_currency.items():
+        where = f"had through {s.last}" if s.last else "was empty"
+        healed = f", {s.healed} gap day(s) healed" if s.healed else ""
+        typer.echo(f"{ccy}: +{s.added} rate(s){healed} ({where}).")
+        if s.unavailable:
+            typer.secho(
+                f"{ccy}: {s.unavailable} day(s) unavailable from the source — retried next sync.",
+                fg="yellow",
+                err=True,
+            )
     if result.wrote:
         typer.secho(f"Wrote {result.added} new price(s) to {out.name} (sorted).", fg="green")
     else:

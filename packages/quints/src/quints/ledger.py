@@ -21,7 +21,6 @@ VAT_RATES = (
     (Date(2018, 1, 1), Decimal("0.077")),
     (Date(2011, 1, 1), Decimal("0.080")),
 )
-PRICE_CURRENCIES = ("USD", "EUR")  # foreign currencies we price against CHF
 
 
 def vat_rate(on: Date) -> Decimal:

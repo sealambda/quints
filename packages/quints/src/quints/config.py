@@ -112,6 +112,10 @@ class Config:
     rounding_income: str = "Income:CH:GmbH:Rounding"
     income_domestic: str = "Income:CH:GmbH:Consulting:External:Domestic"
     income_export: str = "Income:CH:GmbH:Consulting:External:Export"
+    # [prices]
+    prices_source: str = "beanprice_bazg"  # beanprice source module for `prices sync`
+    prices_currencies: tuple[str, ...] = ("USD", "EUR")  # priced against operating_currency
+    prices_tickers: tuple[tuple[str, str], ...] = ()  # currency -> source ticker, when they differ
     # [report]
     report_language: str = "en"
     # [import.*] — statement importers (plan 2); None = not configured
@@ -210,6 +214,15 @@ def _from_mapping(raw: dict[str, object]) -> Config:
         "income_export",
     ):
         take(accounts, key, key)
+    prices_ = section("prices")
+    take(prices_, "source", "prices_source")
+    if "currencies" in prices_:
+        currencies = prices_["currencies"]
+        if isinstance(currencies, list):
+            updates["prices_currencies"] = tuple(str(c) for c in currencies)
+    tickers = prices_.get("tickers")
+    if isinstance(tickers, dict):
+        updates["prices_tickers"] = tuple(sorted((str(k), str(v)) for k, v in tickers.items()))
     take(report, "language", "report_language")
     updates.update(_import_sections(raw))
     return replace(cfg, **updates)

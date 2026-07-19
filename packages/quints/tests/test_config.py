@@ -101,6 +101,22 @@ def test_load_toml(tmp_path: Path) -> None:
     # unset keys keep their defaults
     assert cfg.export_marker == ":Export"
     assert cfg.operating_currency == "CHF"
+    assert cfg.prices_source == "beanprice_bazg"
+    assert cfg.prices_currencies == ("USD", "EUR")
+
+
+def test_load_prices_section(tmp_path: Path) -> None:
+    path = tmp_path / "quints.toml"
+    path.write_text(
+        "[prices]\n"
+        'source = "ecbrates"\n'
+        'currencies = ["USD", "GBP", "SEK"]\n'
+        'tickers = { USD = "EUR-USD", GBP = "EUR-GBP" }\n'
+    )
+    cfg = config.load(path)
+    assert cfg.prices_source == "ecbrates"
+    assert cfg.prices_currencies == ("USD", "GBP", "SEK")
+    assert dict(cfg.prices_tickers) == {"USD": "EUR-USD", "GBP": "EUR-GBP"}
 
 
 def test_stranger_entity_gets_correct_mwst(tmp_path: Path) -> None:
