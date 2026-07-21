@@ -253,5 +253,10 @@ release. The job creates the release if it is missing.
 If the release job fails, re-run the failed job. It keeps an existing release
 and replaces assets of the same name.
 
-By contributing you agree your work is licensed under GPL-2.0-only (see
-[LICENSE](LICENSE)).
+By contributing you agree your work is licensed under the license of the
+package you touch: GPL-2.0-only for `quints` and the `beangulp-*` /
+`beanprice-*` building blocks (see [LICENSE](LICENSE)), AGPL-3.0-only for
+`quints-mailroom` (see its
+[LICENSE](packages/quints-mailroom/LICENSE)). The split is deliberate: the
+core links beancount (GPL-2.0-only), while the mailroom drives it strictly
+out-of-process — keep that boundary if you add components.
