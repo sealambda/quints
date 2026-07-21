@@ -1,7 +1,7 @@
 # Quality gates. `make check` is the single entrypoint — CI and the Claude
 # Code Stop hook both run it. Keep it green.
 
-PKG_DIRS := packages/quints packages/beangulp-mt940 packages/beangulp-stripe packages/beangulp-wise packages/beanprice-bazg
+PKG_DIRS := packages/quints packages/beangulp-mt940 packages/beangulp-stripe packages/beangulp-wise packages/beanprice-bazg packages/quints-mailroom
 
 .PHONY: check static test format typebaseline docs docs-serve media
 

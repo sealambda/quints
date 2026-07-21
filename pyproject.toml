@@ -9,6 +9,7 @@ dependencies = [
     "beangulp-stripe",
     "beangulp-wise[sca]",
     "beanprice-bazg",
+    "quints-mailroom",
 ]
 
 [dependency-groups]
@@ -40,6 +41,7 @@ beangulp-mt940 = { workspace = true }
 beangulp-stripe = { workspace = true }
 beangulp-wise = { workspace = true }
 beanprice-bazg = { workspace = true }
+quints-mailroom = { workspace = true }
 
 # ---------------------------------------------------------------------------
 # Quality tooling. Single entrypoint: `make check` (see Makefile).
@@ -54,6 +56,7 @@ src = [
     "packages/beangulp-stripe/src",
     "packages/beangulp-wise/src",
     "packages/beanprice-bazg/src",
+    "packages/quints-mailroom/src",
 ]
 
 [tool.ruff.lint]
@@ -103,6 +106,7 @@ root_packages = [
     "beangulp_stripe",
     "beangulp_wise",
     "beanprice_bazg",
+    "quints_mailroom",
 ]
 
 # Layers within quints, top to bottom. Modules on the same line (":") may
@@ -121,12 +125,27 @@ layers = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "standalone importers stay standalone"
+name = "standalone packages stay standalone"
 type = "independence"
-modules = ["beangulp_mt940", "beangulp_stripe", "beangulp_wise", "beanprice_bazg"]
+modules = [
+    "beangulp_mt940",
+    "beangulp_stripe",
+    "beangulp_wise",
+    "beanprice_bazg",
+    "quints_mailroom",
+]
 
+# The mailroom drives quints through the agent (CLI in the books repo),
+# never as a library import — the AI/deterministic boundary is a process
+# boundary, and this keeps it that way.
 [[tool.importlinter.contracts]]
-name = "building blocks never depend on quints"
+name = "standalone packages never depend on quints"
 type = "forbidden"
-source_modules = ["beangulp_mt940", "beangulp_stripe", "beangulp_wise", "beanprice_bazg"]
+source_modules = [
+    "beangulp_mt940",
+    "beangulp_stripe",
+    "beangulp_wise",
+    "beanprice_bazg",
+    "quints_mailroom",
+]
 forbidden_modules = ["quints"]

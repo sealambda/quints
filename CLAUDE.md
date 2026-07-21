@@ -1,6 +1,6 @@
 # quints monorepo
 
-uv workspace; the five distributions live in `packages/*` (see README for what each does).
+uv workspace; the distributions live in `packages/*` (see README for what each does).
 
 ## Quality gate
 
@@ -18,7 +18,7 @@ basedpyright runs strict with a committed baseline (`.basedpyright/baseline.json
 3. `mwst`, `kmu`, `vat`, `fx`, `prices`, `inbox`, `receivables`, `invoice` (domain)
 4. `config`, `ledger`, `ui` (foundation)
 
-A module may only import from layers below its own, and every new module must be added to a layer (the contract is exhaustive — `lint-imports` fails until you place it). The `beangulp-*`/`beanprice-*` packages are standalone: they never import each other or `quints`.
+A module may only import from layers below its own, and every new module must be added to a layer (the contract is exhaustive — `lint-imports` fails until you place it). The `beangulp-*`/`beanprice-*`/`quints-mailroom` packages are standalone: they never import each other or `quints` (the mailroom drives quints via the agent's CLI calls, keeping the AI/deterministic boundary a process boundary).
 
 ## Conventions
 

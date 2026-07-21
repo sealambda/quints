@@ -142,6 +142,17 @@ installing `quints` pulls them in.
 | [`beangulp-stripe`](packages/beangulp-stripe) | beangulp importer for Stripe balance transactions, with a thin API client |
 | [`beanprice-bazg`](packages/beanprice-bazg) | beanprice source for official Swiss BAZG/EZV daily FX rates |
 
+## The email gateway
+
+[`quints-mailroom`](packages/quints-mailroom) gives the books an email
+address: it watches a mailbox (IMAP or Maildir), saves attachments into the
+books repo's `inbox/`, runs a coding agent that drafts bookings into
+`staging/` and validates them with `quints check`, and emails the answer
+back on the same thread. It never imports `quints` — the agent drives the
+CLI, so the deterministic boundary stays a process boundary (and a license
+boundary: the mailroom is AGPL-3.0-only, while the core stays GPL-2.0-only).
+Not yet published to PyPI; run it from this repo.
+
 ## Development
 
 ```bash
