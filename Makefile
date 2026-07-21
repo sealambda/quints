@@ -2,7 +2,7 @@
 # it, and the CI jobs `quality` and `test` run its two halves. Every other CI
 # job has a command here or in flake.nix: see CONTRIBUTING.md.
 
-PKG_DIRS := packages/quints packages/beangulp-mt940 packages/beangulp-stripe packages/beangulp-wise packages/beangulp-yapeal packages/beanprice-bazg
+PKG_DIRS := packages/quints packages/beangulp-mt940 packages/beangulp-stripe packages/beangulp-wise packages/beangulp-yapeal packages/beanprice-bazg packages/quints-mailroom
 
 .PHONY: check static test format typebaseline docs docs-serve docs-lint legal-links media pdfcheck
 
