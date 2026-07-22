@@ -88,6 +88,16 @@ class StripeImport:
 
 
 @dataclass(frozen=True)
+class YapealImport:
+    """[import.yapeal] — Yapeal CSV statements for one CHF bank account."""
+
+    account: str = "Assets:CH:GmbH:Current:Bank:CHF"
+    iban: str | None = None  # optional — matched against file content
+    currency: str = "CHF"
+    rules: tuple[tuple[str, str, str], ...] = ()
+
+
+@dataclass(frozen=True)
 class Config:
     # [entity]
     entity_name: str = "Example GmbH"
@@ -120,6 +130,7 @@ class Config:
     report_language: str = "en"
     # [import.*] — statement importers (plan 2); None = not configured
     import_ubs: UbsImport | None = None
+    import_yapeal: YapealImport | None = None
     import_wise: WiseImport | None = None
     import_stripe: StripeImport | None = None
 
@@ -152,6 +163,14 @@ def _import_sections(raw: dict[str, object]) -> dict[str, object]:
             iban=ubs.get("iban"),
             currency=ubs.get("currency", UbsImport.currency),
             rules=_rules(ubs),
+        )
+    yapeal = imports.get("yapeal")
+    if isinstance(yapeal, dict):
+        updates["import_yapeal"] = YapealImport(
+            account=yapeal.get("account", YapealImport.account),
+            iban=yapeal.get("iban"),
+            currency=yapeal.get("currency", YapealImport.currency),
+            rules=_rules(yapeal),
         )
     wise = imports.get("wise")
     if isinstance(wise, dict):

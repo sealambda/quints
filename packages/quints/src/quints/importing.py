@@ -40,6 +40,7 @@ from beangulp_stripe import Importer as StripeImporter
 from beangulp_stripe import StripeClient, StripeError
 from beangulp_wise import Importer as WiseImporter
 from beangulp_wise import ScaChallenge, WiseClient, merge_conversions
+from beangulp_yapeal import Importer as YapealImporter
 
 from . import config, ledger
 from . import receivables as recv_mod
@@ -48,7 +49,9 @@ LEGACY_WINDOW_DAYS = 3
 DEFAULT_STAGING = Path("staging")
 
 
-_Section = TypeVar("_Section", config.UbsImport, config.WiseImport, config.StripeImport)
+_Section = TypeVar(
+    "_Section", config.UbsImport, config.YapealImport, config.WiseImport, config.StripeImport
+)
 
 
 def _require(section: _Section | None, name: str, *keys: str) -> _Section:
@@ -72,6 +75,17 @@ def ubs_importer(cfg: config.Config | None = None) -> Mt940Importer:
         iban=s.iban,
         currency=s.currency,
         meta_key="ubs_ref",
+        payee_rules=s.rules,
+    )
+
+
+def yapeal_importer(cfg: config.Config | None = None) -> YapealImporter:
+    s = _require((cfg or config.get()).import_yapeal, "yapeal")
+    return YapealImporter(
+        s.account,
+        iban=s.iban,
+        currency=s.currency,
+        meta_key="bank_ref",
         payee_rules=s.rules,
     )
 
@@ -222,6 +236,30 @@ def _write_staging(result: ImportResult, out_dir: Path, source: str) -> None:
         for balance in result.balances:
             f.write(printer.format_entry(balance))
     result.out_path = out
+
+
+def run_yapeal(
+    statement: Path,
+    ledger_path: Path,
+    out_dir: Path = DEFAULT_STAGING,
+    cfg: config.Config | None = None,
+) -> ImportResult:
+    cfg = cfg or config.get()
+    importer = yapeal_importer(cfg)
+    yapeal = _require(cfg.import_yapeal, "yapeal")
+    if not importer.identify(str(statement)):
+        raise ValueError(f"{statement} is not a Yapeal CSV statement for {yapeal.account}")
+
+    existing, _ = ledger.load_entries(ledger_path)
+    total = len(importer.extract(str(statement), existing=[]))
+    extracted = importer.extract(str(statement), existing=existing)
+
+    result = ImportResult(source=str(statement))
+    result.skipped_ref = total - len(extracted)
+    _split(result, extracted, _cash_pool(existing, {yapeal.account}))
+    match_receivables(result, existing, cfg)
+    _write_staging(result, out_dir, "yapeal")
+    return result
 
 
 def run_ubs(

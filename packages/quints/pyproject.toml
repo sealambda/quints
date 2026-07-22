@@ -15,6 +15,7 @@ dependencies = [
     "beangulp-mt940>=0.1.0",
     "beangulp-stripe>=0.1.0",
     "beangulp-wise[sca]>=0.1.0",
+    "beangulp-yapeal>=0.1.0",
     "beanprice-bazg>=0.2.0",
     "fava>=1.30",
     "pydantic>=2.7",

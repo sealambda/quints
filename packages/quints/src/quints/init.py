@@ -55,7 +55,7 @@ _IT_HOSTING = "Expenses:CH:GmbH:IT:Hosting"
 _PRIMARY_BANK = "Assets:CH:GmbH:Current:UBS:CHF"
 _WISE_EUR = "Assets:CH:GmbH:Current:Wise:EUR"
 
-_KNOWN_IMPORTERS = ("ubs", "wise", "stripe")
+_KNOWN_IMPORTERS = ("ubs", "yapeal", "wise", "stripe")
 
 
 @dataclass(frozen=True)
@@ -617,6 +617,20 @@ def _import_section(importer: str, answers: Answers) -> str:
                 "]",
             ]
         )
+    if importer == "yapeal":
+        d = config.YapealImport()
+        return "\n".join(
+            [
+                "# Yapeal CSV statements → staging/. '*' = booked as drafted, '!' = still",
+                "# needs a VAT decision + linked document before it reaches your books.",
+                "[import.yapeal]",
+                f'account = "{_sub(d.account, c)}"',
+                'iban = "CH9300762011623852957"   # optional — matched against file content',
+                "rules = [",
+                f'    [\'\\bacme\\b\', "{_sub("Assets:CH:GmbH:Receivable:Trade", c)}", "*"],',
+                "]",
+            ]
+        )
     if importer == "wise":
         d = config.WiseImport()
         rows = "\n".join(f'{ccy} = "{_sub(acct, c)}"' for ccy, acct in d.accounts)
@@ -663,6 +677,10 @@ def _import_section(importer: str, answers: Answers) -> str:
 _IMPORTER_USAGE = {
     "ubs": (
         "`quints import ubs <statement.mt940>` — the MT940 export from UBS "
+        "e-banking; no credentials."
+    ),
+    "yapeal": (
+        "`quints import yapeal <statement.csv>` — the CSV export from Yapeal "
         "e-banking; no credentials."
     ),
     "wise": (

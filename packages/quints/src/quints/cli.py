@@ -552,6 +552,27 @@ def fx_revalue(
     fx_mod.render(revaluations, at)
 
 
+@import_app.command("yapeal")
+def import_yapeal(
+    statement: Path = typer.Argument(..., help="Yapeal CSV statement file."),
+    out: Path = typer.Option(importing_mod.DEFAULT_STAGING, "--out", help="Staging directory."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    file: Path = _file_option(),
+):
+    """Draft the Yapeal bank account's activity from a CSV statement."""
+    _require_ledger(file)
+    if not statement.exists():
+        typer.secho(f"ERROR: statement not found: {statement}", fg="red", err=True)
+        raise typer.Exit(1)
+    try:
+        result = importing_mod.run_yapeal(statement, file, out)
+    except ValueError as e:
+        typer.secho(f"ERROR: {e}", fg="red", err=True)
+        raise typer.Exit(1) from None
+
+    _report_import(result, as_json)
+
+
 @import_app.command("ubs")
 def import_ubs(
     statement: Path = typer.Argument(..., help="UBS MT940 statement file."),
