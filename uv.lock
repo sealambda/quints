@@ -7,6 +7,7 @@ members = [
     "beangulp-mt940",
     "beangulp-stripe",
     "beangulp-wise",
+    "beangulp-yapeal",
     "beanprice-bazg",
     "quints",
     "quints-monorepo",
@@ -216,6 +217,29 @@ dev = [
     { name = "cryptography", specifier = ">=42" },
     { name = "pytest", specifier = ">=8" },
 ]
+
+[[package]]
+name = "beangulp-yapeal"
+version = "0.1.0"
+source = { editable = "packages/beangulp-yapeal" }
+dependencies = [
+    { name = "beancount" },
+    { name = "beangulp" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "beancount", specifier = ">=3.0" },
+    { name = "beangulp", specifier = ">=0.2" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8" }]
 
 [[package]]
 name = "beanprice"
@@ -1707,6 +1731,7 @@ dependencies = [
     { name = "beangulp-mt940" },
     { name = "beangulp-stripe" },
     { name = "beangulp-wise", extra = ["sca"] },
+    { name = "beangulp-yapeal" },
     { name = "beanprice-bazg" },
     { name = "fava" },
     { name = "pydantic" },
@@ -1731,6 +1756,7 @@ requires-dist = [
     { name = "beangulp-mt940", editable = "packages/beangulp-mt940" },
     { name = "beangulp-stripe", editable = "packages/beangulp-stripe" },
     { name = "beangulp-wise", extras = ["sca"], editable = "packages/beangulp-wise" },
+    { name = "beangulp-yapeal", editable = "packages/beangulp-yapeal" },
     { name = "beanprice-bazg", editable = "packages/beanprice-bazg" },
     { name = "fava", specifier = ">=1.30" },
     { name = "pydantic", specifier = ">=2.7" },
@@ -1754,6 +1780,7 @@ dependencies = [
     { name = "beangulp-mt940" },
     { name = "beangulp-stripe" },
     { name = "beangulp-wise", extra = ["sca"] },
+    { name = "beangulp-yapeal" },
     { name = "beanprice-bazg" },
     { name = "quints" },
 ]
@@ -1778,6 +1805,7 @@ requires-dist = [
     { name = "beangulp-mt940", editable = "packages/beangulp-mt940" },
     { name = "beangulp-stripe", editable = "packages/beangulp-stripe" },
     { name = "beangulp-wise", extras = ["sca"], editable = "packages/beangulp-wise" },
+    { name = "beangulp-yapeal", editable = "packages/beangulp-yapeal" },
     { name = "beanprice-bazg", editable = "packages/beanprice-bazg" },
     { name = "quints", editable = "packages/quints" },
 ]

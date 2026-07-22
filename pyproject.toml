@@ -8,6 +8,7 @@ dependencies = [
     "beangulp-mt940",
     "beangulp-stripe",
     "beangulp-wise[sca]",
+    "beangulp-yapeal",
     "beanprice-bazg",
 ]
 
@@ -39,6 +40,7 @@ quints = { workspace = true }
 beangulp-mt940 = { workspace = true }
 beangulp-stripe = { workspace = true }
 beangulp-wise = { workspace = true }
+beangulp-yapeal = { workspace = true }
 beanprice-bazg = { workspace = true }
 
 # ---------------------------------------------------------------------------
@@ -53,6 +55,7 @@ src = [
     "packages/beangulp-mt940/src",
     "packages/beangulp-stripe/src",
     "packages/beangulp-wise/src",
+    "packages/beangulp-yapeal/src",
     "packages/beanprice-bazg/src",
 ]
 
@@ -102,6 +105,7 @@ root_packages = [
     "beangulp_mt940",
     "beangulp_stripe",
     "beangulp_wise",
+    "beangulp_yapeal",
     "beanprice_bazg",
 ]
 
@@ -123,10 +127,10 @@ layers = [
 [[tool.importlinter.contracts]]
 name = "standalone importers stay standalone"
 type = "independence"
-modules = ["beangulp_mt940", "beangulp_stripe", "beangulp_wise", "beanprice_bazg"]
+modules = ["beangulp_mt940", "beangulp_stripe", "beangulp_wise", "beangulp_yapeal", "beanprice_bazg"]
 
 [[tool.importlinter.contracts]]
 name = "building blocks never depend on quints"
 type = "forbidden"
-source_modules = ["beangulp_mt940", "beangulp_stripe", "beangulp_wise", "beanprice_bazg"]
+source_modules = ["beangulp_mt940", "beangulp_stripe", "beangulp_wise", "beangulp_yapeal", "beanprice_bazg"]
 forbidden_modules = ["quints"]
