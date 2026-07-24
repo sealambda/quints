@@ -948,7 +948,7 @@ def init(
     ),
     lang: str | None = typer.Option(None, "--lang", "-l", help="Report language: en or de."),
     importers: str | None = typer.Option(
-        None, "--importers", help="Comma-separated: ubs, wise, stripe (default: none)."
+        None, "--importers", help="Comma-separated: ubs, yapeal, wise, stripe (default: none)."
     ),
     samples: bool = typer.Option(
         False, "--samples", help="Include a demo quarter of transactions."

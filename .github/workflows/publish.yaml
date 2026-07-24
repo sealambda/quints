@@ -47,6 +47,7 @@ jobs:
           - beangulp-mt940
           - beangulp-stripe
           - beangulp-wise
+          - beangulp-yapeal
           - beanprice-bazg
     environment:
       name: pypi-${{ matrix.package }}
