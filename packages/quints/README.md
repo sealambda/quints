@@ -14,9 +14,10 @@ Everything a Swiss micro-company (GmbH, AG, or Einzelfirma) needs on top of bean
   (Art. 960 OR).
 - **QR-bill invoicing**: Swiss QR-bill (QRR) and SEPA (SCOR/RF) invoices as
   PDF/A via Typst, drafted straight into the ledger.
-- **Statement importers**: UBS (MT940), Wise, and Stripe statements draft into
-  a `staging/` area — idempotent re-imports, conversion merging, fee splitting,
-  open-invoice matching by QR reference — never directly into your books.
+- **Statement importers**: UBS (MT940), Yapeal, Wise, and Stripe statements
+  draft into a `staging/` area — idempotent re-imports, conversion merging,
+  fee splitting, open-invoice matching by QR reference — never directly into
+  your books.
 - **KMU statements**: statutory Bilanz/Erfolgsrechnung (OR Art. 959a/959b) by
   KMU Kontenrahmen code, English or German, terminal or PDF.
 - **Fava extension**: review panel inside the UI you already run.

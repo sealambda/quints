@@ -1,7 +1,7 @@
 [project]
 name = "quints"
-version = "0.5.0"
-description = "Swiss VAT & accounting toolkit for plain-text (beancount) books: MWST reports and quarterly settlement, Bezugsteuer helpers, BAZG daily FX rates, QR-bill invoicing, KMU statutory statements, and statement importers (UBS MT940, Wise, Stripe) that draft into a staging area"
+version = "0.6.0"
+description = "Swiss VAT & accounting toolkit for plain-text (beancount) books: MWST reports and quarterly settlement, Bezugsteuer helpers, BAZG daily FX rates, QR-bill invoicing, KMU statutory statements, and statement importers (UBS MT940, Yapeal, Wise, Stripe) that draft into a staging area"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "GPL-2.0-only" }
