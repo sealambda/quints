@@ -1,7 +1,9 @@
 # Docs site (https://sealambda.github.io/quints/). Build: `make docs`,
 # preview: `make docs-serve`. Zensical is pinned in pyproject.toml — see the
 # docs dependency group. Every quints command shown in docs/ is executed by
-# packages/quints/tests/test_docs.py; docs that don't run don't merge.
+# packages/quints/tests/test_docs.py, and the mailroom guide's demo and
+# config examples by packages/quints-mailroom/tests/test_docs_mailroom.py;
+# docs that don't run don't merge.
 
 [project]
 site_name = "quints"
@@ -14,7 +16,7 @@ nav = [
     { "quints" = "index.md" },
     { "Getting started" = "getting-started.md" },
     { "Legal forms" = "legal-forms.md" },
-    { "Guides" = [{ "Quarterly VAT (MWST)" = "guides/vat.md" }, { "Import statements" = "guides/importing.md" }, { "Invoicing" = "guides/invoicing.md" }, { "Statutory reports" = "guides/reports.md" }, { "FX rates" = "guides/fx.md" }] },
+    { "Guides" = [{ "Quarterly VAT (MWST)" = "guides/vat.md" }, { "Import statements" = "guides/importing.md" }, { "Invoicing" = "guides/invoicing.md" }, { "Statutory reports" = "guides/reports.md" }, { "FX rates" = "guides/fx.md" }, { "Email your books" = "guides/mailroom.md" }] },
     { "Reference" = [{ "quints.toml" = "reference/configuration.md" }, { "Working with AI agents" = "reference/ai-agents.md" }] },
 ]
 
