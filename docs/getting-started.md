@@ -25,7 +25,7 @@ see [Legal forms](legal-forms.md) for what changes and why.
 
 Run `quints init` with no flags to answer the same questions interactively.
 `--samples` books a demo quarter so every command works immediately; drop it
-for empty books. `--importers ubs,wise,stripe` pre-configures statement
+for empty books. `--importers ubs,yapeal,wise,stripe` pre-configures statement
 importers. `--lang de` makes reports German by default.
 
 ## What you get

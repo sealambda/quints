@@ -56,6 +56,23 @@ def test_backbone_accounts_carry_known_kmu_codes():
         assert not unknown, f"kmu codes absent from KMU_NAMES: {unknown}"
 
 
+def test_backbone_opens_yapeal_account(tmp_path: Path):
+    # A configured yapeal importer must get its bank account opened, or the
+    # first drafted-and-completed statement fails `quints check` with an
+    # unknown-account error.
+    answers = init.Answers(importers=("yapeal",))
+    files = _files(answers)
+    assert config.YapealImport().account in files["accounts.bean"]
+    init.write(tmp_path, init.plan(answers))
+    _entries, errors = ledger.load_entries(tmp_path / "main.bean")
+    assert not errors, errors
+
+
+def test_agent_payload_reminds_to_replace_yapeal_iban():
+    agents = _files(init.Answers(include_samples=True, importers=("yapeal",)))["AGENTS.md"]
+    assert "the placeholder IBAN under `[import.yapeal]`" in agents
+
+
 def test_generated_quints_toml_loads_back_through_config(tmp_path: Path):
     # The emitted quints.toml must parse with the production config loader.
     init.write(tmp_path, init.plan(init.Answers(entity_name="Round GmbH", importers=("wise",))))
@@ -274,7 +291,7 @@ def test_agent_payload_is_loaded_and_accurate():
     assert "quints import stripe" not in agents  # only the configured roster
     bare = _files(init.Answers())["AGENTS.md"]
     assert "Sample data" not in bare
-    assert "quints.toml` (supported: ubs, wise, stripe)" in bare
+    assert "quints.toml` (supported: ubs, yapeal, wise, stripe)" in bare
 
 
 def test_invoicing_yaml_carries_hosted_schema_modeline():

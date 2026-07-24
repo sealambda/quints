@@ -209,8 +209,14 @@ def match_receivables(
         if number is None:
             continue
         postings = list(draft.postings)
-        if len(postings) == 2:
+        if len(postings) == 1:
+            # Only the cash leg is known — add the elided receivable clearing
+            # posting so the matched draft still balances.
+            postings.append(data.Posting(cfg.receivable, None, None, None, None, None))
+        elif len(postings) == 2:
             postings[1] = postings[1]._replace(account=cfg.receivable)
+        else:
+            continue  # ambiguous shape — leave the draft unmatched, still flagged for review
         meta = dict(draft.meta or {})
         meta["invoice"] = number
         matched = draft._replace(

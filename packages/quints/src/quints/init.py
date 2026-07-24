@@ -207,6 +207,9 @@ def _backbone(answers: Answers) -> list[_Account]:
         _Account(cfg.rounding_income, "6950", (oc,)),
         _Account(cfg.fx_gain, "6950", (oc,)),
     ]
+    if "yapeal" in answers.importers:
+        d = config.YapealImport()
+        accounts.append(_Account(_sub(d.account, c), "1020", (d.currency,)))
     if "wise" in answers.importers:
         for ccy, acct in config.WiseImport().accounts:
             accounts.append(_Account(_sub(acct, c), "1020", (ccy,)))
@@ -701,7 +704,7 @@ def _agents_import_step(answers: Answers) -> str:
         return (
             "1. Draft bank/PSP activity into `staging/` with `quints import`. No\n"
             "   importer is configured yet — add an `[import.<name>]` section to\n"
-            "   `quints.toml` (supported: ubs, wise, stripe)."
+            "   `quints.toml` (supported: ubs, yapeal, wise, stripe)."
         )
     lines = ["1. Draft bank/PSP activity into `staging/`. Configured importers:"]
     lines += [f"   - {_IMPORTER_USAGE[name]}" for name in answers.importers]
@@ -729,6 +732,8 @@ def _agents_sample_section(answers: Answers) -> str:
     ]
     if "ubs" in answers.importers:
         lines.append("- [ ] `quints.toml` — the placeholder IBAN under `[import.ubs]`.")
+    if "yapeal" in answers.importers:
+        lines.append("- [ ] `quints.toml` — the placeholder IBAN under `[import.yapeal]`.")
     return "\n".join(lines) + "\n"
 
 

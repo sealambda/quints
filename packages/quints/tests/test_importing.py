@@ -235,3 +235,52 @@ def test_match_receivables_by_qrr_and_scor() -> None:
     assert matched.meta["invoice"] == "ACME202606"
     assert result.drafts[2].flag == "!"  # outgoing untouched
     assert result.drafts[3].postings[1].account == "Expenses:CH:GmbH:FIXME"
+
+
+def test_match_receivables_completes_a_cash_only_draft() -> None:
+    # Importers with no rule match (e.g. yapeal's default row) draft a
+    # single-posting transaction — only the cash leg. A match must add the
+    # elided receivable posting, not just flip the flag, or the "matched"
+    # draft fails beancount's balance check once moved into books/.
+    from beancount.loader import load_string
+    from beancount.parser import printer
+
+    from quints import config
+    from quints.invoice.model import make_qrr
+
+    entries, _, _ = load_string(_RECV_LEDGER)
+    qrr = make_qrr("ACME202606")
+
+    result = importing.ImportResult(source="test")
+    result.drafts = [
+        data.Transaction(
+            meta={"ubs_ref": f"X1 {qrr}"},
+            date=date(2026, 7, 20),
+            flag="!",
+            payee="ACME AG",
+            narration="payment",
+            tags=frozenset(),
+            links=frozenset(),
+            postings=[
+                data.Posting(
+                    "Assets:CH:GmbH:Current:UBS:CHF",
+                    Amount(Decimal("5059.10"), "CHF"),
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+            ],
+        )
+    ]
+    importing.match_receivables(result, entries, config.Config())
+
+    matched = result.drafts[0]
+    assert matched.flag == "*"
+    assert len(matched.postings) == 2
+    assert matched.postings[1].account == "Assets:CH:GmbH:Receivable:Trade"
+    assert matched.postings[1].units is None  # elided — auto-balances the cash leg
+
+    booked = _RECV_LEDGER + "\n" + printer.format_entry(matched)
+    _entries, errors, _ = load_string(booked)
+    assert not errors, errors
