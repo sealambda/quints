@@ -29,9 +29,11 @@
       "type": "object"
     },
     "Brand": {
+      "description": "Typography and colour tokens the template renders with.\n\nThe colour defaults reproduce the neutral greyscale the template used\nbefore tokens existed, so an issuer config that sets none of them keeps\nits previous look. An issuer with a palette overrides them all.",
       "properties": {
         "accent": {
           "default": "#123c3a",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
           "title": "Accent",
           "type": "string"
         },
@@ -57,6 +59,18 @@
           "title": "Font Display Stretch",
           "type": "integer"
         },
+        "font_mono": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Mono"
+        },
         "font_dir": {
           "anyOf": [
             {
@@ -80,6 +94,35 @@
           ],
           "default": null,
           "title": "Logo"
+        },
+        "logo_height": {
+          "default": 12.0,
+          "title": "Logo Height",
+          "type": "number"
+        },
+        "ink": {
+          "default": "#141414",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "title": "Ink",
+          "type": "string"
+        },
+        "subtle": {
+          "default": "#696969",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "title": "Subtle",
+          "type": "string"
+        },
+        "rule": {
+          "default": "#d2d2d2",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "title": "Rule",
+          "type": "string"
+        },
+        "panel": {
+          "default": "#f6f6f6",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "title": "Panel",
+          "type": "string"
         }
       },
       "title": "Brand",

@@ -36,7 +36,7 @@ class InvoiceContext(TypedDict):
     totals: dict[str, str | bool]
     payment: Mapping[str, str | None]
     notes: list[str]
-    brand: dict[str, str | int | None]
+    brand: dict[str, str | float | None]
 
 
 def _fmt_iban(iban: str) -> str:
@@ -113,20 +113,41 @@ def build_context(
             "font": issuer.brand.font,
             "font_display": issuer.brand.font_display or issuer.brand.font,
             "display_stretch": issuer.brand.font_display_stretch,
+            "font_mono": issuer.brand.font_mono or issuer.brand.font,
+            "ink": issuer.brand.ink,
+            "subtle": issuer.brand.subtle,
+            "rule": issuer.brand.rule,
+            "panel": issuer.brand.panel,
             "logo": logo,
+            "logo_height": issuer.brand.logo_height,
         },
     }
 
 
 def _compile(main: Path, output: Path, root: Path, font_paths: list[Path]) -> None:
-    """Compile to PDF/A-2b (archival) when supported, else a plain PDF."""
+    """Compile to PDF/A-2b (archival) when supported, else a plain PDF.
+
+    An issuer that bundles a font directory gets *only* those fonts: machine-
+    installed families are ignored. Otherwise a variable font installed on the
+    designer's machine shadows the bundled static cuts of the same family, and
+    every weight silently collapses to the variable font's default instance —
+    the invoice then renders differently on a colleague's machine.
+    """
     fonts = [str(p) for p in font_paths]
-    try:
-        typst.compile(
-            str(main), output=str(output), root=str(root), font_paths=fonts, pdf_standards="a-2b"
-        )
-    except (TypeError, ValueError):  # older typst-py, or standard unsupported
-        typst.compile(str(main), output=str(output), root=str(root), font_paths=fonts)
+    base: dict[str, object] = {"output": str(output), "root": str(root), "font_paths": fonts}
+    # Most capable call first; drop the options an older typst-py may not know.
+    attempts = [
+        {**base, "ignore_system_fonts": bool(fonts), "pdf_standards": "a-2b"},
+        {**base, "pdf_standards": "a-2b"},
+        base,
+    ]
+    for i, opts in enumerate(attempts):
+        try:
+            typst.compile(str(main), **opts)  # type: ignore[arg-type]
+            return
+        except (TypeError, ValueError):
+            if i == len(attempts) - 1:
+                raise
 
 
 def render(inv: Invoice, issuer: Issuer, out_path: Path) -> tuple[Path, Totals, str | None]:

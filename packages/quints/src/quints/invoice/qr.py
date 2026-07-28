@@ -52,7 +52,7 @@ def build_bill(inv: Invoice, issuer: Issuer, account: BankAccount, grand: Decima
         raise ValueError(f"Swiss QR-bill supports only CHF or EUR, not {currency!r}")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return QRBill(
+        bill = QRBill(
             account=account.qr_iban or account.iban,
             creditor=_structured(issuer.name, issuer.address, issuer.country),
             debtor=_structured(customer.name, customer.address, customer.country),
@@ -61,6 +61,12 @@ def build_bill(inv: Invoice, issuer: Issuer, account: BankAccount, grand: Decima
             reference_number=reference_for(inv, account),
             additional_information=f"{inv.number}",
         )
+    # The Implementation Guidelines allow Arial, Frutiger, Helvetica and
+    # Liberation Sans in the payment part, and nothing else. qrbill asks for
+    # Arial/Helvetica only, which are system faces — an issuer that bundles
+    # fonts has system faces switched off, so name the OFL one it can ship.
+    bill.font_family = "Arial,Helvetica,Liberation Sans"
+    return bill
 
 
 def write_svg(bill: QRBill, path: Path) -> None:

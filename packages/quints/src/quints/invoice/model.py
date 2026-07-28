@@ -14,10 +14,17 @@ import sys
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, RootModel, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    RootModel,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -249,13 +256,30 @@ class BankAccount(BaseModel):
         return v.replace(" ", "")
 
 
+HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9A-Fa-f]{6}$")]
+
+
 class Brand(BaseModel):
-    accent: str = "#123c3a"
+    """Typography and colour tokens the template renders with.
+
+    The colour defaults reproduce the neutral greyscale the template used
+    before tokens existed, so an issuer config that sets none of them keeps
+    its previous look. An issuer with a palette overrides them all.
+    """
+
+    accent: HexColor = "#123c3a"
     font: str = "Liberation Sans"
     font_display: str | None = None  # title/wordmark family; defaults to `font`
     font_display_stretch: int = 100  # CSS-style font-stretch % (125 → Expanded cut)
+    font_mono: str | None = None  # figures, IBAN, reference; defaults to `font`
     font_dir: str | None = None  # bundled fonts dir passed to typst (repo-relative)
     logo: str | None = None
+    logo_height: float = 12.0  # mm, as placed in the header
+
+    ink: HexColor = "#141414"  # body copy
+    subtle: HexColor = "#696969"  # labels and secondary text
+    rule: HexColor = "#d2d2d2"  # hairlines
+    panel: HexColor = "#f6f6f6"  # fill behind bounded blocks
 
 
 class Issuer(BaseModel):

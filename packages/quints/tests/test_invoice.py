@@ -304,6 +304,52 @@ def test_reverse_charge_flag_in_context():
     assert ctx["reverse_charge"] is True
 
 
+# ── brand tokens ──────────────────────────────────────────────────────────────
+
+
+def test_brand_tokens_reach_the_template_context():
+    from quints.invoice.model import Brand
+    from quints.invoice.render import build_context
+
+    brand_in = Brand(accent="#6b1f4a", ink="#1c1618", font="Geist", font_mono="Geist Mono")
+    inv = _export()
+    brand = build_context(inv, ISSUER.model_copy(update={"brand": brand_in}), compute(inv), {})[
+        "brand"
+    ]
+    assert brand["accent"] == "#6b1f4a"
+    assert brand["ink"] == "#1c1618"
+    assert brand["font_mono"] == "Geist Mono"
+    # Every token the template dereferences must be present: Typst fails on a
+    # missing dictionary key, and only when that branch of the layout renders.
+    assert {
+        "subtle",
+        "rule",
+        "panel",
+        "font_display",
+        "display_stretch",
+        "logo_height",
+    } <= set(brand)
+
+
+def test_brand_font_families_fall_back_to_the_body_face():
+    from quints.invoice.model import Brand
+    from quints.invoice.render import build_context
+
+    issuer = ISSUER.model_copy(update={"brand": Brand(font="Mona Sans")})
+    inv = _export()
+    brand = build_context(inv, issuer, compute(inv), {})["brand"]
+    assert brand["font_display"] == "Mona Sans"
+    assert brand["font_mono"] == "Mona Sans"
+
+
+def test_brand_rejects_a_non_hex_colour():
+    from quints.invoice.model import Brand
+
+    for bad in ("tyrian", "#6b1f4", "6b1f4a", "rgb(107,31,74)"):
+        with pytest.raises(ValueError):
+            Brand(accent=bad)
+
+
 # ── schema ────────────────────────────────────────────────────────────────────
 
 
