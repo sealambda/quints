@@ -9,6 +9,10 @@ on:
     branches:
       - main
   pull_request:
+  # The Media workflow commits regenerated docs/assets/ as github-actions[bot],
+  # and a bot push made with GITHUB_TOKEN does not trigger further workflows —
+  # so a media refresh never redeploys the site on its own. Dispatch this then.
+  workflow_dispatch:
 
 permissions:
   contents: read

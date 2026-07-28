@@ -29,6 +29,11 @@ publishes everything; unchanged packages are no-ops.
 - If CLI output, the scaffold, or the PDFs changed since the last release,
   refresh the visuals: `make media` locally (needs vhs + poppler) or the
   "Media" workflow (`gh workflow run media.yml`), and commit `docs/assets/`.
+  Do this *before* tagging so the tag carries the current visuals. If the
+  workflow ran, `git pull` its commit and then dispatch the docs deploy
+  (`gh workflow run docs.yml`): it pushes as `github-actions[bot]` with
+  `GITHUB_TOKEN`, which by design triggers no further workflow, so the site
+  otherwise keeps serving the previous images.
 
 ## 3. Commit, tag, push
 
