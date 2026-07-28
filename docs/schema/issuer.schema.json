@@ -33,7 +33,7 @@
       "properties": {
         "accent": {
           "default": "#123c3a",
-          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "pattern": "^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
           "title": "Accent",
           "type": "string"
         },
@@ -113,25 +113,25 @@
         },
         "ink": {
           "default": "#141414",
-          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "pattern": "^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
           "title": "Ink",
           "type": "string"
         },
         "subtle": {
           "default": "#696969",
-          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "pattern": "^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
           "title": "Subtle",
           "type": "string"
         },
         "rule": {
           "default": "#d2d2d2",
-          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "pattern": "^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
           "title": "Rule",
           "type": "string"
         },
         "panel": {
           "default": "#f6f6f6",
-          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "pattern": "^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
           "title": "Panel",
           "type": "string"
         }

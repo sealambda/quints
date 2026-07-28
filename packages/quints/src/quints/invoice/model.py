@@ -256,7 +256,13 @@ class BankAccount(BaseModel):
         return v.replace(" ", "")
 
 
-HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9A-Fa-f]{6}$")]
+# Every hex form Typst's `rgb()` takes: RGB, RGBA, RRGGBB, RRGGBBAA. `accent`
+# used to be a bare `str` handed straight to `rgb()`, so anything shorthand that
+# rendered before still loads; only strings Typst would have rejected anyway are
+# caught here, and now at config-load time instead of mid-render.
+HexColor = Annotated[
+    str, StringConstraints(pattern=r"^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$")
+]
 
 
 class Brand(BaseModel):

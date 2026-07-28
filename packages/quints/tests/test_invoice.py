@@ -350,6 +350,15 @@ def test_brand_rejects_a_non_hex_colour():
             Brand(accent=bad)
 
 
+def test_brand_accepts_every_hex_form_typst_takes():
+    """`accent` was an unconstrained `str` handed straight to Typst's `rgb()`.
+    Validating it must not reject a shorthand palette that rendered before."""
+    from quints.invoice.model import Brand
+
+    for good in ("#fff", "#fff8", "#6b1f4a", "#6b1f4aff"):
+        assert Brand(accent=good).accent == good
+
+
 # ── schema ────────────────────────────────────────────────────────────────────
 
 
