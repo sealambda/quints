@@ -5,8 +5,9 @@
 //   accent  — the one saturated colour: title, rules that lead, the amount due
 //   ink     — body copy            subtle — labels and secondary text
 //   rule    — hairlines            panel  — fill behind bounded blocks
-// and three families: `font` (body), `font_display` (title), `font_mono`
-// (every figure, IBAN and reference, so columns align on the digit).
+// and three families: `font` (body), `font_display` (title), `font_mono` —
+// every figure, IBAN and reference. Set `font_mono` to a real monospace and the
+// amount columns align on the digit; left unset it follows the body face.
 #let d = json("data.json")
 #let L = d.labels
 #let accent = rgb(d.brand.accent)
@@ -23,8 +24,8 @@
 // Display face. `stretch` is only passed when the issuer actually asks for a
 // width other than normal: a font with no wdth axis fails to match against an
 // explicit stretch and silently falls back to the body face.
-#let disp(it, size: 10pt, weight: "regular", fill: ink) = text(
-  font: display, size: size, weight: weight, fill: fill,
+#let disp(it, size: 10pt, fill: ink) = text(
+  font: display, size: size, weight: d.brand.display_weight, fill: fill,
   ..(if d.brand.display_stretch != 100 { (stretch: d.brand.display_stretch * 1%) } else { (:) }),
 )[#it]
 

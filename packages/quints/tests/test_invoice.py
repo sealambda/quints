@@ -479,3 +479,64 @@ def test_render_embeds_bundled_font(tmp_path: Path):
     # body font and the wide title cut must be embedded, not system fallbacks
     assert b"MonaSans-Regular" in pdf
     assert b"MonaSansExpanded-SemiBold" in pdf
+
+
+def test_bundled_fallback_font_is_always_on_the_search_path(tmp_path: Path):
+    """Liberation Sans ships with the package: it is the default `Brand.font`,
+    the template's last-resort fallback, and the only face the QR-bill payment
+    part may use that we can distribute (its guidelines allow four)."""
+    from quints.invoice import render
+
+    out = tmp_path / "inv.pdf"
+    render.render(_domestic(), ISSUER, out)  # ISSUER sets no font_dir
+    assert b"LiberationSans" in out.read_bytes()
+
+
+def test_qr_bill_keeps_a_permitted_face_without_system_fonts(tmp_path: Path):
+    """With system fonts off, Arial and Helvetica are unreachable, and the QR-bill
+    payment part may use only those two, Frutiger, or Liberation Sans. It must
+    land on the bundled Liberation Sans and not fall through to a Typst default.
+
+    The bold cut doubles as the regression test for weight shadowing: the
+    payment part sets headings bold, so a real `-Bold` face has to be embedded.
+    """
+    from quints.invoice import render
+    from quints.invoice.model import Brand
+
+    # Pointing font_dir at our own bundle is the smallest issuer that ships
+    # fonts, which is what switches machine-installed families off.
+    issuer = ISSUER.model_copy(update={"brand": Brand(font_dir=str(render.BUNDLED_FONTS))})
+    out = tmp_path / "inv.pdf"
+    render.render(_domestic(), issuer, out)
+    pdf = out.read_bytes()
+    assert b"LiberationSans-Bold" in pdf
+    assert b"DejaVu" not in pdf and b"Libertinus" not in pdf
+
+
+def test_issuer_bundled_fonts_switch_off_machine_fonts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Regression: a variable font installed on the rendering machine shadows
+    the bundled static cuts of the same family, collapsing every weight to the
+    variable default. Only an issuer that ships fonts opts out of system ones —
+    issuers on the default font may legitimately keep a family installed."""
+    import typst
+
+    from quints.invoice import render
+    from quints.invoice.model import Brand
+
+    seen: list[object] = []
+
+    def spy(_main: str, **kwargs: object) -> None:
+        seen.append(kwargs.get("ignore_system_fonts"))
+        raise ValueError("stop after capturing the first attempt")
+
+    monkeypatch.setattr(typst, "compile", spy)
+
+    fonts = render.BUNDLED_FONTS  # any real directory will do
+    for brand, expected in [(Brand(font_dir=str(fonts)), True), (Brand(), False)]:
+        seen.clear()
+        issuer = ISSUER.model_copy(update={"brand": brand})
+        with pytest.raises(ValueError):
+            render.render(_domestic(), issuer, tmp_path / "inv.pdf")
+        assert seen[0] is expected

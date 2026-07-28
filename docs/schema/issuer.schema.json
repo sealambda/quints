@@ -59,6 +59,17 @@
           "title": "Font Display Stretch",
           "type": "integer"
         },
+        "font_display_weight": {
+          "default": "semibold",
+          "enum": [
+            "regular",
+            "medium",
+            "semibold",
+            "bold"
+          ],
+          "title": "Font Display Weight",
+          "type": "string"
+        },
         "font_mono": {
           "anyOf": [
             {

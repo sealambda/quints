@@ -271,6 +271,10 @@ class Brand(BaseModel):
     font: str = "Liberation Sans"
     font_display: str | None = None  # title/wordmark family; defaults to `font`
     font_display_stretch: int = 100  # CSS-style font-stretch % (125 → Expanded cut)
+    # Title weight. Not every display family ships every cut — Mona Sans
+    # Expanded starts at Medium, so asking for "regular" silently drops back to
+    # the normal-width face; a serif title usually wants "regular".
+    font_display_weight: Literal["regular", "medium", "semibold", "bold"] = "semibold"
     font_mono: str | None = None  # figures, IBAN, reference; defaults to `font`
     font_dir: str | None = None  # bundled fonts dir passed to typst (repo-relative)
     logo: str | None = None

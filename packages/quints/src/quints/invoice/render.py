@@ -18,6 +18,10 @@ from .labels import labels as get_labels
 from .model import Invoice, Issuer, Totals, compute, make_scor, money, number
 
 TEMPLATE = Path(__file__).parent / "template.typ"
+# Liberation Sans, always on the search path: the default `Brand.font`, the
+# template's last-resort fallback, and the only face the QR-bill payment part
+# is allowed to use that we can ship. See fonts/README.md.
+BUNDLED_FONTS = Path(__file__).parent / "fonts"
 
 
 class InvoiceContext(TypedDict):
@@ -113,6 +117,7 @@ def build_context(
             "font": issuer.brand.font,
             "font_display": issuer.brand.font_display or issuer.brand.font,
             "display_stretch": issuer.brand.font_display_stretch,
+            "display_weight": issuer.brand.font_display_weight,
             "font_mono": issuer.brand.font_mono or issuer.brand.font,
             "ink": issuer.brand.ink,
             "subtle": issuer.brand.subtle,
@@ -124,20 +129,23 @@ def build_context(
     }
 
 
-def _compile(main: Path, output: Path, root: Path, font_paths: list[Path]) -> None:
+def _compile(
+    main: Path, output: Path, root: Path, font_paths: list[Path], only_bundled: bool
+) -> None:
     """Compile to PDF/A-2b (archival) when supported, else a plain PDF.
 
-    An issuer that bundles a font directory gets *only* those fonts: machine-
-    installed families are ignored. Otherwise a variable font installed on the
-    designer's machine shadows the bundled static cuts of the same family, and
-    every weight silently collapses to the variable font's default instance —
-    the invoice then renders differently on a colleague's machine.
+    `only_bundled` switches machine-installed families off, and is set when the
+    issuer ships their own font directory. Without it, a variable font installed
+    on the designer's machine shadows the bundled static cuts of the same family
+    and every weight silently collapses to the variable font's default instance,
+    so the same invoice renders differently on a colleague's machine. Issuers on
+    the default font keep system fonts, since their families may live there.
     """
     fonts = [str(p) for p in font_paths]
     base: dict[str, object] = {"output": str(output), "root": str(root), "font_paths": fonts}
     # Most capable call first; drop the options an older typst-py may not know.
     attempts = [
-        {**base, "ignore_system_fonts": bool(fonts), "pdf_standards": "a-2b"},
+        {**base, "ignore_system_fonts": only_bundled, "pdf_standards": "a-2b"},
         {**base, "pdf_standards": "a-2b"},
         base,
     ]
@@ -205,11 +213,14 @@ def render(inv: Invoice, issuer: Issuer, out_path: Path) -> tuple[Path, Totals, 
         shutil.copy(TEMPLATE, work / "template.typ")
 
         font_dir = issuer.brand.font_dir
-        font_paths = [Path(font_dir)] if font_dir and Path(font_dir).is_dir() else []
+        issuer_fonts = [Path(font_dir)] if font_dir and Path(font_dir).is_dir() else []
+        # Ours first so the guaranteed fallback is always resolvable; the
+        # issuer's own families win on name, not on search order.
+        font_paths = [BUNDLED_FONTS, *issuer_fonts]
 
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        _compile(work / "template.typ", out_path, work, font_paths)
+        _compile(work / "template.typ", out_path, work, font_paths, bool(issuer_fonts))
         return out_path, totals, qr_payload
     finally:
         shutil.rmtree(work, ignore_errors=True)
