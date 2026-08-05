@@ -11,12 +11,20 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 ASSETS="$REPO/docs/assets"
 export PATH="$REPO/.venv/bin:$PATH"
 
-for tool in vhs pdftoppm quints; do
+for tool in vhs pdftoppm quints git; do
     command -v "$tool" >/dev/null || {
         echo "missing: $tool — see the header of media/generate.sh" >&2
         exit 1
     }
 done
+
+# The tapes run `quints init` in throwaway directories, where only the global
+# git identity applies; without one the scaffold commit fails and the error
+# is recorded straight into the GIFs.
+git config --global user.name >/dev/null && git config --global user.email >/dev/null || {
+    echo "missing: global git identity — set git config --global user.name / user.email" >&2
+    exit 1
+}
 
 mkdir -p "$ASSETS"
 

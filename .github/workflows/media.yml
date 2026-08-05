@@ -26,11 +26,16 @@ jobs:
           echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
           sudo apt-get update
           sudo apt-get install -y vhs ttyd ffmpeg poppler-utils
+      - name: Configure git identity
+        # Global, not repo-local: the tapes run `quints init` in throwaway
+        # directories, and its scaffold commit fails (visibly, inside the
+        # recording) without an identity there.
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - run: make media
       - name: Commit regenerated assets
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/assets
           git diff --cached --quiet && echo "assets unchanged" && exit 0
           git commit -m "chore: regenerate docs media"
