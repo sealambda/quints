@@ -7,7 +7,7 @@ leaving the net (500) owed to the ESTV. Payment follows later — Swiss VAT is d
 share a ``^VAT-<period>`` link, and the settlement carries a ``due:`` date, so
 outstanding liabilities can be listed until paid.
 
-Like `vat`, this only *prints* the transaction to paste — it never writes the
+Like `vat convert`, this only *prints* the transaction to paste — it never writes the
 ledger. The emitted balance assertions make bean-check verify the flush.
 """
 

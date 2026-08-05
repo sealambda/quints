@@ -92,5 +92,5 @@ differences on non-CHF balances, booked against the configured
 Like everything in quints, it's printed for review — never written into your
 books directly.
 
-For VAT amounts on foreign invoices, use [`quints vat`](vat.md#foreign-currency-vat)
+For VAT amounts on foreign invoices, use [`quints vat convert`](vat.md#foreign-currency-vat)
 instead of manual conversion.

@@ -33,7 +33,7 @@ Sleep 500ms
 Enter
 Sleep 1500ms
 
-Type "quints mwst -q 2026-Q3"
+Type "quints vat report -q 2026-Q3"
 Sleep 800ms
 Enter
 Sleep 8s

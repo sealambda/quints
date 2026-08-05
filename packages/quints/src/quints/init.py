@@ -834,8 +834,8 @@ strings:
 
 ```bash
 quints check --json
-quints mwst -q {year}-Q3 --json
-quints status --json
+quints vat report -q {year}-Q3 --json
+quints vat status --json
 quints report bilanz --at {year}-12-31 --json
 quints receivables --json
 ```
@@ -844,7 +844,7 @@ JSON Schemas for the invoicing files are hosted at
 {config.DOCS_URL}/schema/ (`quints schema` writes them
 locally to `invoicing/schema/`).
 
-Never invent VAT numbers or rates — compute them with `quints mwst`.
+Never invent VAT numbers or rates — compute them with `quints vat report`.
 {_agents_sample_section(answers)}"""
 
 

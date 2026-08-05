@@ -58,8 +58,17 @@ from . import (
 app = typer.Typer(
     no_args_is_help=True,
     add_completion=True,
-    help="quints — Swiss VAT & accounting for plain-text books (MWST, statements, imports).",
+    help="quints — Swiss VAT & accounting for plain-text books (VAT, statements, imports).",
 )
+
+# --help panels, in display order (a panel appears where its first command is
+# registered, so registration order below is deliberate).
+PANEL_START = "Getting started"
+PANEL_VAT = "VAT"
+PANEL_INVOICING = "Invoicing & receivables"
+PANEL_BANK = "Banking & reconciliation"
+PANEL_REPORTS = "Reports & year-end"
+PANEL_RATES = "Rates & FX"
 
 
 def _print_version(value: bool) -> None:
@@ -84,25 +93,6 @@ def root(
     ),
 ):
     config_mod.set_path(config)
-
-
-prices_app = typer.Typer(
-    no_args_is_help=True,
-    help="Price database (daily FX rates from any beanprice source; BAZG by default).",
-)
-app.add_typer(prices_app, name="prices")
-report_app = typer.Typer(
-    no_args_is_help=True,
-    help="Statutory statements grouped by the Swiss KMU chart of accounts (OR Art. 959a/959b).",
-)
-app.add_typer(report_app, name="report")
-import_app = typer.Typer(
-    no_args_is_help=True,
-    help="Draft transactions from bank/PSP statements into staging/ (never books/).",
-)
-app.add_typer(import_app, name="import")
-fx_app = typer.Typer(no_args_is_help=True, help="FX helpers (year-end revaluation).")
-app.add_typer(fx_app, name="fx")
 
 
 def _lang_option() -> str:
@@ -149,8 +139,304 @@ def _require_ledger(file: Path) -> None:
         raise typer.Exit(1)
 
 
-@app.command()
-def vat(
+def _period(from_: str | None, to: str | None, year: int | None) -> tuple[str, str]:
+    if year is not None:
+        return f"{year}-01-01", f"{year}-12-31"
+    if from_ and to:
+        return _parse_date(from_).isoformat(), _parse_date(to).isoformat()
+    typer.secho("ERROR: provide --year, or both --from and --to.", fg="red", err=True)
+    raise typer.Exit(1)
+
+
+def _vat_period(
+    quarter: str | None, from_: str | None, to: str | None
+) -> tuple[str, str, str | None]:
+    """Resolve --quarter / --from/--to into (date_from, date_to, label)."""
+    if quarter:
+        try:
+            date_from, date_to = mwst_mod.quarter_range(quarter)
+        except ValueError as e:
+            typer.secho(f"ERROR: {e}", fg="red", err=True)
+            raise typer.Exit(1) from None
+        return date_from, date_to, quarter.upper().replace(" ", "")
+    if from_ and to:
+        return _parse_date(from_).isoformat(), _parse_date(to).isoformat(), None
+    typer.secho("ERROR: provide --quarter, or both --from and --to.", fg="red", err=True)
+    raise typer.Exit(1)
+
+
+# ── getting started ───────────────────────────────────────────────────────────
+
+
+@app.command(rich_help_panel=PANEL_START)
+def init(
+    directory: Path = typer.Argument(
+        Path("."), help="Target project directory (created if missing)."
+    ),
+    name: str | None = typer.Option(None, "--name", help="Entity name, e.g. 'Acme GmbH'."),
+    legal_form: str | None = typer.Option(
+        None,
+        "--legal-form",
+        help="Legal form: gmbh, ag, or einzelfirma (sole proprietorship / freelancer).",
+    ),
+    lang: str | None = typer.Option(None, "--lang", "-l", help="Report language: en or de."),
+    importers: str | None = typer.Option(
+        None, "--importers", help="Comma-separated: ubs, yapeal, wise, stripe (default: none)."
+    ),
+    samples: bool = typer.Option(
+        False, "--samples", help="Include a demo quarter of transactions."
+    ),
+    answers_file: Path | None = typer.Option(
+        None, "--answers", help="TOML answer-file for non-interactive scaffolding."
+    ),
+    use_git: bool = typer.Option(
+        True,
+        "--git/--no-git",
+        help="git init + commit the pristine scaffold (skipped inside an existing repo).",
+    ),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing files."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip prompts; accept defaults."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+):
+    """Scaffold a new quints project (chart of accounts, per-year books,
+    quints.toml, pyproject.toml, AGENTS.md).
+
+    Deterministic: the same answers always produce the same files. Run
+    interactively, or feed a TOML answer-file with --answers for CI/repeatable
+    setups."""
+    if answers_file is not None:
+        if not answers_file.exists():
+            typer.secho(f"ERROR: answer-file not found: {answers_file}", fg="red", err=True)
+            raise typer.Exit(1)
+        answers = init_mod.load_answers(answers_file)
+    else:
+        answers = init_mod.Answers()
+
+    interactive = answers_file is None and not yes
+    if legal_form is not None:
+        answers = replace(answers, legal_form=legal_form.strip().lower())
+    elif interactive:
+        answers = replace(
+            answers,
+            legal_form=typer.prompt("Legal form (gmbh/ag/einzelfirma)", default=answers.legal_form)
+            .strip()
+            .lower(),
+        )
+    # An answer-file's entity name is authoritative; otherwise suggest one
+    # that matches the chosen legal form instead of the GmbH default.
+    example_names = {"gmbh": "Example GmbH", "ag": "Example AG", "einzelfirma": "Jane Doe"}
+    if answers_file is None and answers.entity_name == init_mod.Answers.entity_name:
+        answers = replace(
+            answers, entity_name=example_names.get(answers.legal_form, answers.entity_name)
+        )
+    if name is not None:
+        answers = replace(answers, entity_name=name)
+    elif interactive:
+        answers = replace(
+            answers, entity_name=typer.prompt("Entity name", default=answers.entity_name)
+        )
+    if lang is not None:
+        answers = replace(answers, report_language=lang)
+    elif interactive:
+        answers = replace(
+            answers,
+            report_language=typer.prompt(
+                "Report language (en/de)", default=answers.report_language
+            ),
+        )
+    if importers is not None:
+        answers = replace(
+            answers, importers=tuple(i.strip() for i in importers.split(",") if i.strip())
+        )
+    if samples:
+        answers = replace(answers, include_samples=True)
+
+    try:
+        files = init_mod.plan(answers)
+    except init_mod.InitError as e:
+        typer.secho(f"ERROR: {e}", fg="red", err=True)
+        raise typer.Exit(1) from None
+    result = init_mod.write(directory, files, force=force)
+    git_result = init_mod.init_git(directory) if use_git and result.written else None
+
+    if as_json:
+        import dataclasses
+
+        _json_out(
+            {
+                "directory": str(directory),
+                "entity": answers.entity_name,
+                "written": [str(p) for p in result.written],
+                "skipped": [str(p) for p in result.skipped],
+                "git": dataclasses.asdict(git_result) if git_result else None,
+            }
+        )
+        return
+    for path in result.written:
+        ui.console.print(f"[ok]created[/] {path}")
+    for path in result.skipped:
+        ui.console.print(f"[warn]exists, skipped[/] {path} (use --force to overwrite)")
+    if git_result:
+        if git_result.committed:
+            ui.console.print("[ok]git[/] initialised repository, committed the scaffold")
+        else:
+            ui.console.print(f"[warn]git[/] {git_result.detail}")
+    if result.written and not result.skipped:
+        ui.console.print(
+            f"\nScaffolded [b]{answers.entity_name}[/] in {directory}. "
+            "Next: [b]uv sync[/], then [b]quints check[/] and [b]quints vat report -q 2026-Q3[/]."
+        )
+
+
+@app.command(rich_help_panel=PANEL_START)
+def check(
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Also show a per-directive-type breakdown."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    file: Path = _file_option(),
+):
+    """Validate the ledger (bean-check equivalent) and summarize what's in it."""
+    import dataclasses
+
+    _require_ledger(file)
+    entries, errors = ledger.load_entries(file)
+    stats = ledger.stats(entries)
+    if as_json:
+        _json_out(
+            {
+                "ok": not errors,
+                "errors": [
+                    {
+                        "file": (e.source or {}).get("filename"),
+                        "line": (e.source or {}).get("lineno"),
+                        "message": e.message,
+                    }
+                    for e in errors
+                ],
+                "stats": dataclasses.asdict(stats),
+            }
+        )
+        raise typer.Exit(1 if errors else 0)
+    if errors:
+        from beancount.parser import printer
+
+        printer.print_errors(errors)
+        typer.secho(f"{len(errors)} error(s).", fg="red", err=True)
+        raise typer.Exit(1)
+    span = (
+        f", {stats.first_transaction}..{stats.last_transaction}" if stats.first_transaction else ""
+    )
+    typer.secho(
+        f"OK — no errors. {stats.transactions} transaction(s) "
+        f"across {stats.directives} directive(s){span}.",
+        fg="green",
+    )
+    if verbose:
+        from rich import box
+        from rich.table import Table
+
+        t = Table(box=box.SIMPLE_HEAVY, pad_edge=False)
+        t.add_column("Directive")
+        t.add_column("Count", justify="right")
+        for kind, count in sorted(stats.by_type.items(), key=lambda kv: (-kv[1], kv[0])):
+            t.add_row(kind, str(count))
+        ui.console.print(t)
+        ui.console.print(
+            f"[muted]{stats.open_accounts} open account(s) · "
+            f"currencies: {', '.join(stats.currencies) or '—'}[/]"
+        )
+
+
+# ── VAT ───────────────────────────────────────────────────────────────────────
+
+vat_app = typer.Typer(
+    no_args_is_help=True,
+    help="VAT, end to end: report a period, settle it, track what's owed, "
+    "convert foreign amounts. Swiss MWST (Form 310) today.",
+)
+app.add_typer(vat_app, name="vat", rich_help_panel=PANEL_VAT)
+
+
+@vat_app.command("report")
+def vat_report(
+    quarter: str | None = typer.Option(
+        None, "--quarter", "-q", help="e.g. 2026-Q2 (instead of --from/--to)."
+    ),
+    from_: str | None = typer.Option(None, "--from", help="Period start YYYY-MM-DD."),
+    to: str | None = typer.Option(None, "--to", help="Period end YYYY-MM-DD."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    file: Path = _file_option(),
+):
+    """The period's VAT return (Swiss MWST Form 310, by Ziffer)."""
+    date_from, date_to, _label = _vat_period(quarter, from_, to)
+    _require_ledger(file)
+    report = mwst_mod.compute(file, date_from, date_to)
+    if as_json:
+        import dataclasses
+
+        _json_out(dataclasses.asdict(report))
+        return
+    mwst_mod.render(report)
+
+
+@vat_app.command("settle")
+def vat_settle(
+    quarter: str | None = typer.Option(
+        None, "--quarter", "-q", help="e.g. 2026-Q2 (instead of --from/--to)."
+    ),
+    from_: str | None = typer.Option(None, "--from", help="Period start YYYY-MM-DD."),
+    to: str | None = typer.Option(None, "--to", help="Period end YYYY-MM-DD."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    file: Path = _file_option(),
+):
+    """Close the period: the VAT return plus the settlement transaction to paste."""
+    date_from, date_to, label = _vat_period(quarter, from_, to)
+    _require_ledger(file)
+    report = mwst_mod.compute(file, date_from, date_to)
+    settlement = settle_mod.build_settlement(file, report, label)
+    if as_json:
+        import dataclasses
+
+        _json_out(
+            {
+                "report": dataclasses.asdict(report),
+                "settlement": {
+                    **dataclasses.asdict(settlement),
+                    "text": settle_mod.settlement_text(settlement),
+                },
+            }
+        )
+        return
+    mwst_mod.render(report)
+    settle_mod.render_settlement(settlement)
+
+
+@vat_app.command("status")
+def vat_status(
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    file: Path = _file_option(),
+):
+    """Outstanding VAT owed to the ESTV (filed but unpaid), with due dates."""
+    _require_ledger(file)
+    liabilities, unlinked, total, today = settle_mod.outstanding(file)
+    if as_json:
+        import dataclasses
+
+        _json_out(
+            {
+                "today": str(today),
+                "liabilities": [dataclasses.asdict(liab) for liab in liabilities],
+                "unlinked_owed": str(unlinked),
+                "total_owed": str(total),
+            }
+        )
+        return
+    settle_mod.render_status(liabilities, unlinked, total, today)
+
+
+@vat_app.command("convert")
+def vat_convert(
     amount: str = typer.Argument(
         ..., help="VAT amount in the invoice currency (or net price with --net)."
     ),
@@ -203,353 +489,169 @@ def vat(
     typer.echo(text)
 
 
-@app.command()
-def mwst(
-    quarter: str | None = typer.Option(
-        None, "--quarter", "-q", help="e.g. 2026-Q2 (instead of --from/--to)."
+# ── invoicing & receivables ───────────────────────────────────────────────────
+
+
+@app.command(rich_help_panel=PANEL_INVOICING)
+def invoice(
+    data: Path = typer.Argument(..., help="Invoice file (.yaml/.toml/.json)."),
+    out: Path | None = typer.Option(
+        None,
+        "--out",
+        "-o",
+        help="Output PDF (default: filed under documents/<income account>/).",
     ),
-    from_: str | None = typer.Option(None, "--from", help="Period start YYYY-MM-DD."),
-    to: str | None = typer.Option(None, "--to", help="Period end YYYY-MM-DD."),
-    settle: bool = typer.Option(
-        False, "--settle", help="Also print the settlement transaction to paste (period close)."
+    issuer: Path = typer.Option(
+        Path("invoicing/issuer.yaml"), "--issuer", help="Issuer config (.yaml/.toml/.json)."
     ),
-    as_json: bool = typer.Option(
-        False, "--json", help="Machine-readable output (not with --settle)."
+    customers: Path = typer.Option(
+        Path("invoicing/customers.yaml"),
+        "--customers",
+        help="Customer registry (.yaml/.toml/.json).",
     ),
     file: Path = _file_option(),
-):
-    """Swiss MWST (VAT) report for a reporting period."""
-    if as_json and settle:
-        typer.secho("ERROR: --json and --settle are mutually exclusive.", fg="red", err=True)
-        raise typer.Exit(1)
-    if quarter:
-        try:
-            date_from, date_to = mwst_mod.quarter_range(quarter)
-        except ValueError as e:
-            typer.secho(f"ERROR: {e}", fg="red", err=True)
-            raise typer.Exit(1) from None
-        label = quarter.upper().replace(" ", "")
-    elif from_ and to:
-        date_from = _parse_date(from_).isoformat()
-        date_to = _parse_date(to).isoformat()
-        label = None
-    else:
-        typer.secho("ERROR: provide --quarter, or both --from and --to.", fg="red", err=True)
-        raise typer.Exit(1)
-    _require_ledger(file)
-    report = mwst_mod.compute(file, date_from, date_to)
-    if as_json:
-        import dataclasses
-        import json
-
-        typer.echo(json.dumps(dataclasses.asdict(report), indent=2, default=str))
-        return
-    mwst_mod.render(report)
-    if settle:
-        settle_mod.render_settlement(settle_mod.build_settlement(file, report, label))
-
-
-@app.command()
-def status(
+    verify: bool = typer.Option(
+        True, "--verify/--no-verify", help="Cross-check total against the ledger."
+    ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
-    file: Path = _file_option(),
 ):
-    """Outstanding VAT owed to the ESTV (filed but unpaid), with due dates."""
-    _require_ledger(file)
-    liabilities, unlinked, total, today = settle_mod.outstanding(file)
-    if as_json:
-        import dataclasses
-        import json
+    """Render a Swiss QR-bill invoice PDF (domestic or export)."""
+    import dataclasses
 
-        typer.echo(
-            json.dumps(
-                {
-                    "today": str(today),
-                    "liabilities": [dataclasses.asdict(liab) for liab in liabilities],
-                    "unlinked_owed": str(unlinked),
-                    "total_owed": str(total),
-                },
-                indent=2,
-                default=str,
-            )
+    from .invoice import draft as dr
+    from .invoice import model as m
+    from .invoice import render as r
+    from .invoice import verify as v
+
+    for p, what in [(data, "invoice file"), (issuer, "issuer config")]:
+        if not p.exists():
+            typer.secho(f"ERROR: {what} not found: {p}", fg="red", err=True)
+            raise typer.Exit(1)
+
+    registry = m.load_customers(customers) if customers.exists() else None
+    inv = m.load_invoice(data, registry)
+    iss = m.load_issuer(issuer)
+    if out is None:
+        # File the PDF the way beancount documents are filed: under the income
+        # account's folder, date-prefixed, next to the ledger's other evidence.
+        cfg = config_mod.get()
+        account = cfg.income_export if inv.kind == "export" else cfg.income_domestic
+        out = m.document_path(inv, account)
+    path, totals, payload = r.render(inv, iss, out)
+
+    qr_ok = None
+    if payload:
+        lines = payload.splitlines()
+        qr_ok = lines[:1] == ["SPC"] and lines[-1] == "EPD"
+    if not as_json:
+        ui.console.print(
+            f"[ok]Wrote[/] {path}  ·  {inv.kind}  ·  {inv.currency} {m.money(totals.grand_total)}"
         )
-        return
-    settle_mod.render_status(liabilities, unlinked, total, today)
+        if payload:
+            ui.console.print(
+                f"[muted]QR-bill payload: {'SPC…EPD ✓' if qr_ok else 'CHECK!'} "
+                f"({len(payload.splitlines())} lines, ref {inv.reference or 'auto-QRR'})[/]"
+            )
+
+    cc = None
+    ledger_draft = None
+    if verify and file.exists():
+        cc = v.cross_check(file, inv, totals)
+        if not cc.found:
+            ledger_draft = dr.build_draft(inv, totals)
+        if not as_json:
+            if not cc.found:
+                ui.console.print(
+                    f"[warn]No ledger txn for {inv.number}[/] — paste this draft "
+                    f"into books/{inv.issue_date.year}.bean:\n"
+                )
+                print(ledger_draft)
+                print()
+            elif cc.ok:
+                if cc.ledger_total is None:  # unreachable: found implies totals are set
+                    raise ValueError(f"cross-check for {inv.number} lost its ledger total")
+                ui.console.print(
+                    f"[ok]Ledger match[/] ({cc.date}): {inv.currency} {m.money(cc.ledger_total)}"
+                )
+                if not cc.date_ok:
+                    ui.console.print(
+                        f"[warn]booking date {cc.date} ≠ invoice date {inv.issue_date}[/]"
+                    )
+            else:
+                if cc.ledger_total is None or cc.invoice_total is None:
+                    # unreachable: found implies totals are set, but narrows the Optionals
+                    raise ValueError(f"cross-check for {inv.number} lost its totals")
+                ui.console.print(
+                    f"[err]Ledger CONFLICT[/] ({cc.date}): {inv.number} is already booked "
+                    f"at {m.money(cc.ledger_total)} but the invoice says "
+                    f"{m.money(cc.invoice_total)} {inv.currency} — fix one side before issuing."
+                )
+    elif verify and not as_json:
+        ui.console.print("[warn]ledger not found — cross-check skipped.[/]")
+
+    if as_json:
+        _json_out(
+            {
+                "number": inv.number,
+                "kind": inv.kind,
+                "currency": inv.currency,
+                "issue_date": inv.issue_date,
+                "customer": inv.resolved_customer.name,
+                "pdf": str(path),
+                "totals": totals.model_dump(),
+                "qr_payload_ok": qr_ok,
+                "cross_check": dataclasses.asdict(cc) if cc else None,
+                "ledger_draft": ledger_draft,
+            }
+        )
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_INVOICING)
 def receivables(
     at: str | None = typer.Option(
         None, "--at", metavar="YYYY-MM-DD", help="Aging as of this date (default: today)."
     ),
-    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
-    file: Path = _file_option(),
-):
-    """Open invoices (aging), grouped by invoice id against Receivable:Trade."""
-    _require_ledger(file)
-    open_invoices, ref = recv_mod.compute(file, _parse_date(at) if at else None)
-    if as_json:
-        import dataclasses
-        import json
-
-        typer.echo(
-            json.dumps(
-                {"at": str(ref), "open": [dataclasses.asdict(o) for o in open_invoices]},
-                indent=2,
-                default=str,
-            )
-        )
-        return
-    recv_mod.render(open_invoices, ref)
-
-
-@app.command()
-def inbox(
-    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
-    file: Path = _file_option(),
-):
-    """Inventory inbox/ documents: filename hints, duplicates, already-linked."""
-    _require_ledger(file)
-    docs = inbox_mod.compute(file)
-    if as_json:
-        import dataclasses
-
-        _json_out({"inbox": [dataclasses.asdict(d) for d in docs]})
-        return
-    inbox_mod.render(docs)
-
-
-@app.command()
-def match(
-    staging: Path | None = typer.Option(
-        None, "--staging", help="Staging directory (default: ./staging)."
-    ),
-    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
-    file: Path = _file_option(),
-):
-    """Match staging drafts and inbox documents to invoices and bookings (scored)."""
-    _require_ledger(file)
-    results = match_mod.compute(file, staging_dir=staging)
-    if as_json:
-        import dataclasses
-
-        _json_out({"matches": [dataclasses.asdict(m) for m in results]})
-        return
-    match_mod.render(results)
-
-
-@prices_app.command("sync")
-def prices_sync(
-    out: Path | None = typer.Option(
-        None, "--out", help="Price file (default: [ledger].prices from quints.toml, prices.bean)."
-    ),
-    from_: str | None = typer.Option(
+    consolidate: str | None = typer.Option(
         None,
-        "--from",
-        help="Repair: re-check every day from this date, even days already verified.",
-    ),
-    source: str | None = typer.Option(
-        None,
-        "--source",
-        help="beanprice source module (default: [prices].source from quints.toml, beanprice_bazg).",
+        "--in",
+        metavar="CCY",
+        help="Consolidation currency for the grand total "
+        "(default: operating currency from quints.toml).",
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    file: Path = _file_option(),
 ):
-    """Fetch daily rates into the price file (full precision, resumable, gap-aware).
-
-    What to fetch comes from the ledger's commodity `price:` metadata — the
-    same declarations bean-price reads — or, when the ledger declares none,
-    from [prices] in quints.toml. Every run extends each currency forward to
-    today AND fills interior gaps; days the source has no rate for (weekends,
-    holidays) are checked once and recorded as verified in the file header.
-    The file is written as rates arrive, so an interrupted sync resumes where
-    it left off.
-    With --from DATE: re-check the whole range, ignoring the verified record.
-    """
-    from rich.progress import (
-        BarColumn,
-        MofNCompleteColumn,
-        Progress,
-        TaskID,
-        TextColumn,
-        TimeRemainingColumn,
+    """Open invoices (aging) in their original currency, plus a consolidated total."""
+    _require_ledger(file)
+    open_invoices, consolidation, ref = recv_mod.compute(
+        file, _parse_date(at) if at else None, currency=consolidate
     )
-
-    cfg = config_mod.get()
-    out = out if out is not None else cfg.ledger_prices
-    repair = _parse_date(from_) if from_ else None
-    # bean-price mode: commodity `price:` metadata declares what to fetch.
-    # --source forces config mode; a metadata-less ledger falls back to it too.
-    jobs = None
-    if source is None and cfg.ledger_main.exists():
-        entries, _errors = ledger.load_entries(cfg.ledger_main)
-
-        def bad_meta(ccy: str, message: str) -> None:
-            typer.secho(
-                f"{ccy}: skipping unusable price metadata — {message}", fg="yellow", err=True
-            )
-
-        jobs = prices_mod.jobs_from_ledger(entries, on_error=bad_meta) or None
-    # Sources without a bulk endpoint fetch one request per day per currency,
-    # so a backfill takes a while: show a live per-currency bar (stderr,
-    # transient) unless the caller asked for machine-readable output.
-    with Progress(
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TextColumn("days"),
-        TimeRemainingColumn(),
-        console=ui.err_console,
-        transient=True,
-        disable=as_json,
-    ) as bars:
-        tasks: dict[str, TaskID] = {}
-
-        def on_progress(ccy: str, done: int, total: int) -> None:
-            if ccy not in tasks:
-                tasks[ccy] = bars.add_task(ccy, total=total)
-            bars.update(tasks[ccy], completed=done)
-
-        result = prices_mod.sync(
-            out,
-            repair_from=repair,
-            currencies=cfg.prices_currencies,
-            source=source if source is not None else cfg.prices_source,
-            quote=cfg.operating_currency,
-            tickers=dict(cfg.prices_tickers),
-            progress=on_progress,
-            jobs=jobs,
-        )
     if as_json:
+        import dataclasses
+
         _json_out(
             {
-                "file": str(out),
-                "wrote": result.wrote,
-                "added": result.added,
-                "per_currency": {
-                    ccy: {
-                        "added": s.added,
-                        "healed": s.healed,
-                        "unavailable": s.unavailable,
-                        "had_through": s.last,
-                    }
-                    for ccy, s in result.per_currency.items()
+                "at": str(ref),
+                "open": [dataclasses.asdict(o) for o in open_invoices],
+                "totals": [dataclasses.asdict(ct) for ct in consolidation.totals],
+                "consolidated": {
+                    "currency": consolidation.currency,
+                    "total": str(consolidation.grand_total),
+                    "missing_rates": consolidation.missing,
                 },
             }
         )
         return
-    for ccy, s in result.per_currency.items():
-        where = f"had through {s.last}" if s.last else "was empty"
-        healed = f", {s.healed} gap day(s) healed" if s.healed else ""
-        typer.echo(f"{ccy}: +{s.added} rate(s){healed} ({where}).")
-        if s.unavailable:
-            typer.secho(
-                f"{ccy}: {s.unavailable} day(s) unavailable from the source — retried next sync.",
-                fg="yellow",
-                err=True,
-            )
-    if result.wrote:
-        typer.secho(f"Wrote {result.added} new price(s) to {out.name} (sorted).", fg="green")
-    else:
-        typer.echo(f"{out.name} already current.")
+    recv_mod.render(open_invoices, ref, consolidation)
 
 
-@report_app.command()
-def bilanz(
-    at: str = typer.Option(..., "--at", metavar="YYYY-MM-DD", help="Report date."),
-    lang: str = _lang_option(),
-    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
-    file: Path = _file_option(),
-):
-    """Balance sheet (Bilanz, OR Art. 959a) grouped by KMU codes."""
-    _parse_date(at)
-    _require_ledger(file)
-    _emit(kmu_mod.compute_bilanz(file, at), kmu_mod.render_bilanz, lang, as_json)
+# ── banking & reconciliation ──────────────────────────────────────────────────
 
-
-@report_app.command()
-def erfolg(
-    from_: str | None = typer.Option(None, "--from", metavar="YYYY-MM-DD"),
-    to: str | None = typer.Option(None, "--to", metavar="YYYY-MM-DD"),
-    year: int | None = typer.Option(None, "--year", help="Shortcut for a calendar year."),
-    lang: str = _lang_option(),
-    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
-    file: Path = _file_option(),
-):
-    """Income statement (Erfolgsrechnung, OR Art. 959b) grouped by KMU codes."""
-    date_from, date_to = _period(from_, to, year)
-    _require_ledger(file)
-    _emit(kmu_mod.compute_erfolg(file, date_from, date_to), kmu_mod.render_erfolg, lang, as_json)
-
-
-@report_app.command()
-def konten(
-    from_: str | None = typer.Option(None, "--from", metavar="YYYY-MM-DD"),
-    to: str | None = typer.Option(None, "--to", metavar="YYYY-MM-DD"),
-    year: int | None = typer.Option(None, "--year", help="Shortcut for a calendar year."),
-    lang: str = _lang_option(),
-    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
-    file: Path = _file_option(),
-):
-    """Per-KMU-code transaction listings (Kontoblätter) — auditor detail."""
-    date_from, date_to = _period(from_, to, year)
-    _require_ledger(file)
-    _emit(kmu_mod.compute_konten(file, date_from, date_to), kmu_mod.render_konten, lang, as_json)
-
-
-@report_app.command()
-def statements(
-    year: int = typer.Option(..., "--year", help="Fiscal year."),
-    at: str | None = typer.Option(
-        None, "--at", metavar="YYYY-MM-DD", help="Balance-sheet date (default: <year>-12-31)."
-    ),
-    lang: str = _lang_option(),
-    out: Path | None = typer.Option(None, "--out", "-o", help="Output PDF path."),
-    file: Path = _file_option(),
-):
-    """Bilanz + Erfolgsrechnung as one PDF for the Treuhänder/auditor."""
-    from . import report_pdf
-
-    _require_ledger(file)
-    balance_date = at or f"{year}-12-31"
-    _parse_date(balance_date)
-    lang = lang or config_mod.get().report_language
-    bilanz_report = kmu_mod.compute_bilanz(file, balance_date)
-    erfolg_report = kmu_mod.compute_erfolg(file, f"{year}-01-01", f"{year}-12-31")
-    out = out or Path(f"statements-{year}-{lang}.pdf")
-    path = report_pdf.render_pdf(bilanz_report, erfolg_report, lang, out)
-    typer.secho(f"Wrote {path}", fg="green")
-
-
-@fx_app.command("revalue")
-def fx_revalue(
-    at: str = typer.Option(
-        ..., "--at", metavar="YYYY-MM-DD", help="Revaluation date (usually 12-31)."
-    ),
-    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
-    file: Path = _file_option(),
-):
-    """Print the year-end FX revaluation transaction(s) to paste (Art. 960 OR)."""
-    _parse_date(at)
-    _require_ledger(file)
-    try:
-        revaluations = fx_mod.compute(file, at)
-    except fx_mod.RateUnavailable as e:
-        typer.secho(
-            f"ERROR: {e}.\n       Fetch rates:  uv run quints prices sync", fg="red", err=True
-        )
-        raise typer.Exit(1) from None
-    if as_json:
-        import dataclasses
-
-        _json_out(
-            {
-                "at": at,
-                "revaluations": [{**dataclasses.asdict(r), "delta": r.delta} for r in revaluations],
-            }
-        )
-        return
-    fx_mod.render(revaluations, at)
+import_app = typer.Typer(
+    no_args_is_help=True,
+    help="Draft transactions from bank/PSP statements into staging/ (never books/).",
+)
+app.add_typer(import_app, name="import", rich_help_panel=PANEL_BANK)
 
 
 @import_app.command("yapeal")
@@ -752,162 +854,276 @@ def _report_import(result: importing_mod.ImportResult, as_json: bool = False) ->
         typer.echo(f"Closing balance assertion: {balance.date} {balance.amount} (in staging file).")
 
 
-def _period(from_: str | None, to: str | None, year: int | None) -> tuple[str, str]:
-    if year is not None:
-        return f"{year}-01-01", f"{year}-12-31"
-    if from_ and to:
-        return _parse_date(from_).isoformat(), _parse_date(to).isoformat()
-    typer.secho("ERROR: provide --year, or both --from and --to.", fg="red", err=True)
-    raise typer.Exit(1)
-
-
-@app.command()
-def check(
+@app.command(rich_help_panel=PANEL_BANK)
+def match(
+    staging: Path | None = typer.Option(
+        None, "--staging", help="Staging directory (default: ./staging)."
+    ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
 ):
-    """Validate the ledger (bean-check equivalent)."""
+    """Match staging drafts and inbox documents to invoices and bookings (scored)."""
     _require_ledger(file)
-    _entries, errors = ledger.load_entries(file)
+    results = match_mod.compute(file, staging_dir=staging)
     if as_json:
-        _json_out(
-            {
-                "ok": not errors,
-                "errors": [
-                    {
-                        "file": (e.source or {}).get("filename"),
-                        "line": (e.source or {}).get("lineno"),
-                        "message": e.message,
-                    }
-                    for e in errors
-                ],
-            }
-        )
-        raise typer.Exit(1 if errors else 0)
-    if errors:
-        from beancount.parser import printer
+        import dataclasses
 
-        printer.print_errors(errors)
-        typer.secho(f"{len(errors)} error(s).", fg="red", err=True)
-        raise typer.Exit(1)
-    typer.secho("OK — no errors.", fg="green")
+        _json_out({"matches": [dataclasses.asdict(m) for m in results]})
+        return
+    match_mod.render(results)
 
 
-@app.command()
-def invoice(
-    data: Path = typer.Argument(..., help="Invoice file (.yaml/.toml/.json)."),
-    out: Path | None = typer.Option(
-        None,
-        "--out",
-        "-o",
-        help="Output PDF (default: filed under documents/<income account>/).",
-    ),
-    issuer: Path = typer.Option(
-        Path("invoicing/issuer.yaml"), "--issuer", help="Issuer config (.yaml/.toml/.json)."
-    ),
-    customers: Path = typer.Option(
-        Path("invoicing/customers.yaml"),
-        "--customers",
-        help="Customer registry (.yaml/.toml/.json).",
-    ),
+@app.command(rich_help_panel=PANEL_BANK)
+def inbox(
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
-    verify: bool = typer.Option(
-        True, "--verify/--no-verify", help="Cross-check total against the ledger."
+):
+    """Inventory inbox/ documents: filename hints, duplicates, already-linked."""
+    _require_ledger(file)
+    docs = inbox_mod.compute(file)
+    if as_json:
+        import dataclasses
+
+        _json_out({"inbox": [dataclasses.asdict(d) for d in docs]})
+        return
+    inbox_mod.render(docs)
+
+
+# ── reports & year-end ────────────────────────────────────────────────────────
+
+report_app = typer.Typer(
+    no_args_is_help=True,
+    help="Statutory statements grouped by the Swiss KMU chart of accounts (OR Art. 959a/959b).",
+)
+app.add_typer(report_app, name="report", rich_help_panel=PANEL_REPORTS)
+
+
+@report_app.command()
+def bilanz(
+    at: str = typer.Option(..., "--at", metavar="YYYY-MM-DD", help="Report date."),
+    lang: str = _lang_option(),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    file: Path = _file_option(),
+):
+    """Balance sheet (Bilanz, OR Art. 959a) grouped by KMU codes."""
+    _parse_date(at)
+    _require_ledger(file)
+    _emit(kmu_mod.compute_bilanz(file, at), kmu_mod.render_bilanz, lang, as_json)
+
+
+@report_app.command()
+def erfolg(
+    from_: str | None = typer.Option(None, "--from", metavar="YYYY-MM-DD"),
+    to: str | None = typer.Option(None, "--to", metavar="YYYY-MM-DD"),
+    year: int | None = typer.Option(None, "--year", help="Shortcut for a calendar year."),
+    lang: str = _lang_option(),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    file: Path = _file_option(),
+):
+    """Income statement (Erfolgsrechnung, OR Art. 959b) grouped by KMU codes."""
+    date_from, date_to = _period(from_, to, year)
+    _require_ledger(file)
+    _emit(kmu_mod.compute_erfolg(file, date_from, date_to), kmu_mod.render_erfolg, lang, as_json)
+
+
+@report_app.command()
+def konten(
+    from_: str | None = typer.Option(None, "--from", metavar="YYYY-MM-DD"),
+    to: str | None = typer.Option(None, "--to", metavar="YYYY-MM-DD"),
+    year: int | None = typer.Option(None, "--year", help="Shortcut for a calendar year."),
+    lang: str = _lang_option(),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    file: Path = _file_option(),
+):
+    """Per-KMU-code transaction listings (Kontoblätter) — auditor detail."""
+    date_from, date_to = _period(from_, to, year)
+    _require_ledger(file)
+    _emit(kmu_mod.compute_konten(file, date_from, date_to), kmu_mod.render_konten, lang, as_json)
+
+
+@report_app.command()
+def statements(
+    year: int = typer.Option(..., "--year", help="Fiscal year."),
+    at: str | None = typer.Option(
+        None, "--at", metavar="YYYY-MM-DD", help="Balance-sheet date (default: <year>-12-31)."
+    ),
+    lang: str = _lang_option(),
+    out: Path | None = typer.Option(None, "--out", "-o", help="Output PDF path."),
+    file: Path = _file_option(),
+):
+    """Bilanz + Erfolgsrechnung as one PDF for the Treuhänder/auditor."""
+    from . import report_pdf
+
+    _require_ledger(file)
+    balance_date = at or f"{year}-12-31"
+    _parse_date(balance_date)
+    lang = lang or config_mod.get().report_language
+    bilanz_report = kmu_mod.compute_bilanz(file, balance_date)
+    erfolg_report = kmu_mod.compute_erfolg(file, f"{year}-01-01", f"{year}-12-31")
+    out = out or Path(f"statements-{year}-{lang}.pdf")
+    path = report_pdf.render_pdf(bilanz_report, erfolg_report, lang, out)
+    typer.secho(f"Wrote {path}", fg="green")
+
+
+# ── rates & FX ────────────────────────────────────────────────────────────────
+
+prices_app = typer.Typer(
+    no_args_is_help=True,
+    help="Price database (daily FX rates from any beanprice source; BAZG by default).",
+)
+app.add_typer(prices_app, name="prices", rich_help_panel=PANEL_RATES)
+fx_app = typer.Typer(no_args_is_help=True, help="FX helpers (year-end revaluation).")
+app.add_typer(fx_app, name="fx", rich_help_panel=PANEL_RATES)
+
+
+@prices_app.command("sync")
+def prices_sync(
+    out: Path | None = typer.Option(
+        None, "--out", help="Price file (default: [ledger].prices from quints.toml, prices.bean)."
+    ),
+    from_: str | None = typer.Option(
+        None,
+        "--from",
+        help="Repair: re-check every day from this date, even days already verified.",
+    ),
+    source: str | None = typer.Option(
+        None,
+        "--source",
+        help="beanprice source module (default: [prices].source from quints.toml, beanprice_bazg).",
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ):
-    """Render a Swiss QR-bill invoice PDF (domestic or export)."""
-    import dataclasses
+    """Fetch daily rates into the price file (full precision, resumable, gap-aware).
 
-    from .invoice import draft as dr
-    from .invoice import model as m
-    from .invoice import render as r
-    from .invoice import verify as v
+    What to fetch comes from the ledger's commodity `price:` metadata — the
+    same declarations bean-price reads — or, when the ledger declares none,
+    from [prices] in quints.toml. Every run extends each currency forward to
+    today AND fills interior gaps; days the source has no rate for (weekends,
+    holidays) are checked once and recorded as verified in the file header.
+    The file is written as rates arrive, so an interrupted sync resumes where
+    it left off.
+    With --from DATE: re-check the whole range, ignoring the verified record.
+    """
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        TaskID,
+        TextColumn,
+        TimeRemainingColumn,
+    )
 
-    for p, what in [(data, "invoice file"), (issuer, "issuer config")]:
-        if not p.exists():
-            typer.secho(f"ERROR: {what} not found: {p}", fg="red", err=True)
-            raise typer.Exit(1)
+    cfg = config_mod.get()
+    out = out if out is not None else cfg.ledger_prices
+    repair = _parse_date(from_) if from_ else None
+    # bean-price mode: commodity `price:` metadata declares what to fetch.
+    # --source forces config mode; a metadata-less ledger falls back to it too.
+    jobs = None
+    if source is None and cfg.ledger_main.exists():
+        entries, _errors = ledger.load_entries(cfg.ledger_main)
 
-    registry = m.load_customers(customers) if customers.exists() else None
-    inv = m.load_invoice(data, registry)
-    iss = m.load_issuer(issuer)
-    if out is None:
-        # File the PDF the way beancount documents are filed: under the income
-        # account's folder, date-prefixed, next to the ledger's other evidence.
-        cfg = config_mod.get()
-        account = cfg.income_export if inv.kind == "export" else cfg.income_domestic
-        out = m.document_path(inv, account)
-    path, totals, payload = r.render(inv, iss, out)
-
-    qr_ok = None
-    if payload:
-        lines = payload.splitlines()
-        qr_ok = lines[:1] == ["SPC"] and lines[-1] == "EPD"
-    if not as_json:
-        ui.console.print(
-            f"[ok]Wrote[/] {path}  ·  {inv.kind}  ·  {inv.currency} {m.money(totals.grand_total)}"
-        )
-        if payload:
-            ui.console.print(
-                f"[muted]QR-bill payload: {'SPC…EPD ✓' if qr_ok else 'CHECK!'} "
-                f"({len(payload.splitlines())} lines, ref {inv.reference or 'auto-QRR'})[/]"
+        def bad_meta(ccy: str, message: str) -> None:
+            typer.secho(
+                f"{ccy}: skipping unusable price metadata — {message}", fg="yellow", err=True
             )
 
-    cc = None
-    ledger_draft = None
-    if verify and file.exists():
-        cc = v.cross_check(file, inv, totals)
-        if not cc.found:
-            ledger_draft = dr.build_draft(inv, totals)
-        if not as_json:
-            if not cc.found:
-                ui.console.print(
-                    f"[warn]No ledger txn for {inv.number}[/] — paste this draft "
-                    f"into books/{inv.issue_date.year}.bean:\n"
-                )
-                print(ledger_draft)
-                print()
-            elif cc.ok:
-                if cc.ledger_total is None:  # unreachable: found implies totals are set
-                    raise ValueError(f"cross-check for {inv.number} lost its ledger total")
-                ui.console.print(
-                    f"[ok]Ledger match[/] ({cc.date}): {inv.currency} {m.money(cc.ledger_total)}"
-                )
-                if not cc.date_ok:
-                    ui.console.print(
-                        f"[warn]booking date {cc.date} ≠ invoice date {inv.issue_date}[/]"
-                    )
-            else:
-                if cc.ledger_total is None or cc.invoice_total is None:
-                    # unreachable: found implies totals are set, but narrows the Optionals
-                    raise ValueError(f"cross-check for {inv.number} lost its totals")
-                ui.console.print(
-                    f"[err]Ledger CONFLICT[/] ({cc.date}): {inv.number} is already booked "
-                    f"at {m.money(cc.ledger_total)} but the invoice says "
-                    f"{m.money(cc.invoice_total)} {inv.currency} — fix one side before issuing."
-                )
-    elif verify and not as_json:
-        ui.console.print("[warn]ledger not found — cross-check skipped.[/]")
+        jobs = prices_mod.jobs_from_ledger(entries, on_error=bad_meta) or None
+    # Sources without a bulk endpoint fetch one request per day per currency,
+    # so a backfill takes a while: show a live per-currency bar (stderr,
+    # transient) unless the caller asked for machine-readable output.
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TextColumn("days"),
+        TimeRemainingColumn(),
+        console=ui.err_console,
+        transient=True,
+        disable=as_json,
+    ) as bars:
+        tasks: dict[str, TaskID] = {}
 
+        def on_progress(ccy: str, done: int, total: int) -> None:
+            if ccy not in tasks:
+                tasks[ccy] = bars.add_task(ccy, total=total)
+            bars.update(tasks[ccy], completed=done)
+
+        result = prices_mod.sync(
+            out,
+            repair_from=repair,
+            currencies=cfg.prices_currencies,
+            source=source if source is not None else cfg.prices_source,
+            quote=cfg.operating_currency,
+            tickers=dict(cfg.prices_tickers),
+            progress=on_progress,
+            jobs=jobs,
+        )
     if as_json:
         _json_out(
             {
-                "number": inv.number,
-                "kind": inv.kind,
-                "currency": inv.currency,
-                "issue_date": inv.issue_date,
-                "customer": inv.resolved_customer.name,
-                "pdf": str(path),
-                "totals": totals.model_dump(),
-                "qr_payload_ok": qr_ok,
-                "cross_check": dataclasses.asdict(cc) if cc else None,
-                "ledger_draft": ledger_draft,
+                "file": str(out),
+                "wrote": result.wrote,
+                "added": result.added,
+                "per_currency": {
+                    ccy: {
+                        "added": s.added,
+                        "healed": s.healed,
+                        "unavailable": s.unavailable,
+                        "had_through": s.last,
+                    }
+                    for ccy, s in result.per_currency.items()
+                },
             }
         )
+        return
+    for ccy, s in result.per_currency.items():
+        where = f"had through {s.last}" if s.last else "was empty"
+        healed = f", {s.healed} gap day(s) healed" if s.healed else ""
+        typer.echo(f"{ccy}: +{s.added} rate(s){healed} ({where}).")
+        if s.unavailable:
+            typer.secho(
+                f"{ccy}: {s.unavailable} day(s) unavailable from the source — retried next sync.",
+                fg="yellow",
+                err=True,
+            )
+    if result.wrote:
+        typer.secho(f"Wrote {result.added} new price(s) to {out.name} (sorted).", fg="green")
+    else:
+        typer.echo(f"{out.name} already current.")
 
 
-@app.command()
+@fx_app.command("revalue")
+def fx_revalue(
+    at: str = typer.Option(
+        ..., "--at", metavar="YYYY-MM-DD", help="Revaluation date (usually 12-31)."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    file: Path = _file_option(),
+):
+    """Print the year-end FX revaluation transaction(s) to paste (Art. 960 OR)."""
+    _parse_date(at)
+    _require_ledger(file)
+    try:
+        revaluations = fx_mod.compute(file, at)
+    except fx_mod.RateUnavailable as e:
+        typer.secho(
+            f"ERROR: {e}.\n       Fetch rates:  uv run quints prices sync", fg="red", err=True
+        )
+        raise typer.Exit(1) from None
+    if as_json:
+        import dataclasses
+
+        _json_out(
+            {
+                "at": at,
+                "revaluations": [{**dataclasses.asdict(r), "delta": r.delta} for r in revaluations],
+            }
+        )
+        return
+    fx_mod.render(revaluations, at)
+
+
+@app.command(rich_help_panel=PANEL_INVOICING)
 def schema(
     out: Path = typer.Option(
         Path("invoicing/schema"), "--out", "-o", help="Directory for the generated JSON Schemas."
@@ -933,126 +1149,6 @@ def schema(
         path.write_text(_json.dumps(mdl.model_json_schema(), indent=2) + "\n")
         ui.console.print(f"[ok]Wrote[/] {path}")
     ui.console.print(f"[muted]Also hosted at {config_mod.DOCS_URL}/schema/[/]")
-
-
-@app.command()
-def init(
-    directory: Path = typer.Argument(
-        Path("."), help="Target project directory (created if missing)."
-    ),
-    name: str | None = typer.Option(None, "--name", help="Entity name, e.g. 'Acme GmbH'."),
-    legal_form: str | None = typer.Option(
-        None,
-        "--legal-form",
-        help="Legal form: gmbh, ag, or einzelfirma (sole proprietorship / freelancer).",
-    ),
-    lang: str | None = typer.Option(None, "--lang", "-l", help="Report language: en or de."),
-    importers: str | None = typer.Option(
-        None, "--importers", help="Comma-separated: ubs, yapeal, wise, stripe (default: none)."
-    ),
-    samples: bool = typer.Option(
-        False, "--samples", help="Include a demo quarter of transactions."
-    ),
-    answers_file: Path | None = typer.Option(
-        None, "--answers", help="TOML answer-file for non-interactive scaffolding."
-    ),
-    use_git: bool = typer.Option(
-        True,
-        "--git/--no-git",
-        help="git init + commit the pristine scaffold (skipped inside an existing repo).",
-    ),
-    force: bool = typer.Option(False, "--force", help="Overwrite existing files."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip prompts; accept defaults."),
-    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
-):
-    """Scaffold a new quints project (chart of accounts, per-year books,
-    quints.toml, pyproject.toml, AGENTS.md).
-
-    Deterministic: the same answers always produce the same files. Run
-    interactively, or feed a TOML answer-file with --answers for CI/repeatable
-    setups."""
-    if answers_file is not None:
-        if not answers_file.exists():
-            typer.secho(f"ERROR: answer-file not found: {answers_file}", fg="red", err=True)
-            raise typer.Exit(1)
-        answers = init_mod.load_answers(answers_file)
-    else:
-        answers = init_mod.Answers()
-
-    interactive = answers_file is None and not yes
-    if legal_form is not None:
-        answers = replace(answers, legal_form=legal_form.strip().lower())
-    elif interactive:
-        answers = replace(
-            answers,
-            legal_form=typer.prompt("Legal form (gmbh/ag/einzelfirma)", default=answers.legal_form)
-            .strip()
-            .lower(),
-        )
-    # An answer-file's entity name is authoritative; otherwise suggest one
-    # that matches the chosen legal form instead of the GmbH default.
-    example_names = {"gmbh": "Example GmbH", "ag": "Example AG", "einzelfirma": "Jane Doe"}
-    if answers_file is None and answers.entity_name == init_mod.Answers.entity_name:
-        answers = replace(
-            answers, entity_name=example_names.get(answers.legal_form, answers.entity_name)
-        )
-    if name is not None:
-        answers = replace(answers, entity_name=name)
-    elif interactive:
-        answers = replace(
-            answers, entity_name=typer.prompt("Entity name", default=answers.entity_name)
-        )
-    if lang is not None:
-        answers = replace(answers, report_language=lang)
-    elif interactive:
-        answers = replace(
-            answers,
-            report_language=typer.prompt(
-                "Report language (en/de)", default=answers.report_language
-            ),
-        )
-    if importers is not None:
-        answers = replace(
-            answers, importers=tuple(i.strip() for i in importers.split(",") if i.strip())
-        )
-    if samples:
-        answers = replace(answers, include_samples=True)
-
-    try:
-        files = init_mod.plan(answers)
-    except init_mod.InitError as e:
-        typer.secho(f"ERROR: {e}", fg="red", err=True)
-        raise typer.Exit(1) from None
-    result = init_mod.write(directory, files, force=force)
-    git_result = init_mod.init_git(directory) if use_git and result.written else None
-
-    if as_json:
-        import dataclasses
-
-        _json_out(
-            {
-                "directory": str(directory),
-                "entity": answers.entity_name,
-                "written": [str(p) for p in result.written],
-                "skipped": [str(p) for p in result.skipped],
-                "git": dataclasses.asdict(git_result) if git_result else None,
-            }
-        )
-        return
-    for path in result.written:
-        ui.console.print(f"[ok]created[/] {path}")
-    for path in result.skipped:
-        ui.console.print(f"[warn]exists, skipped[/] {path} (use --force to overwrite)")
-    if git_result:
-        if git_result.committed:
-            ui.console.print("[ok]git[/] initialised repository, committed the scaffold")
-        else:
-            ui.console.print(f"[warn]git[/] {git_result.detail}")
-    if result.written and not result.skipped:
-        ui.console.print(
-            f"\nScaffolded [b]{answers.entity_name}[/] in {directory}. "
-            "Next: [b]uv sync[/], then [b]quints check[/] and [b]quints mwst -q 2026-Q3[/]."
-        )
 
 
 def main() -> None:

@@ -16,11 +16,12 @@ LEDGER = """
 """
 
 
-def test_vat_json(tmp_path: Path) -> None:
+def test_vat_convert_json(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text(LEDGER)
     res = runner.invoke(
-        app, ["vat", "100", "EUR", "2026-07-02", "--bezugsteuer", "--json", "-f", str(led)]
+        app,
+        ["vat", "convert", "100", "EUR", "2026-07-02", "--bezugsteuer", "--json", "-f", str(led)],
     )
     assert res.exit_code == 0, res.output
     d = json.loads(res.output)
@@ -29,11 +30,39 @@ def test_vat_json(tmp_path: Path) -> None:
     assert "Bezugsteuer" in d["posting_text"]
 
 
+def test_vat_report_and_settle_json(tmp_path: Path) -> None:
+    led = tmp_path / "m.bean"
+    led.write_text(LEDGER)
+    res = runner.invoke(app, ["vat", "report", "-q", "2026-Q3", "--json", "-f", str(led)])
+    assert res.exit_code == 0, res.output
+    d = json.loads(res.output)
+    assert d["date_from"] == "2026-07-01" and d["date_to"] == "2026-09-30"
+
+    res = runner.invoke(app, ["vat", "settle", "-q", "2026-Q3", "--json", "-f", str(led)])
+    assert res.exit_code == 0, res.output
+    d = json.loads(res.output)
+    assert d["report"]["date_from"] == "2026-07-01"
+    assert d["settlement"]["link"] == "VAT-2026-Q3"
+    assert "VAT Settlement" in d["settlement"]["text"]
+
+
+def test_vat_status_json(tmp_path: Path) -> None:
+    led = tmp_path / "m.bean"
+    led.write_text(LEDGER)
+    res = runner.invoke(app, ["vat", "status", "--json", "-f", str(led)])
+    assert res.exit_code == 0, res.output
+    d = json.loads(res.output)
+    assert d["liabilities"] == [] and d["total_owed"] == "0"
+
+
 def test_check_json_ok_and_errors(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text(LEDGER)
     res = runner.invoke(app, ["check", "--json", "-f", str(led)])
-    assert res.exit_code == 0 and json.loads(res.output) == {"ok": True, "errors": []}
+    assert res.exit_code == 0
+    d = json.loads(res.output)
+    assert d["ok"] is True and d["errors"] == []
+    assert d["stats"]["directives"] == 2 and d["stats"]["by_type"] == {"Open": 1, "Price": 1}
 
     led.write_text(LEDGER + "\n2026-07-02 balance Assets:CH:GmbH:Tax:InputVAT 9.99 CHF\n")
     res = runner.invoke(app, ["check", "--json", "-f", str(led)])
@@ -41,21 +70,64 @@ def test_check_json_ok_and_errors(tmp_path: Path) -> None:
     assert res.exit_code == 1 and d["ok"] is False and d["errors"][0]["line"]
 
 
-def test_receivables_json(tmp_path: Path) -> None:
+def test_check_verbose_summary(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
-    led.write_text("""
+    led.write_text(LEDGER)
+    res = runner.invoke(app, ["check", "-v", "-f", str(led)])
+    assert res.exit_code == 0, res.output
+    assert "OK — no errors." in res.output
+    assert "Open" in res.output and "Price" in res.output  # the breakdown table
+
+
+RECEIVABLES_LEDGER = """
 2024-01-01 open Assets:CH:GmbH:Receivable:Trade
 2024-01-01 open Income:CH:GmbH:Consulting:External:Domestic
+2024-01-01 open Income:CH:GmbH:Consulting:External:Export
 2026-07-02 * "ACME" "June" ^ACME202606
   invoice: "ACME202606"
   Assets:CH:GmbH:Receivable:Trade   100.00 CHF
   Income:CH:GmbH:Consulting:External:Domestic
-""")
+2026-07-03 * "Globex" "June" ^GLOBEX202606
+  invoice: "GLOBEX202606"
+  Assets:CH:GmbH:Receivable:Trade   200.00 EUR
+  Income:CH:GmbH:Consulting:External:Export
+2026-07-10 price EUR 0.93 CHF
+"""
+
+
+def test_receivables_json(tmp_path: Path) -> None:
+    led = tmp_path / "m.bean"
+    led.write_text(RECEIVABLES_LEDGER)
     res = runner.invoke(app, ["receivables", "--at", "2026-07-12", "--json", "-f", str(led)])
     assert res.exit_code == 0, res.output
     d = json.loads(res.output)
     assert d["open"][0]["number"] == "ACME202606"
     assert d["open"][0]["open_amount"] == "100.00" and d["open"][0]["age_days"] == 10
+    totals = {t["currency"]: t for t in d["totals"]}
+    assert totals["CHF"]["converted"] == "100.00"
+    assert totals["EUR"]["converted"] == "186.00"  # 200 EUR at 0.93
+    assert d["consolidated"] == {"currency": "CHF", "total": "286.00", "missing_rates": []}
+
+
+def test_receivables_json_consolidation_currency_and_missing_rate(tmp_path: Path) -> None:
+    led = tmp_path / "m.bean"
+    led.write_text(RECEIVABLES_LEDGER)
+    # --in EUR: the EUR total needs no rate; CHF converts through the inverse.
+    res = runner.invoke(
+        app, ["receivables", "--at", "2026-07-12", "--in", "EUR", "--json", "-f", str(led)]
+    )
+    assert res.exit_code == 0, res.output
+    d = json.loads(res.output)
+    assert d["consolidated"]["currency"] == "EUR" and d["consolidated"]["missing_rates"] == []
+
+    # A currency with no rate is excluded and reported.
+    res = runner.invoke(
+        app, ["receivables", "--at", "2026-07-12", "--in", "USD", "--json", "-f", str(led)]
+    )
+    assert res.exit_code == 0, res.output
+    d = json.loads(res.output)
+    assert sorted(d["consolidated"]["missing_rates"]) == ["CHF", "EUR"]
+    assert d["consolidated"]["total"] == "0"
 
 
 def test_prices_sync_json_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

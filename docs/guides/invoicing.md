@@ -93,4 +93,10 @@ Open invoices against `Receivable:Trade`, grouped by invoice id, aged by due
 date. An invoice disappears from the list when the payment leg is booked with
 the same `^invoice-id` link.
 
+Each invoice shows in its own currency; below the per-currency totals a
+consolidated total converts everything at the latest rate in your price file
+(`≈ Total CHF`). It consolidates in the operating currency by default —
+`--in EUR` picks another. A currency with no rate is excluded and called out;
+`quints prices sync` fixes that.
+
 ![quints receivables lists open invoices aged by due date](../assets/receivables.gif)

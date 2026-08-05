@@ -17,7 +17,7 @@ There's no incumbent for this niche, and
 proposes bookings and `quints` checks and reports on them — it never calls a
 model itself.
 
-![quints init scaffolds sample books, quints check validates them, and quints mwst prints the Form-310 VAT return](docs/assets/quickstart.gif)
+![quints init scaffolds sample books, quints check validates them, and quints vat report prints the Form-310 VAT return](docs/assets/quickstart.gif)
 
 **Docs: [sealambda.github.io/quints](https://sealambda.github.io/quints/)** —
 every command shown there is executed by the test suite.
@@ -39,7 +39,7 @@ Scaffold a project with a sample quarter already booked, and run against it:
 ```bash
 quints init my-books --samples --yes   # drop --yes to answer the questionnaire
 cd my-books
-quints mwst -q 2026-Q3
+quints vat report -q 2026-Q3
 ```
 
 `quints init` writes a runnable project: a Swiss KMU chart of accounts in
@@ -67,8 +67,8 @@ Run these from your project directory; with `--samples` they work out of the box
 ### File your quarterly Swiss VAT (MWST)
 
 ```bash
-quints mwst -q 2026-Q3    # Form-310 Ziffern, mapped to the ESTV return
-quints status             # VAT filed but not yet paid, with due dates
+quints vat report -q 2026-Q3    # Form-310 Ziffern, mapped to the ESTV return
+quints vat status         # VAT filed but not yet paid, with due dates
 ```
 
 ### See who owes you

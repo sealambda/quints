@@ -194,7 +194,7 @@ def test_generated_ledger_reports_expected_numbers(tmp_path: Path):
     assert erfolg.ebit == Decimal("1376.00")  # revenue 1470 − IT expense 94
     assert erfolg.result == Decimal("1376.00")
 
-    open_inv, _at = receivables.compute(main, Date(2026, 12, 31), cfg)
+    open_inv, _cons, _at = receivables.compute(main, Date(2026, 12, 31), cfg)
     assert [o.number for o in open_inv] == ["INV2026015"]
     assert open_inv[0].open_amount == Decimal("500.00")
     assert open_inv[0].currency == "EUR"

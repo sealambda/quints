@@ -34,7 +34,7 @@ LEDGER = """
 def test_open_invoices_and_aging(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text(LEDGER)
-    open_invoices, _at = receivables.compute(led, date(2026, 7, 1), config.Config())
+    open_invoices, _cons, _at = receivables.compute(led, date(2026, 7, 1), config.Config())
     assert [o.number for o in open_invoices] == ["ACME202605"]  # 202606 fully paid
     o = open_invoices[0]
     assert o.open_amount == Decimal("400.00")
@@ -45,7 +45,7 @@ def test_open_invoices_and_aging(tmp_path: Path) -> None:
 def test_at_date_excludes_later_payments(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text(LEDGER)
-    open_invoices, _ = receivables.compute(led, date(2026, 5, 15), config.Config())
+    open_invoices, _cons, _ = receivables.compute(led, date(2026, 5, 15), config.Config())
     assert {(o.number, o.open_amount) for o in open_invoices} == {
         ("ACME202605", Decimal("1000.00")),
     }
@@ -63,8 +63,48 @@ def test_posting_level_invoice_metadata_reallocates(tmp_path: Path) -> None:
     invoice: "ACME202606"
 """
     )
-    open_invoices, _ = receivables.compute(led, date(2026, 7, 1), config.Config())
+    open_invoices, _cons, _ = receivables.compute(led, date(2026, 7, 1), config.Config())
     # 202605 closed by the relink; 202606 reopened by it
     assert {(o.number, o.open_amount) for o in open_invoices} == {
         ("ACME202606", Decimal("400.00")),
     }
+
+
+MULTI_CURRENCY = """
+2024-01-01 open Assets:CH:GmbH:Receivable:Trade
+2024-01-01 open Income:CH:GmbH:Consulting:External:Export
+
+2026-06-01 * "Globex" "June" ^GLOBEX202606
+  invoice: "GLOBEX202606"
+  Assets:CH:GmbH:Receivable:Trade       1000.00 EUR
+  Income:CH:GmbH:Consulting:External:Export
+
+2026-06-10 * "Initech" "June" ^INITECH202606
+  invoice: "INITECH202606"
+  Assets:CH:GmbH:Receivable:Trade        500.00 CHF
+  Income:CH:GmbH:Consulting:External:Export
+
+2026-06-28 price EUR 0.93 CHF
+"""
+
+
+def test_consolidation_converts_at_latest_rate(tmp_path: Path) -> None:
+    led = tmp_path / "m.bean"
+    led.write_text(MULTI_CURRENCY)
+    _open, cons, _ = receivables.compute(led, date(2026, 7, 1), config.Config())
+    assert cons.currency == "CHF" and cons.missing == []
+    assert cons.grand_total == Decimal("1430.00")  # 1000 EUR at 0.93 + 500 CHF
+    eur = next(ct for ct in cons.totals if ct.currency == "EUR")
+    assert eur.total == Decimal("1000.00")
+    assert eur.converted == Decimal("930.00")
+    assert eur.rate == Decimal("0.93") and eur.rate_date == date(2026, 6, 28)
+
+
+def test_consolidation_missing_rate_is_excluded_and_reported(tmp_path: Path) -> None:
+    led = tmp_path / "m.bean"
+    led.write_text(MULTI_CURRENCY.replace("2026-06-28 price EUR 0.93 CHF", ""))
+    _open, cons, _ = receivables.compute(led, date(2026, 7, 1), config.Config())
+    assert cons.missing == ["EUR"]
+    assert cons.grand_total == Decimal("500.00")  # the CHF part only
+    eur = next(ct for ct in cons.totals if ct.currency == "EUR")
+    assert eur.converted is None and eur.rate is None

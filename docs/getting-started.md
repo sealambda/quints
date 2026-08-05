@@ -61,7 +61,7 @@ creates a nested one.
 ```bash
 cd jane-books
 quints check
-quints mwst -q 2026-Q3
+quints vat report -q 2026-Q3
 quints report bilanz --at 2026-12-31
 ```
 

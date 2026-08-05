@@ -93,8 +93,8 @@ strings:
 
 ```bash
 quints check --json
-quints mwst -q 2026-Q3 --json
-quints status --json
+quints vat report -q 2026-Q3 --json
+quints vat status --json
 quints report bilanz --at 2026-12-31 --json
 quints receivables --json
 ```
@@ -103,7 +103,7 @@ JSON Schemas for the invoicing files are hosted at
 https://sealambda.github.io/quints/schema/ (`quints schema` writes them
 locally to `invoicing/schema/`).
 
-Never invent VAT numbers or rates — compute them with `quints mwst`.
+Never invent VAT numbers or rates — compute them with `quints vat report`.
 
 ## Sample data — replace before the books are real
 

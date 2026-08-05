@@ -34,20 +34,20 @@ bundled. Nothing else to install.
 quints init my-books --samples --yes    # drop --yes to answer the questionnaire
 cd my-books
 quints check
-quints mwst -q 2026-Q3
+quints vat report -q 2026-Q3
 ```
 
 That's a runnable project with a sample quarter booked and a Form-310 VAT
 report on screen. [Getting started](getting-started.md) walks through a real
 setup — including the legal-form choice.
 
-![quints init scaffolds sample books, quints check validates them, and quints mwst prints the Form-310 VAT return](assets/quickstart.gif)
+![quints init scaffolds sample books, quints check validates them, and quints vat report prints the Form-310 VAT return](assets/quickstart.gif)
 
 ## By the job
 
 | You need to | Run | Guide |
 |---|---|---|
-| File quarterly VAT | `quints mwst -q 2026-Q3` | [Quarterly VAT](guides/vat.md) |
+| File quarterly VAT | `quints vat report -q 2026-Q3` | [Quarterly VAT](guides/vat.md) |
 | See who owes you | `quints receivables` | [Invoicing](guides/invoicing.md) |
 | Send a QR-bill invoice | `quints invoice <invoice.yaml>` | [Invoicing](guides/invoicing.md) |
 | Book bank/PSP activity | `quints import ubs <statement.mt940>` | [Import statements](guides/importing.md) |

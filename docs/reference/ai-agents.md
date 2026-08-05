@@ -37,8 +37,8 @@ and a wrong edit is a revert, not an archaeology dig. Always.
 Every reporting command takes `--json`:
 
 ```bash
-quints mwst -q 2026-Q3 --json
-quints status --json
+quints vat report -q 2026-Q3 --json
+quints vat status --json
 quints report bilanz --at 2026-12-31 --json
 quints receivables --json
 ```
