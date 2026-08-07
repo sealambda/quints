@@ -29,16 +29,16 @@
       "type": "object"
     },
     "Brand": {
-      "description": "Typography and colour tokens the template renders with.\n\nThe colour defaults reproduce the neutral greyscale the template used\nbefore tokens existed, so an issuer config that sets none of them keeps\nits previous look. An issuer with a palette overrides them all.",
+      "description": "Typography and colour tokens the template renders with.\n\nThe defaults are Sealambda's brand \u2014 the Tyrian palette and the three OFL\nfamilies bundled with the package (Geist body, Newsreader title, Geist\nMono figures), so an unconfigured issuer still gets a designed invoice\nwith fixed-width, digit-aligned amounts. An issuer with their own palette\nand families overrides them all.",
       "properties": {
         "accent": {
-          "default": "#123c3a",
+          "default": "#6b1f4a",
           "pattern": "^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
           "title": "Accent",
           "type": "string"
         },
         "font": {
-          "default": "Liberation Sans",
+          "default": "Geist",
           "title": "Font",
           "type": "string"
         },
@@ -51,7 +51,7 @@
               "type": "null"
             }
           ],
-          "default": null,
+          "default": "Newsreader",
           "title": "Font Display"
         },
         "font_display_stretch": {
@@ -60,7 +60,7 @@
           "type": "integer"
         },
         "font_display_weight": {
-          "default": "semibold",
+          "default": "regular",
           "enum": [
             "regular",
             "medium",
@@ -79,7 +79,7 @@
               "type": "null"
             }
           ],
-          "default": null,
+          "default": "Geist Mono",
           "title": "Font Mono"
         },
         "font_dir": {
@@ -112,25 +112,25 @@
           "type": "number"
         },
         "ink": {
-          "default": "#141414",
+          "default": "#1c1618",
           "pattern": "^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
           "title": "Ink",
           "type": "string"
         },
         "subtle": {
-          "default": "#696969",
+          "default": "#655753",
           "pattern": "^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
           "title": "Subtle",
           "type": "string"
         },
         "rule": {
-          "default": "#d2d2d2",
+          "default": "#cfbdb7",
           "pattern": "^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
           "title": "Rule",
           "type": "string"
         },
         "panel": {
-          "default": "#f6f6f6",
+          "default": "#ede4e0",
           "pattern": "^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
           "title": "Panel",
           "type": "string"

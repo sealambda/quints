@@ -412,11 +412,20 @@ def _prices_bean(answers: Answers) -> str:
 
 # ── invoicing samples ────────────────────────────────────────────────────────
 
-# Checksum-valid demo identifiers (stdnum-verified) — obviously not real.
+# The sample issuer is Sealambda GmbH — the tool's maker, whose brand
+# (bundled fonts, palette, wordmark) is also the rendering default. Real
+# identifiers, on purpose: the demo invoice is a finished, real-looking
+# document, and every scaffold quietly builds the brand. The AGENTS.md
+# checklist tells users to replace all of it before issuing.
 _SAMPLE_VAT_ID = "CHE-267.359.056 MWST"
-_SAMPLE_QR_IBAN = "CH44 3199 9123 0008 8901 2"  # QR-IID range 30000–31999
-_SAMPLE_IBAN = "CH93 0076 2011 6238 5295 7"
-_SAMPLE_CUSTOMER_VAT_ID = "IE1234567T"
+_SAMPLE_QR_IBAN = "CH74 3000 5263 1434 9501 E"  # UBS QR-IBAN (QR-IID 30005)
+_SAMPLE_CHF_IBAN = "CH27 0026 3263 1434 9501 E"  # regular UBS IBAN — CHF from abroad
+_SAMPLE_EUR_IBAN = "BE11 9679 6818 4648"  # Wise Europe SA
+_SAMPLE_CUSTOMER_VAT_ID = "IE1234567T"  # checksum-valid fake — the customers stay demo
+
+# Sealambda wordmark, outlined (paths, no live <text>), scaffolded next to the
+# issuer config so the sample invoice carries a real logo.
+_WORDMARK_SVG = (Path(__file__).parent / "init_assets" / "wordmark.svg").read_text()
 
 
 def _modeline(schema: str) -> str:
@@ -426,26 +435,38 @@ def _modeline(schema: str) -> str:
     return f"# yaml-language-server: $schema={config.DOCS_URL}/schema/{schema}.schema.json"
 
 
-def _issuer_yaml(answers: Answers) -> str:
+def _issuer_yaml(_answers: Answers) -> str:
     return "\n".join(
         [
             _modeline("issuer"),
             "# Issuer identity for `quints invoice` — name, address, VAT ID, and one",
-            "# bank account per invoicing currency. Sample data: replace the VAT ID",
-            "# and IBANs with your own before issuing a real invoice.",
-            f"name: {answers.entity_name}",
+            "# bank account per invoicing currency. The sample is Sealambda's real",
+            "# identity (the tool's maker) so the demo renders a finished invoice —",
+            "# replace every field with your own before issuing.",
+            "name: Sealambda GmbH",
             "address:",
-            "  - Beispielstrasse 1",
-            "  - 8000 Zürich",
+            "  - Sulzerstrasse 1",
+            "  - 4528 Zuchwil",
             f"vat_id: {_SAMPLE_VAT_ID}",
-            "email: billing@example.ch",
+            "email: receivables@sealambda.com",
+            'phone: "+41 76 297 79 35"',
             "bank:",
             "  CHF:",
             "    # QR-IBAN (QR-IID variant) — a Swiss QR-bill with a QRR reference.",
             f"    qr_iban: {_SAMPLE_QR_IBAN}",
+            "    # Regular IBAN — CHF arriving from abroad can't use the QR scheme.",
+            f"    iban: {_SAMPLE_CHF_IBAN}",
+            "    bic: UBSWCHZH80A",
             "  EUR:",
             "    # Regular IBAN — foreign transfers can't use the QR-bill scheme.",
-            f"    iban: {_SAMPLE_IBAN}",
+            f"    iban: {_SAMPLE_EUR_IBAN}",
+            "    bic: TRWIBEB1XXX",
+            "# Typography and palette default to the bundled Sealambda brand — Geist,",
+            "# Newsreader and Geist Mono with the Tyrian palette (`quints schema` lists",
+            "# every token). The logo is the one asset opted into by path.",
+            "brand:",
+            "  logo: invoicing/wordmark.svg",
+            "  logo_height: 9 # mm",
             "",
         ]
     )
@@ -722,8 +743,9 @@ def _agents_sample_section(answers: Answers) -> str:
         "The scaffold seeded a demo quarter so every command has data. Before",
         "booking real activity:",
         "",
-        f"- [ ] `invoicing/issuer.yaml` — the VAT ID ({_SAMPLE_VAT_ID}) and both",
-        "      IBANs are checksum-valid fakes; put the real ones in.",
+        "- [ ] `invoicing/issuer.yaml` — the whole file is Sealambda's real identity",
+        "      (name, VAT ID, IBANs, logo); replace it with your own, and swap or",
+        "      delete `invoicing/wordmark.svg`.",
         "- [ ] `invoicing/customers.yaml` — replace the demo customers (acme, globex).",
         f"- [ ] `invoicing/acme-{year}-07.yaml` and `invoicing/globex-{year}-08.yaml`",
         "      — delete the demo invoices.",
@@ -883,6 +905,7 @@ def plan(answers: Answers) -> list[ScaffoldFile]:
         # quarter — so `quints invoice` is testable out of the box.
         invoicing = [
             ScaffoldFile(Path("invoicing/issuer.yaml"), _issuer_yaml(answers)),
+            ScaffoldFile(Path("invoicing/wordmark.svg"), _WORDMARK_SVG),
             ScaffoldFile(Path("invoicing/customers.yaml"), _customers_yaml(answers)),
             ScaffoldFile(Path(f"invoicing/acme-{year}-07.yaml"), _invoice_acme_yaml(answers)),
             ScaffoldFile(Path(f"invoicing/globex-{year}-08.yaml"), _invoice_globex_yaml(answers)),

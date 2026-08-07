@@ -18,10 +18,12 @@ from .labels import labels as get_labels
 from .model import Invoice, Issuer, Totals, compute, make_scor, money, number
 
 TEMPLATE = Path(__file__).parent / "template.typ"
-# Liberation Sans, always on the search path: the default `Brand.font`, the
-# template's last-resort fallback, and the only face the QR-bill payment part
-# is allowed to use that we can ship. See fonts/README.md.
+# Always on the search path: the default brand families (Geist, Geist Mono,
+# Newsreader) plus Liberation Sans — the template's last-resort fallback and
+# the only face the QR-bill payment part is allowed to use that we can ship.
+# See fonts/README.md.
 BUNDLED_FONTS = Path(__file__).parent / "fonts"
+BUNDLED_FAMILIES = frozenset({"Geist", "Geist Mono", "Newsreader", "Liberation Sans"})
 
 
 class InvoiceContext(TypedDict):
@@ -134,12 +136,12 @@ def _compile(
 ) -> None:
     """Compile to PDF/A-2b (archival) when supported, else a plain PDF.
 
-    `only_bundled` switches machine-installed families off, and is set when the
-    issuer ships their own font directory. Without it, a variable font installed
-    on the designer's machine shadows the bundled static cuts of the same family
-    and every weight silently collapses to the variable font's default instance,
-    so the same invoice renders differently on a colleague's machine. Issuers on
-    the default font keep system fonts, since their families may live there.
+    `only_bundled` switches machine-installed families off. Without it, a
+    variable font installed on the designer's machine shadows the bundled (or
+    issuer-shipped) static cuts of the same family and every weight silently
+    collapses to the variable font's default instance, so the same invoice
+    renders differently on a colleague's machine. Only an issuer who names a
+    family that neither we nor they ship keeps system fonts on.
     """
     fonts = [str(p) for p in font_paths]
     base: dict[str, object] = {"output": str(output), "root": str(root), "font_paths": fonts}
@@ -217,10 +219,13 @@ def render(inv: Invoice, issuer: Issuer, out_path: Path) -> tuple[Path, Totals, 
         # Ours first so the guaranteed fallback is always resolvable; the
         # issuer's own families win on name, not on search order.
         font_paths = [BUNDLED_FONTS, *issuer_fonts]
+        brand = issuer.brand
+        named = {brand.font, brand.font_display or brand.font, brand.font_mono or brand.font}
+        only_bundled = bool(issuer_fonts) or named <= BUNDLED_FAMILIES
 
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        _compile(work / "template.typ", out_path, work, font_paths, bool(issuer_fonts))
+        _compile(work / "template.typ", out_path, work, font_paths, only_bundled)
         return out_path, totals, qr_payload
     finally:
         shutil.rmtree(work, ignore_errors=True)

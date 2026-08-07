@@ -268,28 +268,30 @@ HexColor = Annotated[
 class Brand(BaseModel):
     """Typography and colour tokens the template renders with.
 
-    The colour defaults reproduce the neutral greyscale the template used
-    before tokens existed, so an issuer config that sets none of them keeps
-    its previous look. An issuer with a palette overrides them all.
+    The defaults are Sealambda's brand — the Tyrian palette and the three OFL
+    families bundled with the package (Geist body, Newsreader title, Geist
+    Mono figures), so an unconfigured issuer still gets a designed invoice
+    with fixed-width, digit-aligned amounts. An issuer with their own palette
+    and families overrides them all.
     """
 
-    accent: HexColor = "#123c3a"
-    font: str = "Liberation Sans"
-    font_display: str | None = None  # title/wordmark family; defaults to `font`
+    accent: HexColor = "#6b1f4a"  # title, amount due, leading rules
+    font: str = "Geist"
+    font_display: str | None = "Newsreader"  # title/wordmark family; None → `font`
     font_display_stretch: int = 100  # CSS-style font-stretch % (125 → Expanded cut)
     # Title weight. Not every display family ships every cut — Mona Sans
     # Expanded starts at Medium, so asking for "regular" silently drops back to
     # the normal-width face; a serif title usually wants "regular".
-    font_display_weight: Literal["regular", "medium", "semibold", "bold"] = "semibold"
-    font_mono: str | None = None  # figures, IBAN, reference; defaults to `font`
+    font_display_weight: Literal["regular", "medium", "semibold", "bold"] = "regular"
+    font_mono: str | None = "Geist Mono"  # figures, IBAN, reference; None → `font`
     font_dir: str | None = None  # bundled fonts dir passed to typst (repo-relative)
     logo: str | None = None
     logo_height: float = 12.0  # mm, as placed in the header
 
-    ink: HexColor = "#141414"  # body copy
-    subtle: HexColor = "#696969"  # labels and secondary text
-    rule: HexColor = "#d2d2d2"  # hairlines
-    panel: HexColor = "#f6f6f6"  # fill behind bounded blocks
+    ink: HexColor = "#1c1618"  # body copy
+    subtle: HexColor = "#655753"  # labels and secondary text
+    rule: HexColor = "#cfbdb7"  # hairlines
+    panel: HexColor = "#ede4e0"  # fill behind bounded blocks
 
 
 class Issuer(BaseModel):
@@ -351,8 +353,26 @@ def document_path(inv: Invoice, income_account: str, root: Path = Path("document
     return root.joinpath(*income_account.split(":")) / name
 
 
+def _resolve_asset(p: str | None, issuer_dir: Path) -> str | None:
+    """Resolve a brand asset path (logo, font_dir) from the issuer config.
+
+    As given first (absolute, or relative to the cwd — the historical
+    contract), then relative to the issuer file's directory, then to its
+    parent (the project root, for `invoicing/…`-style paths) — so the
+    scaffolded config renders with its wordmark from any working directory."""
+    if p is None or Path(p).is_absolute() or Path(p).exists():
+        return p
+    for root in (issuer_dir, issuer_dir.parent):
+        if (root / p).exists():
+            return str(root / p)
+    return p
+
+
 def load_issuer(path: Path) -> Issuer:
-    return Issuer.model_validate(load_mapping(path))
+    issuer = Issuer.model_validate(load_mapping(path))
+    issuer.brand.logo = _resolve_asset(issuer.brand.logo, path.parent)
+    issuer.brand.font_dir = _resolve_asset(issuer.brand.font_dir, path.parent)
+    return issuer
 
 
 def load_customers(path: Path) -> CustomerRegistry:

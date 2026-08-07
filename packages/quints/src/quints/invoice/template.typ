@@ -6,8 +6,9 @@
 //   ink     — body copy            subtle — labels and secondary text
 //   rule    — hairlines            panel  — fill behind bounded blocks
 // and three families: `font` (body), `font_display` (title), `font_mono` —
-// every figure, IBAN and reference. Set `font_mono` to a real monospace and the
-// amount columns align on the digit; left unset it follows the body face.
+// every figure, IBAN and reference. `font_mono` defaults to the bundled Geist
+// Mono, so amount columns align on the digit out of the box; an issuer may
+// swap in any family (tabular figures are requested either way).
 #let d = json("data.json")
 #let L = d.labels
 #let accent = rgb(d.brand.accent)
@@ -31,9 +32,11 @@
 
 // Small tracked capitals: every label in the document, at one size.
 #let label(it) = text(size: 7pt, weight: "medium", tracking: 0.1em, fill: subtle)[#upper(it)]
-// Figures. Tabular by construction — the mono family keeps columns on the digit.
+// Figures. The mono family keeps columns on the digit; `number-width` asks a
+// proportional fallback for its tabular figures, so alignment survives even
+// when the issuer points `font_mono` at a non-monospace face.
 #let fig(it, weight: "regular", fill: ink, size: 9.5pt) = text(
-  font: mono, size: size, weight: weight, fill: fill,
+  font: mono, size: size, weight: weight, fill: fill, number-width: "tabular",
 )[#it]
 
 #set document(title: L.invoice + " " + d.invoice.number, author: d.issuer.name)
@@ -99,8 +102,12 @@
   align: (x, y) => if x >= 2 { right } else { left },
   stroke: none,
   table.hline(stroke: 1pt + accent),
+  // The currency lives in the column headers (and once more on the amount
+  // due), never inside the amount cells: a repeated "CHF " prefix is what
+  // keeps right-aligned columns from ever lining up on the digit.
   table.header(
-    label(L.pos), label(L.description), label(L.qty), label(L.unit_price), label(L.line_total),
+    label(L.pos), label(L.description), label(L.qty),
+    label(L.unit_price + " " + d.currency), label(L.line_total + " " + d.currency),
   ),
   table.hline(stroke: 0.5pt + rule),
   ..d.items.map(it => (
@@ -114,29 +121,31 @@
 )
 
 // ── Totals ────────────────────────────────────────────────────────────
+// One grid, so every amount shares a single right-aligned column that ends
+// exactly where the line-item total column does; the figures are bare (the
+// currency is named in the table header and on the amount due).
 #v(4mm)
 #align(right, block(width: 76mm)[
-  #let row(l, v) = grid(
-    columns: (1fr, auto), column-gutter: 6mm,
-    align(horizon, label(l)), v,
+  #let row(l, v) = (align(horizon, label(l)), fig(v))
+  #grid(
+    columns: (1fr, auto), column-gutter: 6mm, row-gutter: 7pt,
+    ..row(L.subtotal, d.totals.subtotal),
+    ..(if not d.totals.export {
+      row(L.vat + " " + d.totals.vat_rate + "%", d.totals.vat_amount)
+    } else { () }),
+    ..(if d.totals.show_rounding { row(L.rounding, d.totals.rounding) } else { () }),
   )
-  #row(L.subtotal, fig(d.currency + " " + d.totals.subtotal))
-  #if not d.totals.export {
-    v(3pt)
-    row(L.vat + " " + d.totals.vat_rate + "%", fig(d.currency + " " + d.totals.vat_amount))
-  }
-  #if d.totals.show_rounding {
-    v(3pt)
-    row(L.rounding, fig(d.currency + " " + d.totals.rounding))
-  }
-  #v(5pt)
-  // The amount due is the one thing a reader looks for: accent on a tinted band.
-  #block(fill: panel, inset: (x: 8pt, y: 7pt), width: 100%,
+  #v(6pt)
+  // The amount due is the one thing a reader looks for: accent on a tinted
+  // band. The fill bleeds outward (`outset`), no horizontal inset — so the
+  // amount keeps the exact right edge of every figure above it.
+  #block(fill: panel, inset: (y: 7pt), outset: (x: 8pt), width: 100%,
     grid(columns: (1fr, auto), column-gutter: 6mm,
       align(horizon, text(size: 8pt, weight: "medium", tracking: 0.1em, fill: accent)[
         #upper(L.grand_total)
       ]),
-      fig(d.currency + " " + d.totals.grand_total, weight: "medium", fill: accent, size: 12pt),
+      [#text(size: 8pt, fill: accent, tracking: 0.05em)[#d.currency]
+        #fig(d.totals.grand_total, weight: "medium", fill: accent, size: 12pt)],
     ),
   )
 ])

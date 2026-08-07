@@ -213,7 +213,11 @@ def test_sample_invoices_render_and_reconcile(tmp_path: Path):
     main = tmp_path / "main.bean"
     registry = im.load_customers(tmp_path / "invoicing/customers.yaml")
     issuer = im.load_issuer(tmp_path / "invoicing/issuer.yaml")
-    assert issuer.name == "Smoke GmbH"
+    # The sample issuer is Sealambda's real identity — independent of the
+    # entity the books are scaffolded for (the checklist says to replace it).
+    assert issuer.name == "Sealambda GmbH"
+    # The scaffolded wordmark must resolve regardless of the test's cwd.
+    assert issuer.brand.logo is not None and Path(issuer.brand.logo).exists()
 
     domestic = im.load_invoice(tmp_path / "invoicing/acme-2026-07.yaml", registry)
     _path, totals, payload = ir.render(domestic, issuer, tmp_path / "acme.pdf")

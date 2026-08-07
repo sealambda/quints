@@ -110,8 +110,9 @@ Never invent VAT numbers or rates — compute them with `quints vat report`.
 The scaffold seeded a demo quarter so every command has data. Before
 booking real activity:
 
-- [ ] `invoicing/issuer.yaml` — the VAT ID (CHE-267.359.056 MWST) and both
-      IBANs are checksum-valid fakes; put the real ones in.
+- [ ] `invoicing/issuer.yaml` — the whole file is Sealambda's real identity
+      (name, VAT ID, IBANs, logo); replace it with your own, and swap or
+      delete `invoicing/wordmark.svg`.
 - [ ] `invoicing/customers.yaml` — replace the demo customers (acme, globex).
 - [ ] `invoicing/acme-2026-07.yaml` and `invoicing/globex-2026-08.yaml`
       — delete the demo invoices.

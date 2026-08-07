@@ -332,14 +332,28 @@ def test_brand_tokens_reach_the_template_context():
 
 
 def test_brand_font_families_fall_back_to_the_body_face():
+    # Explicitly nulled display/mono families follow the body face; the
+    # defaults themselves are the bundled brand (Newsreader / Geist Mono).
     from quints.invoice.model import Brand
     from quints.invoice.render import build_context
 
-    issuer = ISSUER.model_copy(update={"brand": Brand(font="Mona Sans")})
+    issuer = ISSUER.model_copy(
+        update={"brand": Brand(font="Mona Sans", font_display=None, font_mono=None)}
+    )
     inv = _export()
     brand = build_context(inv, issuer, compute(inv), {})["brand"]
     assert brand["font_display"] == "Mona Sans"
     assert brand["font_mono"] == "Mona Sans"
+
+
+def test_brand_defaults_are_the_bundled_families():
+    # An unconfigured issuer must never depend on machine-installed fonts:
+    # every default family ships with the package.
+    from quints.invoice.model import Brand
+    from quints.invoice.render import BUNDLED_FAMILIES
+
+    b = Brand()
+    assert {b.font, b.font_display, b.font_mono} <= BUNDLED_FAMILIES
 
 
 def test_brand_rejects_a_non_hex_colour():
@@ -526,9 +540,10 @@ def test_issuer_bundled_fonts_switch_off_machine_fonts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """Regression: a variable font installed on the rendering machine shadows
-    the bundled static cuts of the same family, collapsing every weight to the
-    variable default. Only an issuer that ships fonts opts out of system ones —
-    issuers on the default font may legitimately keep a family installed."""
+    the bundled (or issuer-shipped) static cuts of the same family, collapsing
+    every weight to the variable default. System fonts stay off whenever the
+    issuer ships fonts OR names only bundled families (the default brand does);
+    only naming a family that neither side ships keeps them on."""
     import typst
 
     from quints.invoice import render
@@ -543,7 +558,11 @@ def test_issuer_bundled_fonts_switch_off_machine_fonts(
     monkeypatch.setattr(typst, "compile", spy)
 
     fonts = render.BUNDLED_FONTS  # any real directory will do
-    for brand, expected in [(Brand(font_dir=str(fonts)), True), (Brand(), False)]:
+    for brand, expected in [
+        (Brand(font_dir=str(fonts)), True),
+        (Brand(), True),  # default brand = bundled families only
+        (Brand(font="Mona Sans"), False),  # machine-installed family, not shipped
+    ]:
         seen.clear()
         issuer = ISSUER.model_copy(update={"brand": brand})
         with pytest.raises(ValueError):
