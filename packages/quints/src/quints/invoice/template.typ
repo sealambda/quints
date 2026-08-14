@@ -182,10 +182,17 @@
   block(fill: panel, inset: (x: 10pt, y: 9pt), width: 100%)[
     #text(size: 8pt, weight: "medium", tracking: 0.1em, fill: accent)[#upper(L.payment_to)]
     #v(4pt)
+    // Beneficiary, IBAN, BIC — the three fields a payer retypes into their
+    // banking form, and the three a mismatch bounces the transfer on. The BIC
+    // is mandatory on this branch (render.py refuses without one); the bank's
+    // name sits next to it so the payer can sanity-check the code instead of
+    // looking up their own.
     #grid(columns: (auto, 1fr), column-gutter: 7mm, row-gutter: 4pt,
+      align(horizon, label(L.beneficiary)), text(size: 9.5pt)[#d.payment.beneficiary],
       align(horizon, label("IBAN")), fig(d.payment.iban),
-      ..(if d.payment.bic != none {
-        (align(horizon, label("BIC")), fig(d.payment.bic))
+      align(horizon, label("BIC/SWIFT")), fig(d.payment.bic, weight: "medium"),
+      ..(if d.payment.bank_name != none {
+        (align(horizon, label(L.bank)), text(size: 9.5pt)[#d.payment.bank_name])
       } else { () }),
       align(horizon, label(L.reference)), fig(d.payment.reference),
     )

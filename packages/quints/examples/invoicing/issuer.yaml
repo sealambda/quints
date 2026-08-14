@@ -17,10 +17,16 @@ bank:
     # Regular IBAN — CHF arriving from abroad can't use the QR scheme.
     iban: CH27 0026 3263 1434 9501 E
     bic: UBSWCHZH80A
+    bank_name: UBS Switzerland AG, Zürich
   EUR:
     # Regular IBAN — foreign transfers can't use the QR-bill scheme.
     iban: BE11 9679 6818 4648
+    # BIC is mandatory here: an export invoice won't render without
+    # one, and a payer who guesses it gets the transfer returned.
+    # Ask your bank — `quints iban` checks the pair. bank_name is
+    # optional and lets the payer sanity-check the BIC.
     bic: TRWIBEB1XXX
+    bank_name: Wise Europe SA, Brussels
 # Typography and palette default to the bundled Sealambda brand — Geist,
 # Newsreader and Geist Mono with the Tyrian palette (`quints schema` lists
 # every token). The logo is the one asset opted into by path.

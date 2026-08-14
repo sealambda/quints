@@ -50,6 +50,7 @@ setup — including the legal-form choice.
 | File quarterly VAT | `quints vat report -q 2026-Q3` | [Quarterly VAT](guides/vat.md) |
 | See who owes you | `quints receivables` | [Invoicing](guides/invoicing.md) |
 | Send a QR-bill invoice | `quints invoice <invoice.yaml>` | [Invoicing](guides/invoicing.md) |
+| Check an IBAN and its BIC | `quints iban` | [Invoicing](guides/invoicing.md) |
 | Book bank/PSP activity | `quints import ubs <statement.mt940>` | [Import statements](guides/importing.md) |
 | Year-end statements | `quints report statements --year 2026` | [Statutory reports](guides/reports.md) |
 | Keep FX rates right | `quints prices sync` | [FX rates](guides/fx.md) |

@@ -22,9 +22,12 @@ from pydantic import (
     Field,
     RootModel,
     StringConstraints,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
+
+from . import bank
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -246,14 +249,31 @@ class Invoice(BaseModel):
 
 
 class BankAccount(BaseModel):
+    """Where an invoice asks to be paid, for one currency.
+
+    Every number here is validated the way a bank would — a transposed IBAN or
+    a malformed BIC fails at load, not after the PDF has left the building.
+    `bic` is mandatory for any currency you invoice abroad in: rendering an
+    export invoice without one is refused, because a customer who has to look
+    the BIC up themselves is a customer who can get it wrong and have the
+    transfer returned. `quints iban` checks a pair before it ships.
+    """
+
     iban: str = ""  # regular IBAN — SEPA/international credit transfers
     qr_iban: str = ""  # QR-IID variant — Swiss QR-bill with QRR reference ONLY
-    bic: str | None = None
+    bic: str | None = None  # BIC/SWIFT — required on export invoices
+    holder: str | None = None  # account holder, when it is not the issuer
+    bank_name: str | None = None  # the institution, e.g. "Wise Europe SA, Brussels"
 
     @field_validator("iban", "qr_iban")
     @classmethod
-    def _strip(cls, v: str) -> str:
-        return v.replace(" ", "")
+    def _check_iban(cls, v: str, info: ValidationInfo) -> str:
+        return bank.clean_iban(v, info.field_name or "iban") if v.strip() else ""
+
+    @field_validator("bic")
+    @classmethod
+    def _check_bic(cls, v: str | None) -> str | None:
+        return bank.clean_bic(v) if v and v.strip() else None
 
 
 # Every hex form Typst's `rgb()` takes: RGB, RGBA, RRGGBB, RRGGBBAA. `accent`

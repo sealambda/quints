@@ -45,9 +45,52 @@ items:
 locale: de_CH
 ```
 
-Issuer identity — name, address, VAT ID, IBAN/QR-IBAN per currency, logo —
+Issuer identity — name, address, VAT ID, bank details per currency, logo —
 lives once in `invoicing/issuer.yaml`. Repeat customers can live in
 `invoicing/customers.yaml` and be referenced by key (`customer: acme`).
+
+## Bank details
+
+One account per invoicing currency, under `bank`:
+
+```yaml
+bank:
+  CHF:
+    qr_iban: CH74 3000 5263 1434 9501 E  # QR-bill with a QRR reference
+    iban: CH27 0026 3263 1434 9501 E     # CHF arriving from abroad
+    bic: UBSWCHZH80A
+    bank_name: UBS Switzerland AG, Zürich # optional
+  EUR:
+    iban: BE11 9679 6818 4648
+    bic: TRWIBEB1XXX
+    bank_name: Wise Europe SA, Brussels
+    holder: Sealambda GmbH                # optional — if not the issuer
+```
+
+Every IBAN is checked at load (length, national layout, mod-97 check digits)
+and every BIC against ISO 9362, so a transposed digit fails before the PDF
+exists rather than after it was sent.
+
+**`bic` is mandatory for any currency you invoice abroad in.** An export
+invoice refuses to render without one: it goes on the PDF as `BIC/SWIFT`,
+next to the beneficiary and the bank's name, so the payer copies it instead
+of looking one up — a guessed BIC is how a SEPA transfer comes back. quints
+never derives it from the IBAN: that mapping lives in a bank registry that
+changes, and a wrong-but-plausible BIC would be worse than none. Ask the bank
+that holds the account.
+
+To check a pair before it ships — or every account in the issuer config:
+
+```bash
+quints iban "BE11 9679 6818 4648" --bic TRWIBEB1XXX
+quints iban
+```
+
+It reports the country, the institution (IID) for Swiss and Liechtenstein
+IBANs, and flags a BIC whose country doesn't match the IBAN's — normal for a
+payment provider (a Wise EUR account is a Belgian IBAN), wrong if you pasted
+another account's code. It exits non-zero when something is off, so it fits a
+pre-flight check.
 
 ## Branding
 
@@ -82,10 +125,12 @@ quints invoice invoicing/globex-2026-08.yaml
 ```
 
 An export invoice (`kind: export`) renders without a QR part — it shows the
-regular IBAN for a SEPA/international transfer instead — and defaults to the
-EU B2B reverse-charge note, which requires the customer's VAT number in the
-registry. Set `reverse_charge: false` for customers outside a reverse-charge
-regime (e.g. US).
+full SEPA/international payment instruction instead (beneficiary, IBAN,
+BIC/SWIFT, bank, reference) — and defaults to the EU B2B reverse-charge note,
+which requires the customer's VAT number in the registry. Set
+`reverse_charge: false` for customers outside a reverse-charge regime (e.g.
+US). The currency's account needs both a regular `iban` (a QR-IBAN can't
+receive an ordinary credit transfer) and a `bic`.
 
 ![The generated export invoice PDF — no QR part, SEPA IBAN and reverse-charge note instead](../assets/invoice-export.png){ width="480" }
 

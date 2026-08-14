@@ -209,3 +209,38 @@ def test_prices_sync_reads_ledger_metadata_like_bean_price(
     d = json.loads(res.output)
     assert list(d["per_currency"]) == ["EUR"] and d["added"] == 5
     assert f"{today} price EUR 0.93456 CHF" in out.read_text()
+
+
+def test_iban_json_checks_a_pair(tmp_path: Path) -> None:
+    res = runner.invoke(app, ["iban", "BE11 9679 6818 4648", "--bic", "TRWIBEB1XXX", "--json"])
+    assert res.exit_code == 0, res.output
+    d = json.loads(res.output)
+    assert d["ok"] is True
+    (c,) = d["checks"]
+    assert c["formatted"] == "BE11 9679 6818 4648" and c["bic"] == "TRWIBEB1XXX"
+    assert c["country"] == "BE" and c["iid"] is None  # IID is a CH/LI thing
+
+
+def test_iban_json_flags_a_missing_bic(tmp_path: Path) -> None:
+    res = runner.invoke(app, ["iban", "CH74 3000 5263 1434 9501 E", "--json"])
+    assert res.exit_code == 1, res.output  # non-zero: fits a pre-flight check
+    (c,) = json.loads(res.output)["checks"]
+    assert c["bic"] is None and c["iid"] == "30005"
+    assert "no BIC" in c["problems"][0]
+
+
+def test_iban_audits_the_issuer_config(tmp_path: Path) -> None:
+    issuer = tmp_path / "issuer.yaml"
+    issuer.write_text(
+        "name: Muster GmbH\n"
+        "address: [Musterstrasse 1, 3000 Bern]\n"
+        "vat_id: CHE-267.359.056 MWST\n"
+        "bank:\n"
+        "  EUR:\n"
+        "    iban: BE11 9679 6818 4648\n"  # no bic — the failure being guarded
+    )
+    res = runner.invoke(app, ["iban", "--issuer", str(issuer), "--json"])
+    assert res.exit_code == 1, res.output
+    d = json.loads(res.output)
+    assert d["ok"] is False
+    assert [c["label"] for c in d["checks"]] == ["EUR"]

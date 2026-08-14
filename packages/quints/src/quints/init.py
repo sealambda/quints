@@ -457,10 +457,16 @@ def _issuer_yaml(_answers: Answers) -> str:
             "    # Regular IBAN — CHF arriving from abroad can't use the QR scheme.",
             f"    iban: {_SAMPLE_CHF_IBAN}",
             "    bic: UBSWCHZH80A",
+            "    bank_name: UBS Switzerland AG, Zürich",
             "  EUR:",
             "    # Regular IBAN — foreign transfers can't use the QR-bill scheme.",
             f"    iban: {_SAMPLE_EUR_IBAN}",
+            "    # BIC is mandatory here: an export invoice won't render without",
+            "    # one, and a payer who guesses it gets the transfer returned.",
+            "    # Ask your bank — `quints iban` checks the pair. bank_name is",
+            "    # optional and lets the payer sanity-check the BIC.",
             "    bic: TRWIBEB1XXX",
+            "    bank_name: Wise Europe SA, Brussels",
             "# Typography and palette default to the bundled Sealambda brand — Geist,",
             "# Newsreader and Geist Mono with the Tyrian palette (`quints schema` lists",
             "# every token). The logo is the one asset opted into by path.",
@@ -848,6 +854,12 @@ account with no valid `kmu:` code.
 3. The payment arrives with the next bank import; the draft is matched to
    the open invoice by its QR/SCOR reference. `quints receivables` shows
    what is still open.
+
+Export invoices carry a full SEPA/SWIFT instruction and will not render
+without a `bic` under the currency's account in `invoicing/issuer.yaml` —
+never invent one, ask the account holder's bank. `quints iban` checks the
+IBAN/BIC pairs already configured (`quints iban <IBAN> --bic <BIC>` checks a
+new one) and exits non-zero if anything is off.
 
 ## Machine-readable surfaces (prefer these over scraping text)
 

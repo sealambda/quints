@@ -26,6 +26,8 @@ LABELS = {
         "rounding": "Rundung",
         "grand_total": "Rechnungstotal",
         "payment_to": "Zahlbar an",
+        "beneficiary": "Begünstigter",
+        "bank": "Bank",
         "reference": "Referenz",
         "terms": "Zahlbar innert {days} Tagen netto.",
         "export_note": "Nicht der schweizerischen MWST unterliegend: Ort der "
@@ -47,6 +49,8 @@ LABELS = {
         "rounding": "Rounding",
         "grand_total": "Total due",
         "payment_to": "Payable to",
+        "beneficiary": "Beneficiary",
+        "bank": "Bank",
         "reference": "Reference",
         "terms": "Payable within {days} days net.",
         "export_note": "Not subject to Swiss VAT: place of supply abroad "
@@ -68,6 +72,8 @@ LABELS = {
         "rounding": "Redondeo",
         "grand_total": "Total a pagar",
         "payment_to": "A pagar a",
+        "beneficiary": "Beneficiario",
+        "bank": "Banco",
         "reference": "Referencia",
         "terms": "A pagar en un plazo de {days} días netos.",
         "export_note": "No sujeto al IVA suizo: lugar de la prestación en el "

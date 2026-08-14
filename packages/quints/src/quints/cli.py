@@ -889,6 +889,81 @@ def inbox(
     inbox_mod.render(docs)
 
 
+@app.command(rich_help_panel=PANEL_BANK)
+def iban(
+    number: str | None = typer.Argument(
+        None, metavar="IBAN", help="IBAN to check. Omit to check the issuer config."
+    ),
+    bic: str | None = typer.Option(None, "--bic", help="BIC/SWIFT to check against the IBAN."),
+    issuer: Path = typer.Option(
+        Path("invoicing/issuer.yaml"), "--issuer", help="Issuer config (.yaml/.toml/.json)."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+):
+    """Check an IBAN and its BIC — or every account in the issuer config.
+
+    A BIC cannot be derived from an IBAN: the mapping lives in a bank registry
+    that changes, and a wrong-but-plausible BIC is what gets a payment sent
+    back. So this checks what you were given and says where to get the rest.
+    """
+    import dataclasses
+
+    from rich.padding import Padding
+
+    from .invoice import bank
+    from .invoice import model as m
+
+    checks: list[tuple[str, bank.Check]] = []
+    if number:
+        checks.append(("", bank.check(number, bic)))
+    else:
+        if not issuer.exists():
+            typer.secho(
+                f"ERROR: pass an IBAN, or an issuer config to check (not found: {issuer})",
+                fg="red",
+                err=True,
+            )
+            raise typer.Exit(1)
+        iss = m.load_issuer(issuer)
+        for currency, acct in sorted(iss.bank.items()):
+            # A QR-IBAN is only ever paid inside the Swiss QR-bill scheme,
+            # which carries no BIC — checked, but not held to that rule.
+            if acct.qr_iban:
+                checks.append((f"{currency} (QR-IBAN)", bank.check(acct.qr_iban, acct.bic)))
+            if acct.iban:
+                checks.append((f"{currency}", bank.check(acct.iban, acct.bic)))
+        if not checks:
+            typer.secho(f"ERROR: no bank accounts configured in {issuer}", fg="red", err=True)
+            raise typer.Exit(1)
+
+    if as_json:
+        _json_out(
+            {
+                "ok": all(c.ok for _, c in checks),
+                "checks": [{"label": label, **dataclasses.asdict(c)} for label, c in checks],
+            }
+        )
+        raise typer.Exit(0 if all(c.ok for _, c in checks) else 1)
+
+    for label, c in checks:
+        head = f"[bold]{c.formatted}[/]" + (f"  [muted]{label}[/]" if label else "")
+        ui.console.print(head)
+        if c.iid:
+            ui.console.print(f"  [muted]country {c.country} · institution (IID) {c.iid}[/]")
+        elif c.country:
+            ui.console.print(f"  [muted]country {c.country}[/]")
+        ui.console.print(f"  BIC/SWIFT  [bold]{c.bic}[/]" if c.bic else "  BIC/SWIFT  [warn]—[/]")
+        # These sentences are long enough to wrap; Padding keeps the wrapped
+        # lines indented with the block instead of back at the margin.
+        for note in c.notes:
+            ui.console.print(Padding(f"[warn]note[/] {note}", (0, 0, 0, 2)))
+        for problem in c.problems:
+            ui.console.print(Padding(f"[err]✗[/] {problem}", (0, 0, 0, 2)))
+        if c.ok and not c.notes:
+            ui.console.print("  [ok]✓ IBAN and BIC both check out[/]")
+    raise typer.Exit(0 if all(c.ok for _, c in checks) else 1)
+
+
 # ── reports & year-end ────────────────────────────────────────────────────────
 
 report_app = typer.Typer(

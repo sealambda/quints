@@ -13,7 +13,7 @@ from typing import TypedDict
 import typst
 from babel.dates import format_date
 
-from . import qr
+from . import bank, qr
 from .labels import labels as get_labels
 from .model import Invoice, Issuer, Totals, compute, make_scor, money, number
 
@@ -196,10 +196,24 @@ def render(inv: Invoice, issuer: Issuer, out_path: Path) -> tuple[Path, Totals, 
                     f"export invoice in {inv.currency} needs a regular `iban` "
                     f"(a QR-IBAN cannot receive normal credit transfers)"
                 )
+            # No BIC, no invoice. A payer who has to look the code up gets it
+            # wrong sooner or later and the transfer comes back — the one
+            # failure a printed invoice can prevent outright. It cannot be
+            # derived from the IBAN, so it has to be configured.
+            if not account.bic:
+                raise ValueError(
+                    f"export invoice {inv.number} in {inv.currency} has no `bic` — "
+                    f"a SEPA/SWIFT payer left to look the code up can get it wrong "
+                    f"and have the payment returned. Add `bic:` under "
+                    f"bank.{inv.currency} in the issuer config; "
+                    f"`quints iban {account.iban}` shows what to ask the bank for"
+                )
             payment = {
                 "type": "sepa",
-                "iban": _fmt_iban(account.iban),
+                "beneficiary": account.holder or issuer.name,
+                "iban": bank.format_iban(account.iban),
                 "bic": account.bic,
+                "bank_name": account.bank_name,
                 "reference": _fmt_iban(inv.reference or make_scor(inv.number)),
             }
 

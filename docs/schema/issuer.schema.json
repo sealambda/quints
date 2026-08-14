@@ -1,6 +1,7 @@
 {
   "$defs": {
     "BankAccount": {
+      "description": "Where an invoice asks to be paid, for one currency.\n\nEvery number here is validated the way a bank would \u2014 a transposed IBAN or\na malformed BIC fails at load, not after the PDF has left the building.\n`bic` is mandatory for any currency you invoice abroad in: rendering an\nexport invoice without one is refused, because a customer who has to look\nthe BIC up themselves is a customer who can get it wrong and have the\ntransfer returned. `quints iban` checks a pair before it ships.",
       "properties": {
         "iban": {
           "default": "",
@@ -23,6 +24,30 @@
           ],
           "default": null,
           "title": "Bic"
+        },
+        "holder": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Holder"
+        },
+        "bank_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bank Name"
         }
       },
       "title": "BankAccount",

@@ -30,7 +30,9 @@ ISSUER = Issuer(
     vat_id="CHE-267.359.056 MWST",
     bank={
         "CHF": BankAccount(qr_iban="CH44 3199 9123 0008 8901 2", bic="UBSWCHZH80A"),
-        "EUR": BankAccount(iban="BE00 0000 0000 0000", bic="TRWIBEB1XXX"),
+        "EUR": BankAccount(
+            iban="BE11 9679 6818 4648", bic="TRWIBEB1XXX", bank_name="Wise Europe SA, Brussels"
+        ),
     },
 )
 
@@ -568,3 +570,102 @@ def test_issuer_bundled_fonts_switch_off_machine_fonts(
         with pytest.raises(ValueError):
             render.render(_domestic(), issuer, tmp_path / "inv.pdf")
         assert seen[0] is expected
+
+
+# ── bank details: IBAN/BIC ────────────────────────────────────────────────────
+
+
+def test_bank_account_validates_iban_and_bic():
+    acct = BankAccount(iban="be11 9679 6818 4648", bic="trwibeb1xxx")
+    assert (acct.iban, acct.bic) == ("BE11967968184648", "TRWIBEB1XXX")
+
+    with pytest.raises(ValueError, match="not a valid IBAN"):
+        BankAccount(iban="BE11 9679 6818 4649")  # one digit off — mod-97 fails
+    with pytest.raises(ValueError, match="not a valid IBAN"):
+        BankAccount(qr_iban="CH44 3199 9123 0008 8901")  # too short for CH
+    with pytest.raises(ValueError, match="not a valid BIC"):
+        BankAccount(iban="BE11 9679 6818 4648", bic="TRWIBEB1XX")  # 10 chars
+
+
+def test_export_invoice_refuses_to_render_without_a_bic(tmp_path: Path):
+    """The failure this guards: a payer who has to look the BIC up themselves
+    can get it wrong, and the transfer comes back."""
+    from quints.invoice import render
+
+    no_bic = ISSUER.model_copy(
+        update={"bank": {**ISSUER.bank, "EUR": BankAccount(iban="BE11 9679 6818 4648")}}
+    )
+    with pytest.raises(ValueError, match="has no `bic`"):
+        render.render(_export(), no_bic, tmp_path / "x.pdf")
+
+
+def test_export_payment_block_carries_the_full_instruction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Everything a payer retypes into their banking form, on the PDF: no
+    field they have to source themselves."""
+    from quints.invoice import render
+
+    seen: list[dict[str, str | None]] = []
+    real = render.build_context
+
+    def spy(
+        inv: Invoice,
+        issuer: Issuer,
+        totals: object,
+        payment: dict[str, str | None],
+        *args: object,
+        **kwargs: object,
+    ) -> object:
+        seen.append(payment)
+        return real(inv, issuer, totals, payment, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(render, "build_context", spy)
+    path, _, qr_payload = render.render(_export(), ISSUER, tmp_path / "x.pdf")
+    assert path.exists() and qr_payload is None  # export: no QR part
+    assert seen == [
+        {
+            "type": "sepa",
+            "beneficiary": "Muster GmbH",  # no `holder` set → the issuer
+            "iban": "BE11 9679 6818 4648",
+            "bic": "TRWIBEB1XXX",
+            "bank_name": "Wise Europe SA, Brussels",
+            "reference": "RF12 KEI2 0260 5",  # SCOR of the invoice number, grouped
+        }
+    ]
+
+    # `holder` overrides it — the name the payer's bank checks the transfer
+    # against, when the account is not held under the issuer's own name.
+    seen.clear()
+    held = ISSUER.model_copy(
+        update={
+            "bank": {
+                **ISSUER.bank,
+                "EUR": ISSUER.account("EUR").model_copy(update={"holder": "Muster Holding AG"}),
+            }
+        }
+    )
+    render.render(_export(), held, tmp_path / "y.pdf")
+    assert seen[0]["beneficiary"] == "Muster Holding AG"
+
+
+def test_iban_check_reports_instead_of_guessing():
+    from quints.invoice import bank
+
+    ok = bank.check("CH74 3000 5263 1434 9501 E", "UBSWCHZH80A")
+    assert (ok.ok, ok.country, ok.iid, ok.notes) == (True, "CH", "30005", [])
+    assert ok.formatted == "CH74 3000 5263 1434 9501 E"
+
+    # No BIC is a problem to fix at the source — never a guess from the IID.
+    missing = bank.check("CH74 3000 5263 1434 9501 E")
+    assert not missing.ok and "no BIC" in missing.problems[0]
+    assert missing.bic is None
+    assert "30005" in missing.notes[0]  # the IID to look it up by, no BIC invented
+
+    bad = bank.check("BE11 9679 6818 4649", "TRWIBEB1XXX")
+    assert not bad.ok and "not a valid IBAN" in bad.problems[0]
+
+    # A payment provider legitimately pairs a foreign BIC with a local IBAN:
+    # worth a look, not a blocker.
+    mismatch = bank.check("CH74 3000 5263 1434 9501 E", "TRWIBEB1XXX")
+    assert mismatch.ok and "BIC country BE" in mismatch.notes[0]
