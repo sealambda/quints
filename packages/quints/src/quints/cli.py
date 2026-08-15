@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import os
+import re
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import date as Date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import typer
+from pydantic import ValidationError
+from typer.core import TyperGroup
 
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
@@ -55,7 +59,78 @@ from . import (
     vat as vat_mod,
 )
 
+
+def _fail(message: str) -> NoReturn:
+    """The one way this CLI reports a problem: `ERROR: …` on stderr, exit 1."""
+    typer.secho(f"ERROR: {message}", fg="red", err=True)
+    raise typer.Exit(1)
+
+
+# Segments pydantic adds to a location to say *which arm of a union* failed —
+# `customer.str`, `customer.function-after[_vat_id_checksum(), Party]`. They
+# name the schema, not a key in anyone's YAML, so they are dropped.
+_UNION_ARM = re.compile(r"\[.*\]$")
+_SCALAR_ARMS = frozenset({"str", "int", "float", "bool", "dict", "list", "none"})
+
+
+def _field_path(loc: tuple[int | str, ...]) -> str:
+    """The dotted path as it appears in the user's file, union tags removed."""
+    parts: list[str] = []
+    for segment in loc:
+        text = str(segment)
+        if _UNION_ARM.search(text) or (parts and text in _SCALAR_ARMS):
+            continue
+        parts.append(text)
+    return ".".join(parts)
+
+
+def _authoring_problems(exc: ValidationError) -> str:
+    """Pydantic's field errors as `bank.EUR.iban — what is wrong`.
+
+    Pydantic's own rendering leads with an internal model name and trails each
+    entry with `[type=…, input_value=…]` and a docs URL — noise for someone who
+    only wants to know which key in their YAML to fix.
+    """
+    problems: list[str] = []
+    for e in exc.errors():
+        # A whole-model validator (a VAT-ID checksum, say) has an empty loc —
+        # there is no field to name, so the sentence stands on its own.
+        field = _field_path(e["loc"])
+        message = e["msg"].removeprefix("Value error, ")
+        problem = f"{field} — {message}" if field else message
+        if problem not in problems:  # union arms can repeat one complaint
+            problems.append(problem)
+    if len(problems) == 1:
+        return f"{exc.title}: {problems[0]}"
+    return "\n".join([f"{len(problems)} problems in {exc.title}:", *(f"  {p}" for p in problems)])
+
+
+class _CleanErrors(TyperGroup):
+    """Report a domain error as one `ERROR:` line instead of a traceback.
+
+    The domain modules raise `ValueError` for everything a user can get wrong —
+    an unbalanced invoice, a missing BIC, a malformed IBAN (pydantic's
+    `ValidationError` is one too). Those are not crashes, and a Python
+    traceback buries the sentence that says what to fix. Catching here covers
+    every command and sub-group: click invokes the whole chain inside this
+    call. Set `QUINTS_TRACEBACK=1` to get the traceback back when the error
+    turns out to be a bug in quints rather than in the books.
+    """
+
+    # `ctx` is deliberately untyped: typer vendors its own click fork, so the
+    # only name for the real type is `typer._click.core.Context` — private, and
+    # a different class from `click.Context`. We never touch the context here.
+    def invoke(self, ctx: Any) -> object:
+        try:
+            return super().invoke(ctx)
+        except ValueError as exc:
+            if os.environ.get("QUINTS_TRACEBACK"):
+                raise
+            _fail(_authoring_problems(exc) if isinstance(exc, ValidationError) else str(exc))
+
+
 app = typer.Typer(
+    cls=_CleanErrors,
     no_args_is_help=True,
     add_completion=True,
     help="quints — Swiss VAT & accounting for plain-text books (VAT, statements, imports).",

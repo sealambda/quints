@@ -97,3 +97,10 @@ EUR = "Assets:CH:Einzelfirma:Current:Stripe:EUR"
 API credentials never go in `quints.toml` — they live in `.env`
 (`QUINTS_WISE_API_TOKEN`, `QUINTS_WISE_PRIVATE_KEY`, `QUINTS_STRIPE_API_KEY`),
 which the scaffold gitignores.
+
+## Debugging
+
+A problem in your own files — a malformed IBAN, an invoice that doesn't
+balance — is reported as a single `ERROR:` line on stderr, with exit code 1.
+Set `QUINTS_TRACEBACK=1` to get the Python traceback instead, for when the
+error looks like a bug in quints rather than in the books.
