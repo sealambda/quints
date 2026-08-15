@@ -1,8 +1,8 @@
 # yaml-language-server: $schema=https://sealambda.github.io/quints/schema/issuer.schema.json
 # Issuer identity for `quints invoice` — name, address, VAT ID, and one
-# bank account per invoicing currency. The sample is Sealambda's real
-# identity (the tool's maker) so the demo renders a finished invoice —
-# replace every field with your own before issuing.
+# bank account per invoicing currency. The identity is the tool maker's,
+# so the demo renders a finished invoice; the accounts are documentation
+# IBANs and belong to nobody. Replace every field before issuing.
 name: Sealambda GmbH
 address:
   - Sulzerstrasse 1
@@ -10,23 +10,25 @@ address:
 vat_id: CHE-267.359.056 MWST
 email: receivables@sealambda.com
 phone: "+41 76 297 79 35"
+# Sample accounts — the standard documentation IBANs, valid but
+# belonging to nobody. Replace all of them with your own.
 bank:
   CHF:
     # QR-IBAN (QR-IID variant) — a Swiss QR-bill with a QRR reference.
-    qr_iban: CH74 3000 5263 1434 9501 E
+    qr_iban: CH44 3199 9123 0008 8901 2
     # Regular IBAN — CHF arriving from abroad can't use the QR scheme.
-    iban: CH27 0026 3263 1434 9501 E
-    bic: UBSWCHZH80A
-    bank_name: UBS Switzerland AG, Zürich
+    iban: CH93 0076 2011 6238 5295 7
+    bic: POFICHBEXXX
+    bank_name: PostFinance AG, Bern
   EUR:
     # Regular IBAN — foreign transfers can't use the QR-bill scheme.
-    iban: BE11 9679 6818 4648
+    iban: DE89 3704 0044 0532 0130 00
     # BIC is mandatory here: an export invoice won't render without
     # one, and a payer who guesses it gets the transfer returned.
     # Ask your bank — `quints iban` checks the pair. bank_name is
     # optional and lets the payer sanity-check the BIC.
-    bic: TRWIBEB1XXX
-    bank_name: Wise Europe SA, Brussels
+    bic: COBADEFFXXX
+    bank_name: Commerzbank AG, Köln
 # Typography and palette default to the bundled Sealambda brand — Geist,
 # Newsreader and Geist Mono with the Tyrian palette (`quints schema` lists
 # every token). The logo is the one asset opted into by path.

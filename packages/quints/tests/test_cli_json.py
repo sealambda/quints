@@ -212,20 +212,21 @@ def test_prices_sync_reads_ledger_metadata_like_bean_price(
 
 
 def test_iban_json_checks_a_pair(tmp_path: Path) -> None:
-    res = runner.invoke(app, ["iban", "BE11 9679 6818 4648", "--bic", "TRWIBEB1XXX", "--json"])
+    args = ["iban", "DE89 3704 0044 0532 0130 00", "--bic", "COBADEFFXXX", "--json"]
+    res = runner.invoke(app, args)
     assert res.exit_code == 0, res.output
     d = json.loads(res.output)
     assert d["ok"] is True
     (c,) = d["checks"]
-    assert c["formatted"] == "BE11 9679 6818 4648" and c["bic"] == "TRWIBEB1XXX"
-    assert c["country"] == "BE" and c["iid"] is None  # IID is a CH/LI thing
+    assert c["formatted"] == "DE89 3704 0044 0532 0130 00" and c["bic"] == "COBADEFFXXX"
+    assert c["country"] == "DE" and c["iid"] is None  # IID is a CH/LI thing
 
 
 def test_iban_json_flags_a_missing_bic(tmp_path: Path) -> None:
-    res = runner.invoke(app, ["iban", "CH74 3000 5263 1434 9501 E", "--json"])
+    res = runner.invoke(app, ["iban", "CH44 3199 9123 0008 8901 2", "--json"])
     assert res.exit_code == 1, res.output  # non-zero: fits a pre-flight check
     (c,) = json.loads(res.output)["checks"]
-    assert c["bic"] is None and c["iid"] == "30005"
+    assert c["bic"] is None and c["iid"] == "31999"
     assert "no BIC" in c["problems"][0]
 
 
@@ -237,7 +238,7 @@ def test_iban_audits_the_issuer_config(tmp_path: Path) -> None:
         "vat_id: CHE-267.359.056 MWST\n"
         "bank:\n"
         "  EUR:\n"
-        "    iban: BE11 9679 6818 4648\n"  # no bic — the failure being guarded
+        "    iban: DE89 3704 0044 0532 0130 00\n"  # no bic — the failure being guarded
     )
     res = runner.invoke(app, ["iban", "--issuer", str(issuer), "--json"])
     assert res.exit_code == 1, res.output

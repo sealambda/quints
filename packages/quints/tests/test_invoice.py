@@ -31,7 +31,7 @@ ISSUER = Issuer(
     bank={
         "CHF": BankAccount(qr_iban="CH44 3199 9123 0008 8901 2", bic="UBSWCHZH80A"),
         "EUR": BankAccount(
-            iban="BE11 9679 6818 4648", bic="TRWIBEB1XXX", bank_name="Wise Europe SA, Brussels"
+            iban="DE89 3704 0044 0532 0130 00", bic="COBADEFFXXX", bank_name="Commerzbank AG, Köln"
         ),
     },
 )
@@ -576,15 +576,15 @@ def test_issuer_bundled_fonts_switch_off_machine_fonts(
 
 
 def test_bank_account_validates_iban_and_bic():
-    acct = BankAccount(iban="be11 9679 6818 4648", bic="trwibeb1xxx")
-    assert (acct.iban, acct.bic) == ("BE11967968184648", "TRWIBEB1XXX")
+    acct = BankAccount(iban="de89 3704 0044 0532 0130 00", bic="cobadeffxxx")
+    assert (acct.iban, acct.bic) == ("DE89370400440532013000", "COBADEFFXXX")
 
     with pytest.raises(ValueError, match="not a valid IBAN"):
-        BankAccount(iban="BE11 9679 6818 4649")  # one digit off — mod-97 fails
+        BankAccount(iban="DE89 3704 0044 0532 0130 01")  # one digit off — mod-97 fails
     with pytest.raises(ValueError, match="not a valid IBAN"):
         BankAccount(qr_iban="CH44 3199 9123 0008 8901")  # too short for CH
     with pytest.raises(ValueError, match="not a valid BIC"):
-        BankAccount(iban="BE11 9679 6818 4648", bic="TRWIBEB1XX")  # 10 chars
+        BankAccount(iban="DE89 3704 0044 0532 0130 00", bic="COBADEFFXX")  # 10 chars
 
 
 def test_export_invoice_refuses_to_render_without_a_bic(tmp_path: Path):
@@ -593,7 +593,7 @@ def test_export_invoice_refuses_to_render_without_a_bic(tmp_path: Path):
     from quints.invoice import render
 
     no_bic = ISSUER.model_copy(
-        update={"bank": {**ISSUER.bank, "EUR": BankAccount(iban="BE11 9679 6818 4648")}}
+        update={"bank": {**ISSUER.bank, "EUR": BankAccount(iban="DE89 3704 0044 0532 0130 00")}}
     )
     with pytest.raises(ValueError, match="has no `bic`"):
         render.render(_export(), no_bic, tmp_path / "x.pdf")
@@ -627,9 +627,9 @@ def test_export_payment_block_carries_the_full_instruction(
         {
             "type": "sepa",
             "beneficiary": "Muster GmbH",  # no `holder` set → the issuer
-            "iban": "BE11 9679 6818 4648",
-            "bic": "TRWIBEB1XXX",
-            "bank_name": "Wise Europe SA, Brussels",
+            "iban": "DE89 3704 0044 0532 0130 00",
+            "bic": "COBADEFFXXX",
+            "bank_name": "Commerzbank AG, Köln",
             "reference": "RF12 KEI2 0260 5",  # SCOR of the invoice number, grouped
         }
     ]
@@ -652,20 +652,20 @@ def test_export_payment_block_carries_the_full_instruction(
 def test_iban_check_reports_instead_of_guessing():
     from quints.invoice import bank
 
-    ok = bank.check("CH74 3000 5263 1434 9501 E", "UBSWCHZH80A")
-    assert (ok.ok, ok.country, ok.iid, ok.notes) == (True, "CH", "30005", [])
-    assert ok.formatted == "CH74 3000 5263 1434 9501 E"
+    ok = bank.check("CH44 3199 9123 0008 8901 2", "UBSWCHZH80A")
+    assert (ok.ok, ok.country, ok.iid, ok.notes) == (True, "CH", "31999", [])
+    assert ok.formatted == "CH44 3199 9123 0008 8901 2"
 
     # No BIC is a problem to fix at the source — never a guess from the IID.
-    missing = bank.check("CH74 3000 5263 1434 9501 E")
+    missing = bank.check("CH44 3199 9123 0008 8901 2")
     assert not missing.ok and "no BIC" in missing.problems[0]
     assert missing.bic is None
-    assert "30005" in missing.notes[0]  # the IID to look it up by, no BIC invented
+    assert "31999" in missing.notes[0]  # the IID to look it up by, no BIC invented
 
-    bad = bank.check("BE11 9679 6818 4649", "TRWIBEB1XXX")
+    bad = bank.check("DE89 3704 0044 0532 0130 01", "COBADEFFXXX")
     assert not bad.ok and "not a valid IBAN" in bad.problems[0]
 
     # A payment provider legitimately pairs a foreign BIC with a local IBAN:
     # worth a look, not a blocker.
-    mismatch = bank.check("CH74 3000 5263 1434 9501 E", "TRWIBEB1XXX")
-    assert mismatch.ok and "BIC country BE" in mismatch.notes[0]
+    mismatch = bank.check("CH44 3199 9123 0008 8901 2", "COBADEFFXXX")
+    assert mismatch.ok and "BIC country DE" in mismatch.notes[0]

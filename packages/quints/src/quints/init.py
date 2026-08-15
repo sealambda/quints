@@ -413,14 +413,26 @@ def _prices_bean(answers: Answers) -> str:
 # ── invoicing samples ────────────────────────────────────────────────────────
 
 # The sample issuer is Sealambda GmbH — the tool's maker, whose brand
-# (bundled fonts, palette, wordmark) is also the rendering default. Real
-# identifiers, on purpose: the demo invoice is a finished, real-looking
+# (bundled fonts, palette, wordmark) is also the rendering default. Its public
+# identity is real, on purpose: the demo invoice is a finished, real-looking
 # document, and every scaffold quietly builds the brand. The AGENTS.md
 # checklist tells users to replace all of it before issuing.
 _SAMPLE_VAT_ID = "CHE-267.359.056 MWST"
-_SAMPLE_QR_IBAN = "CH74 3000 5263 1434 9501 E"  # UBS QR-IBAN (QR-IID 30005)
-_SAMPLE_CHF_IBAN = "CH27 0026 3263 1434 9501 E"  # regular UBS IBAN — CHF from abroad
-_SAMPLE_EUR_IBAN = "BE11 9679 6818 4648"  # Wise Europe SA
+
+# Bank details are the exception — never a real account. A scaffold is copied,
+# pasted and published; an account number in it is an invitation to send money
+# to the tool's maker by accident, and to fraud by intent. These are the
+# standard documentation IBANs (ISO 13616 for CH/DE, the SIX QR-bill
+# Implementation Guidelines example for the QR-IBAN), so they pass every check
+# quints makes while belonging to nobody. Each BIC matches its IBAN's
+# institution — the sample has to model the thing it teaches.
+_SAMPLE_QR_IBAN = "CH44 3199 9123 0008 8901 2"  # QR-IID 31999 — the SIX IG example
+_SAMPLE_CHF_IBAN = "CH93 0076 2011 6238 5295 7"  # the documentation IBAN for CH
+_SAMPLE_CHF_BIC = "POFICHBEXXX"  # PostFinance — IID 00762, as above
+_SAMPLE_CHF_BANK = "PostFinance AG, Bern"
+_SAMPLE_EUR_IBAN = "DE89 3704 0044 0532 0130 00"  # the documentation IBAN for DE
+_SAMPLE_EUR_BIC = "COBADEFFXXX"  # Commerzbank — BLZ 37040044, as above
+_SAMPLE_EUR_BANK = "Commerzbank AG, Köln"
 _SAMPLE_CUSTOMER_VAT_ID = "IE1234567T"  # checksum-valid fake — the customers stay demo
 
 # Sealambda wordmark, outlined (paths, no live <text>), scaffolded next to the
@@ -440,9 +452,9 @@ def _issuer_yaml(_answers: Answers) -> str:
         [
             _modeline("issuer"),
             "# Issuer identity for `quints invoice` — name, address, VAT ID, and one",
-            "# bank account per invoicing currency. The sample is Sealambda's real",
-            "# identity (the tool's maker) so the demo renders a finished invoice —",
-            "# replace every field with your own before issuing.",
+            "# bank account per invoicing currency. The identity is the tool maker's,",
+            "# so the demo renders a finished invoice; the accounts are documentation",
+            "# IBANs and belong to nobody. Replace every field before issuing.",
             "name: Sealambda GmbH",
             "address:",
             "  - Sulzerstrasse 1",
@@ -450,14 +462,16 @@ def _issuer_yaml(_answers: Answers) -> str:
             f"vat_id: {_SAMPLE_VAT_ID}",
             "email: receivables@sealambda.com",
             'phone: "+41 76 297 79 35"',
+            "# Sample accounts — the standard documentation IBANs, valid but",
+            "# belonging to nobody. Replace all of them with your own.",
             "bank:",
             "  CHF:",
             "    # QR-IBAN (QR-IID variant) — a Swiss QR-bill with a QRR reference.",
             f"    qr_iban: {_SAMPLE_QR_IBAN}",
             "    # Regular IBAN — CHF arriving from abroad can't use the QR scheme.",
             f"    iban: {_SAMPLE_CHF_IBAN}",
-            "    bic: UBSWCHZH80A",
-            "    bank_name: UBS Switzerland AG, Zürich",
+            f"    bic: {_SAMPLE_CHF_BIC}",
+            f"    bank_name: {_SAMPLE_CHF_BANK}",
             "  EUR:",
             "    # Regular IBAN — foreign transfers can't use the QR-bill scheme.",
             f"    iban: {_SAMPLE_EUR_IBAN}",
@@ -465,8 +479,8 @@ def _issuer_yaml(_answers: Answers) -> str:
             "    # one, and a payer who guesses it gets the transfer returned.",
             "    # Ask your bank — `quints iban` checks the pair. bank_name is",
             "    # optional and lets the payer sanity-check the BIC.",
-            "    bic: TRWIBEB1XXX",
-            "    bank_name: Wise Europe SA, Brussels",
+            f"    bic: {_SAMPLE_EUR_BIC}",
+            f"    bank_name: {_SAMPLE_EUR_BANK}",
             "# Typography and palette default to the bundled Sealambda brand — Geist,",
             "# Newsreader and Geist Mono with the Tyrian palette (`quints schema` lists",
             "# every token). The logo is the one asset opted into by path.",
@@ -749,9 +763,11 @@ def _agents_sample_section(answers: Answers) -> str:
         "The scaffold seeded a demo quarter so every command has data. Before",
         "booking real activity:",
         "",
-        "- [ ] `invoicing/issuer.yaml` — the whole file is Sealambda's real identity",
-        "      (name, VAT ID, IBANs, logo); replace it with your own, and swap or",
-        "      delete `invoicing/wordmark.svg`.",
+        "- [ ] `invoicing/issuer.yaml` — the identity is Sealambda's (name, VAT ID,",
+        "      logo) and the bank accounts are the standard documentation IBANs,",
+        "      valid but nobody's. Replace all of it with your own — invoices ask",
+        "      to be paid into whatever is in this file — and swap or delete",
+        "      `invoicing/wordmark.svg`.",
         "- [ ] `invoicing/customers.yaml` — replace the demo customers (acme, globex).",
         f"- [ ] `invoicing/acme-{year}-07.yaml` and `invoicing/globex-{year}-08.yaml`",
         "      — delete the demo invoices.",

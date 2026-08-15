@@ -56,15 +56,15 @@ One account per invoicing currency, under `bank`:
 ```yaml
 bank:
   CHF:
-    qr_iban: CH74 3000 5263 1434 9501 E  # QR-bill with a QRR reference
-    iban: CH27 0026 3263 1434 9501 E     # CHF arriving from abroad
-    bic: UBSWCHZH80A
-    bank_name: UBS Switzerland AG, Zürich # optional
+    qr_iban: CH44 3199 9123 0008 8901 2  # QR-bill with a QRR reference
+    iban: CH93 0076 2011 6238 5295 7     # CHF arriving from abroad
+    bic: POFICHBEXXX
+    bank_name: PostFinance AG, Bern      # optional
   EUR:
-    iban: BE11 9679 6818 4648
-    bic: TRWIBEB1XXX
-    bank_name: Wise Europe SA, Brussels
-    holder: Sealambda GmbH                # optional — if not the issuer
+    iban: DE89 3704 0044 0532 0130 00
+    bic: COBADEFFXXX
+    bank_name: Commerzbank AG, Köln
+    holder: Example GmbH                 # optional — if not the issuer
 ```
 
 Every IBAN is checked at load (length, national layout, mod-97 check digits)
@@ -82,7 +82,7 @@ that holds the account.
 To check a pair before it ships — or every account in the issuer config:
 
 ```bash
-quints iban "BE11 9679 6818 4648" --bic TRWIBEB1XXX
+quints iban "DE89 3704 0044 0532 0130 00" --bic COBADEFFXXX
 quints iban
 ```
 
