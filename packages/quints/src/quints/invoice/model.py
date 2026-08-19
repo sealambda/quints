@@ -20,6 +20,7 @@ import yaml
 from pydantic import (
     BaseModel,
     Field,
+    PrivateAttr,
     RootModel,
     StringConstraints,
     ValidationInfo,
@@ -193,6 +194,10 @@ class Invoice(BaseModel):
     # for customers outside a reverse-charge regime (e.g. US) to drop the note.
     reverse_charge: bool | None = None
 
+    # The registry key the customer was resolved from (set by `load_invoice`);
+    # private so it never appears in the published authoring-file schema.
+    _customer_key: str | None = PrivateAttr(default=None)
+
     @model_validator(mode="before")
     @classmethod
     def _reject_legacy_language(cls, data: Any) -> Any:
@@ -238,6 +243,23 @@ class Invoice(BaseModel):
                 f"customer registry"
             )
         return self.customer
+
+    def resolve_customer_ref(self, customers: CustomerRegistry) -> None:
+        """Replace a registry-key `customer` with the party in force on the
+        issue date, remembering the key for `customer_slug`."""
+        if isinstance(self.customer, str):
+            self._customer_key = self.customer
+            self.customer = customers.resolve(self.customer, self.issue_date)
+
+    @property
+    def customer_slug(self) -> str:
+        """Filename-safe customer part: the registry key when the invoice was
+        loaded through one (already short and ASCII), else the slugified name
+        — which strips non-ASCII letters entirely (keinois OÜ → keinois-o)."""
+        if self._customer_key:
+            return self._customer_key
+        name = self.customer.name if isinstance(self.customer, Party) else self.customer
+        return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "customer"
 
     @property
     def vat_rate(self) -> Decimal:
@@ -364,12 +386,10 @@ def document_path(inv: Invoice, income_account: str, root: Path = Path("document
 
     `option "documents"` discovery wants `<root>/<Account/Tree>/YYYY-MM-DD.…`;
     the date prefix is what links the file to the account, and the
-    `<payee>.<number>` tail keeps the folder scannable:
-    `documents/Income/…/Domestic/2026-07-02.acme-ag.INV2026014.pdf`.
+    `<customer>.<number>` tail keeps the folder scannable:
+    `documents/Income/…/Domestic/2026-07-02.acme.INV2026014.pdf`.
     """
-    customer = inv.customer.name if isinstance(inv.customer, Party) else inv.customer
-    slug = re.sub(r"[^a-z0-9]+", "-", customer.lower()).strip("-") or "customer"
-    name = f"{inv.issue_date.isoformat()}.{slug}.{inv.number}.pdf"
+    name = f"{inv.issue_date.isoformat()}.{inv.customer_slug}.{inv.number}.pdf"
     return root.joinpath(*income_account.split(":")) / name
 
 
@@ -409,7 +429,7 @@ def load_invoice(path: Path, customers: CustomerRegistry | None = None) -> Invoi
                 f"invoice references customer {inv.customer!r} but no customer "
                 f"registry was found (invoicing/customers.yaml)"
             )
-        inv.customer = customers.resolve(inv.customer, inv.issue_date)
+        inv.resolve_customer_ref(customers)
     return inv
 
 

@@ -16,10 +16,11 @@ The PDF is filed the way beancount documents are filed — under the income
 account's folder, date-prefixed, so `option "documents"` and Fava pick it up:
 
 ```text
-documents/Income/CH/GmbH/Consulting/External/Domestic/2026-07-02.acme-ag.INV2026014.pdf
+documents/Income/CH/GmbH/Consulting/External/Domestic/2026-07-02.acme.INV2026014.pdf
 ```
 
-`--out` overrides the location when you need to.
+The customer part is the registry key from `customers.yaml` (the slugified
+name for inline customers). `--out` overrides the location when you need to.
 
 ![Rendering the two sample invoices — domestic QR-bill and EUR export — each cross-checked against the ledger](../assets/invoice.gif)
 

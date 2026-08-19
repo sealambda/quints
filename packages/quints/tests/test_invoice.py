@@ -16,6 +16,7 @@ from quints.invoice.model import (
     LineItem,
     Party,
     compute,
+    document_path,
     load_customers,
     load_invoice,
     make_qrr,
@@ -168,8 +169,26 @@ def test_load_invoice_resolves_customer_ref(tmp_path: Path):
     inv = load_invoice(tmp_path / "inv.yaml", reg)
     assert isinstance(inv.customer, Party)
     assert inv.customer.name == "ACME AG"
+    assert inv.customer_slug == "acme"  # the registry key, not a slug of the name
     with pytest.raises(ValueError, match="no customer registry"):
         load_invoice(tmp_path / "inv.yaml", None)
+
+
+def test_customer_slug_falls_back_to_name(tmp_path: Path):
+    # Inline Party (no registry key): slugified name, non-ASCII stripped.
+    inv = _domestic()
+    assert inv.customer_slug == "acme-ag"
+    # Registry key survives even when the name would slug badly (umlauts drop).
+    (tmp_path / "customers.yaml").write_text(
+        "keinois:\n  name: keinois OÜ\n  address: [Sepapaja tn 6, 15551 Tallinn]\n  country: EE\n"
+    )
+    (tmp_path / "inv.yaml").write_text(
+        "number: KEI202601\nkind: export\ncurrency: EUR\nissue_date: 2026-07-02\n"
+        "customer: keinois\nitems:\n  - {description: Work, quantity: 1, unit_price: 100}\n"
+    )
+    inv = load_invoice(tmp_path / "inv.yaml", load_customers(tmp_path / "customers.yaml"))
+    assert inv.customer_slug == "keinois"
+    assert document_path(inv, "Income:Export").name == "2026-07-02.keinois.KEI202601.pdf"
 
 
 def test_load_invoice_toml(tmp_path: Path):
@@ -200,6 +219,10 @@ def test_draft_is_balanced_and_complete():
     assert sum(amounts) == Decimal("0")
     assert cfg.receivable in text and cfg.income_domestic in text
     assert cfg.output_vat in text and cfg.rounding_income in text
+    # Income is the first posting, and the document name matches where the
+    # rendered PDF is actually filed (customer slug + invoice number).
+    assert text.index(cfg.income_domestic) < text.index(cfg.receivable)
+    assert 'document: "2026-07-02.acme-ag.ACME202606.pdf"' in text
 
 
 LEDGER = """

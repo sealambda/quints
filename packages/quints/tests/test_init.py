@@ -268,8 +268,8 @@ def test_cli_scaffold_to_invoice_end_to_end(tmp_path: Path, monkeypatch: pytest.
     # documents/<income account tree>/<date>.<customer>.<number>.pdf.
     income = proj / "documents/Income/CH/Einzelfirma/Consulting/External"
     for invoice_file, filed in (
-        ("acme-2026-07", income / "Domestic/2026-07-02.acme-ag.INV2026014.pdf"),
-        ("globex-2026-08", income / "Export/2026-08-05.globex-ltd.INV2026015.pdf"),
+        ("acme-2026-07", income / "Domestic/2026-07-02.acme.INV2026014.pdf"),
+        ("globex-2026-08", income / "Export/2026-08-05.globex.INV2026015.pdf"),
     ):
         res = runner.invoke(app, ["invoice", f"invoicing/{invoice_file}.yaml"])
         assert res.exit_code == 0, res.output
