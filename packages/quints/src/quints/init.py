@@ -698,7 +698,8 @@ def _import_section(importer: str, answers: Answers) -> str:
         return "\n".join(
             [
                 "# Fetching needs QUINTS_STRIPE_API_KEY in .env (a restricted key with",
-                "# Balance transaction sources: Read and Charges: Read).",
+                "# Balance transaction sources: Read and Charges: Read, plus Invoices:",
+                "# Read to download customer invoice PDFs with --invoices).",
                 "[import.stripe]",
                 'account_id = "acct_XXXXXXXXXXXX"   # guard: refuse a key for another account',
                 f'fees_account = "{_sub(d.fees_account, c)}"',
@@ -735,7 +736,8 @@ _IMPORTER_USAGE = {
     "stripe": (
         "`quints import stripe --fetch --from <date> --to <date>` — needs "
         "`QUINTS_STRIPE_API_KEY` in `.env` (a restricted read-only key for the "
-        "`[import.stripe]` account)."
+        "`[import.stripe]` account). Add `--invoices` to file each charge's "
+        "customer invoice PDF into `inbox/` (needs *Invoices: Read* on the key)."
     ),
 }
 

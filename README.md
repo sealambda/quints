@@ -105,8 +105,10 @@ quints import ubs <statement.mt940>   # → staging/, never straight into your b
 ```
 
 Wise and Stripe importers exist too (`import wise` / `import stripe`, with
-`--fetch` to pull from their APIs). Drafts land in `staging/` flagged for the
-VAT decision + a linked document; nothing reaches your books until you review it.
+`--fetch` to pull from their APIs, and `--invoices` to file each Stripe
+charge's customer invoice PDF into `inbox/`). Drafts land in `staging/` flagged
+for the VAT decision + a linked document; nothing reaches your books until you
+review it.
 
 ### Send a Swiss QR-bill invoice
 

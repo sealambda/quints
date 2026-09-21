@@ -1,0 +1,72 @@
+{
+  "object": "list",
+  "has_more": false,
+  "url": "/v1/invoices",
+  "data": [
+    {
+      "id": "in_00000000000001",
+      "object": "invoice",
+      "number": "ABCD1234-0002",
+      "status": "paid",
+      "created": 1778803210,
+      "total": 14900,
+      "amount_due": 14900,
+      "amount_paid": 14900,
+      "currency": "eur",
+      "customer": "cus_00000000000001",
+      "customer_name": "ACME Labs GmbH",
+      "customer_email": "billing@acme.test",
+      "invoice_pdf": "https://pay.stripe.com/invoice/acct_TEST/live_TEST1/pdf",
+      "hosted_invoice_url": "https://pay.stripe.com/invoice/acct_TEST/live_TEST1",
+      "charge": null,
+      "payment_intent": null,
+      "subscription": null,
+      "paid": null
+    },
+    {
+      "id": "in_00000000000002",
+      "object": "invoice",
+      "number": "ABCD1234-0003",
+      "status": "paid",
+      "created": 1781481600,
+      "total": 10000,
+      "amount_due": 10000,
+      "amount_paid": 10000,
+      "currency": "eur",
+      "customer": "cus_00000000000002",
+      "customer_name": "Beispiel AG",
+      "customer_email": "ap@beispiel.test",
+      "invoice_pdf": "https://pay.stripe.com/invoice/acct_TEST/live_TEST2/pdf",
+      "hosted_invoice_url": "https://pay.stripe.com/invoice/acct_TEST/live_TEST2",
+      "charge": null,
+      "payment_intent": null,
+      "subscription": null,
+      "paid": null,
+      "payments": {
+        "object": "list",
+        "has_more": false,
+        "data": [
+          {
+            "object": "invoice_payment",
+            "status": "paid",
+            "payment": {"type": "payment_intent", "payment_intent": "py_200"}
+          }
+        ]
+      }
+    },
+    {
+      "id": "in_00000000000003",
+      "object": "invoice",
+      "number": null,
+      "status": "draft",
+      "created": 1781481600,
+      "total": 10000,
+      "currency": "eur",
+      "customer": "cus_00000000000003",
+      "customer_name": "Draft Customer",
+      "invoice_pdf": null,
+      "charge": null,
+      "payment_intent": null
+    }
+  ]
+}

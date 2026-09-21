@@ -59,7 +59,7 @@ account with no valid `kmu:` code.
 1. Draft bank/PSP activity into `staging/`. Configured importers:
    - `quints import ubs <statement.mt940>` — the MT940 export from UBS e-banking; no credentials.
    - `quints import wise --fetch --from <date> --to <date>` — needs `QUINTS_WISE_API_TOKEN` in `.env` (plus `QUINTS_WISE_PRIVATE_KEY` for SCA-protected profiles; the key pair lives in `.wise/`, git-ignored).
-   - `quints import stripe --fetch --from <date> --to <date>` — needs `QUINTS_STRIPE_API_KEY` in `.env` (a restricted read-only key for the `[import.stripe]` account).
+   - `quints import stripe --fetch --from <date> --to <date>` — needs `QUINTS_STRIPE_API_KEY` in `.env` (a restricted read-only key for the `[import.stripe]` account). Add `--invoices` to file each charge's customer invoice PDF into `inbox/` (needs *Invoices: Read* on the key).
 2. Review each draft in `staging/`. A draft is a flagged (`!`) transaction
    with only the cash leg known:
 

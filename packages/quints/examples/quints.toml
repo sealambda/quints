@@ -57,7 +57,8 @@ EUR = "Assets:CH:GmbH:Current:Wise:EUR"
 USD = "Assets:CH:GmbH:Current:Wise:USD"
 
 # Fetching needs QUINTS_STRIPE_API_KEY in .env (a restricted key with
-# Balance transaction sources: Read and Charges: Read).
+# Balance transaction sources: Read and Charges: Read, plus Invoices:
+# Read to download customer invoice PDFs with --invoices).
 [import.stripe]
 account_id = "acct_XXXXXXXXXXXX"   # guard: refuse a key for another account
 fees_account = "Expenses:CH:GmbH:BankFees:Stripe"

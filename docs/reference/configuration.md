@@ -96,7 +96,9 @@ EUR = "Assets:CH:Einzelfirma:Current:Stripe:EUR"
 
 API credentials never go in `quints.toml` — they live in `.env`
 (`QUINTS_WISE_API_TOKEN`, `QUINTS_WISE_PRIVATE_KEY`, `QUINTS_STRIPE_API_KEY`),
-which the scaffold gitignores.
+which the scaffold gitignores. The Stripe key is a restricted one with
+*Balance transaction sources: Read* and *Charges: Read*, plus *Invoices: Read*
+if you use `quints import stripe --invoices`.
 
 ## Debugging
 

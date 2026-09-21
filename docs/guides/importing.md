@@ -37,6 +37,36 @@ Imports are idempotent — each transaction carries its source id
 (`mt940_ref:`, `wise_id:`, `stripe_id:`), so re-importing a statement never
 duplicates a booking.
 
+### Stripe customer invoices
+
+<!-- no-test: needs API credentials and network -->
+```bash
+quints import stripe --fetch --from 2026-07-01 --to 2026-09-30 --invoices
+```
+
+`--invoices` additionally files the **invoice** PDF Stripe renders for each
+charge (`invoice_pdf`) into `inbox/`, named
+`YYYY-MM-DD.customer.INVOICENUMBER.pdf` — the same convention `quints invoice`
+files its own PDFs under. That is the document carrying the customer's name,
+address and tax number, which is what substantiates the place of supply behind
+an export booking; the payment itself is already evidenced by the `stripe_id:`
+reference on the draft.
+
+The key needs *Invoices: Read* on top of the fetch scopes. Every file is
+reported on its own line, and anything already in `inbox/` or `documents/` is
+left alone, so re-runs download nothing.
+
+Stripe doesn't reliably link an invoice to the balance transaction that pays
+it, so the two are correlated on amount, currency and timing when no shared id
+exists. If a charge could belong to more than one invoice, the command says so
+and files nothing rather than guessing — the drafts are already in `staging/`
+by then, so only the documents are affected.
+
+Stripe's own monthly fee invoices are a separate matter: they have **no API**.
+When a month's fee debit carries VAT, the import says which month needs its
+tax invoice pulled by hand from the Dashboard (Settings → Plans and fees →
+Invoice history), which the quarterly VAT close needs.
+
 ## Review helpers
 
 ```bash

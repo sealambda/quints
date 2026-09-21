@@ -13,6 +13,14 @@ Dedup is two-layered:
   second pass drops drafts whose cash-account posting matches an existing one
   by amount within a ±3-day window (reported, so the match is auditable).
 
+``fetch_stripe_invoices`` files the customer **invoice** PDF (Stripe's
+``invoice_pdf``) into ``inbox/`` for each charge. That is the document with the
+customer's name, address and tax number on it, which is what substantiates the
+place of supply behind an export booking; the payment itself is already
+evidenced by the ``stripe_id:`` reference on the draft, so no payment receipt
+is needed. Stripe does not reliably link an invoice to the balance transaction
+that settles it, so the pairing is correlated and ties are refused.
+
 Wise statements are fetched through the SCA-capable client in
 ``beangulp_wise`` and saved as JSON next to the drafts — every import stays
 auditable and replayable offline. Credentials come from ``.env``:
@@ -36,14 +44,22 @@ from beancount.core import data
 from beancount.parser import printer
 
 from beangulp_mt940 import Importer as Mt940Importer
+from beangulp_stripe import (
+    CHARGE_TYPES,
+    CREATED_TOLERANCE_SECONDS,
+    FEE_TYPES,
+    StripeClient,
+    StripeError,
+    correlate_invoices,
+)
 from beangulp_stripe import Importer as StripeImporter
-from beangulp_stripe import StripeClient, StripeError
 from beangulp_wise import Importer as WiseImporter
 from beangulp_wise import ScaChallenge, WiseClient, merge_conversions
 from beangulp_yapeal import Importer as YapealImporter
 
 from . import config, ledger
 from . import receivables as recv_mod
+from .invoice.model import slugify
 
 LEGACY_WINDOW_DAYS = 3
 DEFAULT_STAGING = Path("staging")
@@ -129,6 +145,7 @@ class ImportResult:
     receivable_matches: list[tuple[str, data.Transaction]] = field(
         default_factory=list
     )  # (invoice number, draft)
+    fee_tax_periods: list[str] = field(default_factory=list)  # YYYY-MM, see _fee_tax_periods
 
 
 def _cash_pool(
@@ -350,6 +367,7 @@ def run_stripe(
     result.skipped_ref = _txn_count(raw) - _txn_count(deduped)
     _split(result, deduped, _cash_pool(existing, set(stripe.account_map.values())))
     match_receivables(result, existing, cfg)
+    result.fee_tax_periods = _fee_tax_periods(statements)
     _write_staging(result, out_dir, "stripe")
     return result
 
@@ -454,6 +472,167 @@ def fetch_stripe(
     path = out_dir / f"stripe-{interval_start}-{interval_end}.json"
     path.write_text(json.dumps(wrapper, indent=1))
     return [path]
+
+
+# Invoice numbers go into a filename verbatim (the convention keeps them
+# readable); anything that could change the path is replaced.
+_FILENAME_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+@dataclass
+class InvoiceDoc:
+    """One Stripe customer invoice PDF, filed into ``inbox/``."""
+
+    name: str
+    path: Path  # under inbox/, or wherever it turned out to be filed already
+    number: str
+    customer: str
+    txn_id: str  # the balance transaction it documents
+    matched_by: str  # how the two were paired: "id" or "amount+time"
+    skipped: bool  # already in inbox/ or documents/, so not downloaded again
+
+
+def _stripe_transactions(statements: Sequence[Path]) -> list[dict[str, object]]:
+    """Balance transactions out of staged Stripe JSON (wrapper or bare array)."""
+    transactions: list[dict[str, object]] = []
+    for statement in statements:
+        document = json.loads(statement.read_text())
+        batch = document if isinstance(document, list) else document.get("data")
+        if isinstance(batch, list):
+            transactions.extend(t for t in batch if isinstance(t, dict))
+    return transactions
+
+
+def _fee_tax_periods(statements: Sequence[Path]) -> list[str]:
+    """Months whose Stripe fee debit carries VAT (``fee_details`` type ``tax``).
+
+    Stripe's own monthly tax invoice is the document for that VAT, and it has
+    no API at all — Dashboard only, published by the 10th of the next month. So
+    the import can't fetch it; it can only say which months need one pulled by
+    hand before the quarterly VAT close.
+    """
+    import datetime as dt
+
+    periods: set[str] = set()
+    for txn in _stripe_transactions(statements):
+        if txn.get("type") not in FEE_TYPES:
+            continue
+        details = txn.get("fee_details")
+        if not isinstance(details, list):
+            continue
+        if not any(isinstance(d, dict) and d.get("type") == "tax" for d in details):
+            continue
+        created = txn.get("created")
+        if isinstance(created, int):
+            periods.add(dt.datetime.fromtimestamp(created, tz=dt.timezone.utc).strftime("%Y-%m"))
+    return sorted(periods)
+
+
+def _already_filed(root: Path, name: str) -> Path | None:
+    """Where ``name`` is already filed, if it is — inbox/ or documents/.
+
+    Documents move from ``inbox/`` to ``documents/`` once booked, so checking
+    the inbox alone would re-download every invoice that has been filed.
+    """
+    candidate = root / "inbox" / name
+    if candidate.exists():
+        return candidate
+    documents = root / "documents"
+    if documents.is_dir():
+        for path in documents.rglob(name):
+            if path.is_file():
+                return path
+    return None
+
+
+def fetch_stripe_invoices(
+    statements: Sequence[Path],
+    ledger_path: Path,
+    cfg: config.Config | None = None,
+) -> list[InvoiceDoc]:
+    """File each charge's customer invoice PDF into ``inbox/``.
+
+    The balance transactions come from the statements just imported, so the
+    correlation runs against exactly what was booked, and invoices are listed
+    only over the window those transactions span. A charge with no invoice is
+    normal and silent (payouts, refunds and monthly fee debits have none); a
+    charge that could belong to more than one invoice raises
+    :class:`StripeError`, because filing a PDF against the wrong entry is worse
+    than filing none.
+
+    The key is checked against ``[import.stripe] account_id`` first: a key for
+    another account would list another entity's invoices, and those correlate
+    against these charges just as well.
+
+    Names follow the ledger convention ``YYYY-MM-DD.payee.narrative.ext`` with
+    the invoice number as the narrative — the same shape ``quints invoice``
+    files its own PDFs under, so ``quints inbox`` and ``quints match`` read the
+    hints. Anything already in ``inbox/`` or ``documents/`` is left alone, so
+    re-runs download nothing.
+    """
+    import datetime as dt
+
+    stripe = _require((cfg or config.get()).import_stripe, "stripe", "account_id")
+    transactions = _stripe_transactions(statements)
+    created = [
+        t.get("created")
+        for t in transactions
+        if t.get("type") in CHARGE_TYPES and isinstance(t.get("created"), int)
+    ]
+    if not created:
+        return []
+
+    _load_env()
+    key = os.environ.get("QUINTS_STRIPE_API_KEY")
+    if not key:
+        raise StripeError("QUINTS_STRIPE_API_KEY is not set (.env)")
+    client = StripeClient(key)
+    # The statements were checked against the configured account, but the key
+    # in .env is a different object — a key for another account would list
+    # another entity's invoices and correlate them against these charges.
+    account = client.account()
+    if account.get("id") != stripe.account_id:
+        raise StripeError(
+            f"this key belongs to {account.get('id')}, expected {stripe.account_id} "
+            "([import.stripe] account_id) — wrong Stripe account"
+        )
+    window = [c for c in created if isinstance(c, int)]
+    invoices = client.invoices(
+        min(window) - CREATED_TOLERANCE_SECONDS,
+        max(window) + CREATED_TOLERANCE_SECONDS,
+    )
+
+    matches, ambiguities = correlate_invoices(transactions, invoices)
+    if ambiguities:
+        raise StripeError(
+            "cannot tell which invoice documents which charge — nothing filed:\n  "
+            + "\n  ".join(ambiguities)
+        )
+
+    root = ledger_path.resolve().parent
+    docs: list[InvoiceDoc] = []
+    for match in matches:
+        date = dt.datetime.fromtimestamp(match.created, tz=dt.timezone.utc).date()
+        number = _FILENAME_SAFE.sub("-", match.number)
+        name = f"{date.isoformat()}.{slugify(match.customer)}.{number}.pdf"
+        filed = _already_filed(root, name)
+        if filed is not None:
+            docs.append(
+                InvoiceDoc(
+                    name, filed, number, match.customer, match.txn_id, match.matched_by, True
+                )
+            )
+            continue
+        payload = client.document(match.pdf_url)
+        inbox_dir = root / "inbox"
+        inbox_dir.mkdir(exist_ok=True)
+        path = inbox_dir / name
+        path.write_bytes(payload)
+        docs.append(
+            InvoiceDoc(name, path, number, match.customer, match.txn_id, match.matched_by, False)
+        )
+    docs.sort(key=lambda d: d.name)  # the name leads with the date, so: chronological
+    return docs
 
 
 def _load_env(path: Path = Path(".env")) -> None:

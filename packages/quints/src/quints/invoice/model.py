@@ -259,7 +259,7 @@ class Invoice(BaseModel):
         if self._customer_key:
             return self._customer_key
         name = self.customer.name if isinstance(self.customer, Party) else self.customer
-        return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "customer"
+        return slugify(name)
 
     @property
     def vat_rate(self) -> Decimal:
@@ -379,6 +379,15 @@ def load_mapping(path: Path) -> dict[str, object]:
     if suffix == ".json":
         return json.loads(path.read_text())
     raise ValueError(f"unsupported invoice file format {suffix!r} (use .yaml/.toml/.json)")
+
+
+def slugify(name: str, fallback: str = "customer") -> str:
+    """Filename-safe slug: lowercase ASCII words joined by hyphens.
+
+    The one place the convention lives, so every filename built from a party
+    name — a rendered invoice, a fetched one — spells it the same way.
+    """
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or fallback
 
 
 def document_path(inv: Invoice, income_account: str, root: Path = Path("documents")) -> Path:

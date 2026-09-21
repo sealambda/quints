@@ -33,6 +33,11 @@ One beancount transaction is drafted per balance transaction:
   mapped currency (``available`` + ``pending``), dated the day after
   ``as_of``.
 
+:func:`correlate_invoices` pairs charge balance transactions with the invoices
+that document them, so a caller can file each invoice PDF against the entry it
+belongs to. Stripe does not always link the two objects, so the pairing falls
+back to a heuristic and reports ties rather than guessing.
+
 The API client lives in :mod:`beangulp_stripe.client`; the importer itself
 only reads files, so fetching stays auditable and replayable.
 """
@@ -42,9 +47,10 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import TypedDict, TypeGuard
+from typing import TypedDict, TypeGuard, cast
 
 import beangulp
 from beancount.core import data, flags
@@ -52,7 +58,17 @@ from beancount.core.amount import Amount
 
 from .client import StripeClient, StripeError  # re-export
 
-__all__ = ["Importer", "StripeClient", "StripeError", "major_units"]
+__all__ = [
+    "CHARGE_TYPES",
+    "CREATED_TOLERANCE_SECONDS",
+    "FEE_TYPES",
+    "Importer",
+    "InvoiceMatch",
+    "StripeClient",
+    "StripeError",
+    "correlate_invoices",
+    "major_units",
+]
 
 
 class _FeeDetail(TypedDict, total=False):
@@ -66,6 +82,8 @@ class _Billing(TypedDict, total=False):
 
 
 class _Source(TypedDict, total=False):
+    id: str
+    payment_intent: str | None
     billing_details: _Billing
 
 
@@ -75,6 +93,7 @@ class _Txn(TypedDict, total=False):
     type: str
     currency: str
     created: int
+    amount: int  # gross, minor units — what an invoice total is compared against
     net: int
     fee: int
     description: str | None
@@ -370,3 +389,193 @@ def _existing_references(existing: data.Entries, meta_key: str) -> set[str]:
             if isinstance(value, str):
                 refs.add(value)
     return refs
+
+
+# ── invoice ↔ balance-transaction correlation ────────────────────────────────
+
+# Balance-transaction types that can carry a customer invoice. Payouts,
+# refunds and monthly ``stripe_fee`` debits never do.
+CHARGE_TYPES = frozenset({"charge", "payment"})
+
+# Stripe stamps an invoice and the balance transaction that settles it within
+# seconds of each other. When no id links the two objects that gap is the only
+# temporal signal, so the window stays tight.
+CREATED_TOLERANCE_SECONDS = 120
+
+
+class _Invoice(TypedDict, total=False):
+    id: str
+    number: str | None
+    status: str | None
+    created: int
+    total: int
+    currency: str
+    customer_name: str | None
+    customer_email: str | None
+    invoice_pdf: str | None
+    charge: str | None
+    payment_intent: str | None
+    payments: object  # a list, or a {"object": "list", "data": [...]} wrapper
+
+
+@dataclass(frozen=True)
+class InvoiceMatch:
+    """A charge balance transaction paired with the invoice documenting it.
+
+    Only the fields a caller needs to file the document: the raw invoice stays
+    inside this module, so the pairing contract is explicit.
+    """
+
+    txn_id: str
+    invoice_id: str
+    number: str  # the invoice number, else the invoice id
+    customer: str  # customer_name, else customer_email, else ""
+    created: int  # invoice creation timestamp (unix seconds)
+    pdf_url: str  # ``invoice_pdf`` — short-lived, download it now
+    matched_by: str  # "id" (authoritative) | "amount+time" (heuristic)
+
+
+def _number(invoice: _Invoice) -> str:
+    return invoice.get("number") or invoice.get("id") or "?"
+
+
+def _numbers(invoices: Iterable[_Invoice]) -> str:
+    return ", ".join(_number(i) for i in invoices)
+
+
+def _payment_ids(invoice: _Invoice) -> set[str]:
+    """Charge / payment-intent ids the invoice itself names, if any.
+
+    Newer API versions dropped the legacy ``charge`` and ``payment_intent``
+    fields in favour of a ``payments`` list, so both shapes are read. When
+    either yields an id the pairing is authoritative and needs no heuristic.
+    """
+    ids: set[str] = set()
+    for value in (invoice.get("charge"), invoice.get("payment_intent")):
+        if isinstance(value, str):
+            ids.add(value)
+    payments = invoice.get("payments")
+    if isinstance(payments, dict):
+        payments = payments.get("data")
+    if isinstance(payments, list):
+        for payment in payments:
+            if not isinstance(payment, dict):
+                continue
+            reference = payment.get("payment")
+            if not isinstance(reference, dict):
+                continue
+            for value in (reference.get("charge"), reference.get("payment_intent")):
+                if isinstance(value, str):
+                    ids.add(value)
+    return ids
+
+
+def _source_ids(txn: _Txn) -> set[str]:
+    """Charge / payment-intent ids the balance transaction names."""
+    ids: set[str] = set()
+    source = txn.get("source")
+    if isinstance(source, str):
+        ids.add(source)
+    elif isinstance(source, dict):
+        for value in (source.get("id"), source.get("payment_intent")):
+            if isinstance(value, str):
+                ids.add(value)
+    return ids
+
+
+def _compatible(txn: _Txn, invoice: _Invoice) -> bool:
+    """The heuristic rule: same gross amount, same currency, same moment."""
+    amount = txn.get("amount") or 0
+    if not amount or amount != (invoice.get("total") or 0):
+        return False
+    if (txn.get("currency") or "").lower() != (invoice.get("currency") or "").lower():
+        return False
+    created = txn.get("created") or 0
+    return abs(created - (invoice.get("created") or 0)) <= CREATED_TOLERANCE_SECONDS
+
+
+def _match(txn_id: str, invoice: _Invoice, matched_by: str) -> InvoiceMatch:
+    return InvoiceMatch(
+        txn_id=txn_id,
+        invoice_id=invoice.get("id") or "",
+        number=_number(invoice),
+        customer=invoice.get("customer_name") or invoice.get("customer_email") or "",
+        created=invoice.get("created") or 0,
+        pdf_url=invoice.get("invoice_pdf") or "",
+        matched_by=matched_by,
+    )
+
+
+def correlate_invoices(
+    transactions: Sequence[dict[str, object]], invoices: Sequence[dict[str, object]]
+) -> tuple[list[InvoiceMatch], list[str]]:
+    """Pair charge balance transactions with the invoices documenting them.
+
+    Returns ``(matches, ambiguities)``. An id named by both objects wins
+    outright. Failing that the pair must agree on currency and **gross** amount
+    and have been created within :data:`CREATED_TOLERANCE_SECONDS` of each
+    other — and the agreement must be mutual: one invoice for the transaction
+    *and* one transaction for the invoice.
+
+    A transaction with no candidate is neither an error nor reported — payouts,
+    refunds and monthly fee debits have no customer invoice. Only a tie lands
+    in ``ambiguities``, and the caller is expected to stop there rather than
+    file a PDF against the wrong entry.
+
+    Invoices without an ``invoice_pdf`` (drafts) are ignored: nothing could be
+    filed for them, and counting them would only manufacture ties.
+    """
+    charges = [
+        t
+        for t in cast("Sequence[_Txn]", transactions)
+        if t.get("type") in CHARGE_TYPES and isinstance(t.get("id"), str)
+    ]
+    downloadable = [i for i in cast("Sequence[_Invoice]", invoices) if i.get("invoice_pdf")]
+    matches: list[InvoiceMatch] = []
+    ambiguities: list[str] = []
+
+    # Pass 1 — an id shared by both objects is authoritative.
+    named = [(invoice, _payment_ids(invoice)) for invoice in downloadable]
+    paired: set[int] = set()
+    unpaired: list[_Txn] = []
+    for txn in charges:
+        txn_id = txn.get("id") or ""
+        source_ids = _source_ids(txn)
+        hits = [index for index, (_, ids) in enumerate(named) if ids and ids & source_ids]
+        if len(hits) == 1:
+            matches.append(_match(txn_id, named[hits[0]][0], "id"))
+            paired.add(hits[0])
+        elif hits:
+            ambiguities.append(
+                f"{txn_id} shares an id with {len(hits)} invoices "
+                f"({_numbers(named[i][0] for i in hits)})"
+            )
+        else:
+            unpaired.append(txn)
+
+    # Pass 2 — the heuristic, over invoices that name no id at all. One that
+    # does and matched nothing above settles a charge outside this window.
+    pool = [
+        invoice for index, (invoice, ids) in enumerate(named) if not ids and index not in paired
+    ]
+    for txn in unpaired:
+        txn_id = txn.get("id") or ""
+        candidates = [invoice for invoice in pool if _compatible(txn, invoice)]
+        if not candidates:
+            continue
+        if len(candidates) > 1:
+            ambiguities.append(
+                f"{txn_id} matches {len(candidates)} invoices on amount and time "
+                f"({_numbers(candidates)}) — no id links them"
+            )
+            continue
+        invoice = candidates[0]
+        back = [t for t in unpaired if _compatible(t, invoice)]
+        if len(back) > 1:
+            ambiguities.append(
+                f"invoice {_number(invoice)} matches {len(back)} balance transactions "
+                f"({', '.join(str(t.get('id')) for t in back)}) — no id links them"
+            )
+            continue
+        matches.append(_match(txn_id, invoice, "amount+time"))
+    return matches, list(dict.fromkeys(ambiguities))

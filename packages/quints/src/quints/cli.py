@@ -208,6 +208,14 @@ def _json_out(payload: object) -> None:
     typer.echo(json.dumps(payload, indent=2, default=str))
 
 
+def _relative(path: Path) -> str:
+    """``inbox/2026-05-15.acme.INV-1.pdf`` rather than an absolute path."""
+    try:
+        return str(path.relative_to(Path.cwd()))
+    except ValueError:
+        return str(path)
+
+
 def _require_ledger(file: Path) -> None:
     if not file.exists():
         typer.secho(f"ERROR: ledger not found: {file}", fg="red", err=True)
@@ -825,6 +833,11 @@ def import_stripe(
     fetch: bool = typer.Option(
         False, "--fetch", help="Fetch balance transactions from the Stripe API first."
     ),
+    invoices: bool = typer.Option(
+        False,
+        "--invoices",
+        help="Also download each charge's customer invoice PDF into inbox/.",
+    ),
     from_: str | None = typer.Option(None, "--from", metavar="YYYY-MM-DD"),
     to: str | None = typer.Option(None, "--to", metavar="YYYY-MM-DD"),
     out: Path = typer.Option(importing_mod.DEFAULT_STAGING, "--out", help="Staging directory."),
@@ -845,8 +858,9 @@ def import_stripe(
             typer.secho(f"ERROR: {e}", fg="red", err=True)
             typer.secho(
                 "Fetching needs QUINTS_STRIPE_API_KEY in .env — a restricted key "
-                "(Balance transaction sources: Read + Charges: Read) for the "
-                "account configured as [import.stripe] account_id.",
+                "(Balance transaction sources: Read + Charges: Read, plus "
+                "Invoices: Read for --invoices) for the account configured as "
+                "[import.stripe] account_id.",
                 fg="yellow",
                 err=True,
             )
@@ -861,11 +875,33 @@ def import_stripe(
     except ValueError as e:
         typer.secho(f"ERROR: {e}", fg="red", err=True)
         raise typer.Exit(1) from None
-    _report_import(result, as_json)
+    # Documents come after the drafts are already in staging, so a refused
+    # correlation costs the invoice PDFs, never the import.
+    docs: list[importing_mod.InvoiceDoc] = []
+    if invoices:
+        try:
+            docs = importing_mod.fetch_stripe_invoices(list(statements), file)
+        except (ValueError, importing_mod.StripeError) as e:
+            typer.secho(f"ERROR: {e}", fg="red", err=True)
+            typer.secho(
+                f"The import itself succeeded — drafts are in {result.out_path}. "
+                "Downloading invoices needs Invoices: Read on the key.",
+                fg="yellow",
+                err=True,
+            )
+            raise typer.Exit(1) from None
+    _report_import(result, as_json, invoices=docs)
 
 
-def _report_import(result: importing_mod.ImportResult, as_json: bool = False) -> None:
+def _report_import(
+    result: importing_mod.ImportResult,
+    as_json: bool = False,
+    *,
+    invoices: list[importing_mod.InvoiceDoc] | None = None,
+) -> None:
     if as_json:
+        import dataclasses
+
         from beancount.core import data
 
         def txn(t: data.Transaction) -> dict[str, object]:
@@ -889,6 +925,8 @@ def _report_import(result: importing_mod.ImportResult, as_json: bool = False) ->
                 "receivable_matches": [
                     {**txn(t), "invoice": n} for n, t in result.receivable_matches
                 ],
+                "fee_tax_periods": result.fee_tax_periods,
+                "invoices": [dataclasses.asdict(d) for d in invoices or []],
                 "balances": [
                     {
                         "date": str(b.date),
@@ -927,6 +965,21 @@ def _report_import(result: importing_mod.ImportResult, as_json: bool = False) ->
         typer.echo("No new drafts.")
     for balance in result.balances:
         typer.echo(f"Closing balance assertion: {balance.date} {balance.amount} (in staging file).")
+    if invoices:
+        typer.secho(f"{len(invoices)} customer invoice(s):", fg="green")
+        for doc in invoices:
+            where = _relative(doc.path)
+            if doc.skipped:
+                typer.echo(f"  invoice {doc.number} → already filed as {where} — skipped")
+            else:
+                typer.echo(f"  invoice {doc.number} → {where}  ({doc.txn_id}, {doc.matched_by})")
+    for period in result.fee_tax_periods:
+        typer.secho(
+            f"Stripe charged VAT on its {period} fees: pull that month's tax invoice from "
+            "the Dashboard (Settings → Plans and fees → Invoice history, published by the "
+            "10th) — it has no API, and the quarterly VAT close needs it.",
+            fg="yellow",
+        )
 
 
 @app.command(rich_help_panel=PANEL_BANK)
