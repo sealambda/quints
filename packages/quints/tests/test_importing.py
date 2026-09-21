@@ -212,7 +212,7 @@ def test_match_receivables_by_qrr_and_scor() -> None:
     from beancount.loader import load_string
 
     from quints import config
-    from quints.invoice.model import make_qrr, make_scor
+    from quints.invoice.reference import make_qrr, make_scor
 
     entries, _, _ = load_string(_RECV_LEDGER)
     qrr = make_qrr("ACME202606")
@@ -221,7 +221,7 @@ def test_match_receivables_by_qrr_and_scor() -> None:
     result = importing.ImportResult(source="test")
     result.drafts = [
         _draft("ACME AG", "payment", "5059.10", {"ubs_ref": f"X1 {qrr}"}),
-        _draft("ACME AG", f"ref {spaced_rf}", "1000.00"),
+        _draft("ACME AG", f"ref {spaced_rf} paid thanks", "1000.00"),
         _draft("ACME AG", f"refund {qrr}", "-50.00"),  # outgoing → untouched
         _draft("Somebody", "unrelated", "12.00"),
     ]
@@ -237,6 +237,86 @@ def test_match_receivables_by_qrr_and_scor() -> None:
     assert result.drafts[3].postings[1].account == "Expenses:CH:GmbH:FIXME"
 
 
+_SUFFIX_LEDGER = """
+2024-01-01 open Assets:CH:GmbH:Current:UBS:CHF CHF
+2024-01-01 open Assets:CH:GmbH:Receivable:Trade
+2024-01-01 open Income:CH:GmbH:Consulting:External:Domestic
+
+2026-08-31 * "Academy" "August invoiced" ^ACAD202608
+    invoice: "ACAD202608"
+    Assets:CH:GmbH:Receivable:Trade            1000.00 CHF
+    Income:CH:GmbH:Consulting:External:Domestic
+
+2026-08-31 * "Academy" "August extra invoiced" ^ACAD202608B
+    invoice: "ACAD202608B"
+    Assets:CH:GmbH:Receivable:Trade             500.00 CHF
+    Income:CH:GmbH:Consulting:External:Domestic
+"""
+
+
+def test_match_receivables_does_not_confuse_a_suffixed_invoice_number() -> None:
+    """The failure this rewrite exists for: `ACAD202608` is a substring of
+    `ACAD202608B`, so a substring search credited the suffixed invoice's
+    payment — and its correct SCOR reference — to the shorter invoice."""
+    from beancount.loader import load_string
+
+    from quints import config
+    from quints.invoice.reference import make_scor
+
+    entries, _, _ = load_string(_SUFFIX_LEDGER)
+    scor_b = make_scor("ACAD202608B")
+    spaced = " ".join(scor_b[i : i + 4] for i in range(0, len(scor_b), 4))
+
+    result = importing.ImportResult(source="test")
+    result.drafts = [
+        _draft("Academy", "Rechnung ACAD202608B beglichen", "500.00"),
+        _draft("Academy", f"ref {spaced} vielen dank", "500.00"),
+        _draft("Academy", "Rechnung ACAD202608 beglichen", "1000.00"),
+        _draft("Academy", f"ref {make_scor('ACAD202608')}", "1000.00"),
+        _draft("Academy", "Rechnung ACAD 202608 beglichen", "1000.00"),  # typed with a space
+    ]
+    importing.match_receivables(result, entries, config.Config())
+    assert [n for n, _ in result.receivable_matches] == [
+        "ACAD202608B",
+        "ACAD202608B",
+        "ACAD202608",
+        "ACAD202608",
+        "ACAD202608",
+    ]
+
+
+def test_match_receivables_still_clears_a_legacy_qrr_payment() -> None:
+    """Invoices already in customers' hands carry the old zero-padded QR
+    reference; their payments still have to find their invoice."""
+    from beancount.loader import load_string
+
+    from quints import config
+    from quints.invoice.reference import legacy_qrr
+
+    entries, _, _ = load_string(_RECV_LEDGER)
+    result = importing.ImportResult(source="test")
+    result.drafts = [_draft("ACME AG", "payment", "5059.10", {"ubs_ref": legacy_qrr("ACME202606")})]
+    importing.match_receivables(result, entries, config.Config())
+    assert [n for n, _ in result.receivable_matches] == ["ACME202606"]
+
+
+def test_match_receivables_refuses_an_ambiguous_legacy_reference() -> None:
+    """Two invoices whose legacy references collide identify neither: the
+    draft stays flagged for a human instead of being credited to one."""
+    from beancount.loader import load_string
+
+    from quints import config
+    from quints.invoice.reference import legacy_qrr
+
+    entries, _, _ = load_string(_SUFFIX_LEDGER)
+    assert legacy_qrr("ACAD202608") == legacy_qrr("ACAD202608B")
+    result = importing.ImportResult(source="test")
+    result.drafts = [_draft("Academy", "payment", "500.00", {"ubs_ref": legacy_qrr("ACAD202608")})]
+    importing.match_receivables(result, entries, config.Config())
+    assert result.receivable_matches == []
+    assert result.drafts[0].flag == "!"
+
+
 def test_match_receivables_completes_a_cash_only_draft() -> None:
     # Importers with no rule match (e.g. yapeal's default row) draft a
     # single-posting transaction — only the cash leg. A match must add the
@@ -246,7 +326,7 @@ def test_match_receivables_completes_a_cash_only_draft() -> None:
     from beancount.parser import printer
 
     from quints import config
-    from quints.invoice.model import make_qrr
+    from quints.invoice.reference import make_qrr
 
     entries, _, _ = load_string(_RECV_LEDGER)
     qrr = make_qrr("ACME202606")

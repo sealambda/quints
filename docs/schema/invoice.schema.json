@@ -1,5 +1,28 @@
 {
   "$defs": {
+    "ExtraReference": {
+      "description": "A labelled reference the customer's side needs quoted on the invoice.\n\nThe long tail nobody can model up front \u2014 a Leitweg-ID, an Italian\nCIG/CUP, a cost centre, a contract or framework-agreement number. It is\nprinted next to the invoice number with the label as given, so it reads\nthe way the customer's accounts-payable department expects it to.",
+      "properties": {
+        "label": {
+          "description": "Printed as given, e.g. 'Leitweg-ID'.",
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "description": "The reference itself.",
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ],
+      "title": "ExtraReference",
+      "type": "object"
+    },
     "LineItem": {
       "properties": {
         "description": {
@@ -168,7 +191,29 @@
         }
       ],
       "default": null,
+      "description": "Payment reference override \u2014 a QR reference (all digits) or a SCOR creditor reference (RF\u2026), validated by its check digits. Leave unset to derive it from the invoice number.",
       "title": "Reference"
+    },
+    "customer_reference": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The customer's own reference for this invoice \u2014 their PO or order number. Printed next to the invoice number and carried in the QR-bill's structured billing information (Swico S1 /20/) for their accounts-payable software.",
+      "title": "Customer Reference"
+    },
+    "references": {
+      "description": "Further labelled references to print, for whatever the customer's side demands (Leitweg-ID, CIG/CUP, cost centre, contract number).",
+      "items": {
+        "$ref": "#/$defs/ExtraReference"
+      },
+      "title": "References",
+      "type": "array"
     },
     "notes": {
       "items": {

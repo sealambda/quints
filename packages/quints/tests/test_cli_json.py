@@ -211,6 +211,46 @@ def test_prices_sync_reads_ledger_metadata_like_bean_price(
     assert f"{today} price EUR 0.93456 CHF" in out.read_text()
 
 
+def test_invoice_json_reports_the_reference_it_used(tmp_path: Path) -> None:
+    issuer = tmp_path / "issuer.yaml"
+    issuer.write_text(
+        "name: Muster GmbH\n"
+        "address: [Musterstrasse 1, 3000 Bern]\n"
+        "vat_id: CHE-267.359.056 MWST\n"
+        "bank:\n"
+        "  CHF:\n"
+        "    reference: scor\n"
+        "    iban: CH93 0076 2011 6238 5295 7\n"
+        "    qr_iban: CH44 3199 9123 0008 8901 2\n"
+    )
+    inv = tmp_path / "inv.yaml"
+    inv.write_text(
+        "number: INV2026014\nkind: domestic\ncurrency: CHF\nissue_date: 2026-07-02\n"
+        "customer: {name: Acme AG, address: [Bahnhofstrasse 1, 8001 Zürich]}\n"
+        "customer_reference: PO-2026-118\n"
+        "items:\n  - {description: Consulting, quantity: 1, unit_price: 1000.00}\n"
+    )
+    res = runner.invoke(
+        app,
+        [
+            "invoice",
+            str(inv),
+            "--issuer",
+            str(issuer),
+            "--out",
+            str(tmp_path / "out.pdf"),
+            "--no-verify",
+            "--json",
+        ],
+    )
+    assert res.exit_code == 0, res.output
+    d = json.loads(res.output)
+    # Both IBANs configured and `reference: scor` chosen → the creditor reference.
+    assert d["reference_type"] == "SCOR" and d["reference"] == "RF47INV2026014"
+    assert d["customer_reference"] == "PO-2026-118"
+    assert d["qr_payload_ok"] is True
+
+
 def test_iban_json_checks_a_pair(tmp_path: Path) -> None:
     args = ["iban", "DE89 3704 0044 0532 0130 00", "--bic", "COBADEFFXXX", "--json"]
     res = runner.invoke(app, args)

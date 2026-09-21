@@ -14,8 +14,9 @@ import typst
 from babel.dates import format_date
 
 from . import bank, qr
+from . import reference as ref_mod
 from .labels import labels as get_labels
-from .model import Invoice, Issuer, Totals, compute, make_scor, money, number
+from .model import Invoice, Issuer, Totals, compute, money, number
 
 TEMPLATE = Path(__file__).parent / "template.typ"
 # Always on the search path: the default brand families (Geist, Geist Mono,
@@ -37,17 +38,13 @@ class InvoiceContext(TypedDict):
     issuer: dict[str, str | list[str] | None]
     customer: dict[str, str | list[str] | None]
     invoice: dict[str, str]
+    references: list[dict[str, str]]
     terms: str | None
     items: list[dict[str, str | int]]
     totals: dict[str, str | bool]
     payment: Mapping[str, str | None]
     notes: list[str]
     brand: dict[str, str | float | None]
-
-
-def _fmt_iban(iban: str) -> str:
-    s = iban.replace(" ", "")
-    return " ".join(s[i : i + 4] for i in range(0, len(s), 4))
 
 
 def _fmt_date(d: date, locale: str) -> str:
@@ -91,6 +88,16 @@ def build_context(
             "supply": inv.supply,
             "issue_date": _fmt_date(inv.issue_date, inv.locale),
         },
+        # The customer's own reference, then whatever else their side demands —
+        # printed in the title meta grid, under the invoice number and date.
+        "references": [
+            *(
+                [{"label": lbl["your_reference"], "value": inv.customer_reference}]
+                if inv.customer_reference
+                else []
+            ),
+            *({"label": r.label, "value": r.value} for r in inv.references),
+        ],
         "terms": (lbl["terms"].format(days=inv.terms_days) if inv.terms_days is not None else None),
         "items": [
             {
@@ -183,8 +190,8 @@ def render(inv: Invoice, issuer: Issuer, out_path: Path) -> tuple[Path, Totals, 
     try:
         qr_payload = None
         if inv.kind == "domestic":
-            # Swiss QR-bill: QR-IBAN + QRR if configured, else IBAN + SCOR.
-            bill = qr.build_bill(inv, issuer, account, totals.grand_total)
+            # Swiss QR-bill: IBAN + SCOR, or QR-IBAN + QRR — see `reference.py`.
+            bill = qr.build_bill(inv, issuer, account, totals)
             qr.write_svg(bill, work / "qrbill.svg")
             qr_payload = qr.payload(bill)
             payment = {"type": "qrbill"}
@@ -214,7 +221,7 @@ def render(inv: Invoice, issuer: Issuer, out_path: Path) -> tuple[Path, Totals, 
                 "iban": bank.format_iban(account.iban),
                 "bic": account.bic,
                 "bank_name": account.bank_name,
-                "reference": _fmt_iban(inv.reference or make_scor(inv.number)),
+                "reference": ref_mod.payment_reference(inv, account).formatted,
             }
 
         logo = issuer.brand.logo

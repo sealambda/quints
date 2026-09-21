@@ -48,6 +48,36 @@
           ],
           "default": null,
           "title": "Bank Name"
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "enum": [
+                "scor",
+                "qrr"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which payment reference invoices paid into this account carry. `scor` is the readable ISO 11649 creditor reference (RF\u2026) and needs the regular `iban`; `qrr` is the numeric Swiss QR reference and needs `qr_iban` plus the bank's `qr_reference_id`. Unset follows the one IBAN configured; an account with both must set it.",
+          "title": "Reference"
+        },
+        "qr_reference_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The six-digit identification your bank assigns you (UBS: BESR-ID / 'ID number'). Banks require it as the first six digits of every QR reference you issue; without it they are zeros.",
+          "title": "Qr Reference Id"
         }
       },
       "title": "BankAccount",

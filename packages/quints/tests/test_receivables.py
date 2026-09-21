@@ -51,6 +51,39 @@ def test_at_date_excludes_later_payments(tmp_path: Path) -> None:
     }
 
 
+def test_a_suffixed_invoice_link_is_still_an_invoice(tmp_path: Path) -> None:
+    """A hand-written leg carries only the `^link`. A numbering scheme that
+    suffixes a re-issue or a credit note (`ACAD202608B`) must not drop out of
+    receivables because the id pattern was too strict."""
+    led = tmp_path / "m.bean"
+    led.write_text(
+        LEDGER
+        + """
+2026-06-30 * "Academy" "June invoiced" ^ACAD202608B
+  Assets:CH:GmbH:Receivable:Trade        250.00 CHF
+  Income:CH:GmbH:Consulting:External:Domestic  -250.00 CHF
+"""
+    )
+    open_invoices, _cons, _ = receivables.compute(led, date(2026, 7, 1), config.Config())
+    assert ("ACAD202608B", Decimal("250.00")) in {(o.number, o.open_amount) for o in open_invoices}
+
+
+def test_a_second_non_invoice_link_does_not_make_the_invoice_ambiguous(tmp_path: Path) -> None:
+    """Only a *lone* invoice-shaped link is trusted, so the id pattern must
+    not also match the project or contract links booked next to it."""
+    led = tmp_path / "m.bean"
+    led.write_text(
+        LEDGER
+        + """
+2026-06-30 * "Academy" "June invoiced" ^ACAD202608B ^PROJECT2024-PHASE2 ^PROJ2024-A ^FY2024-Q1
+  Assets:CH:GmbH:Receivable:Trade        250.00 CHF
+  Income:CH:GmbH:Consulting:External:Domestic  -250.00 CHF
+"""
+    )
+    open_invoices, _cons, _ = receivables.compute(led, date(2026, 7, 1), config.Config())
+    assert "ACAD202608B" in {o.number for o in open_invoices}
+
+
 def test_posting_level_invoice_metadata_reallocates(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text(

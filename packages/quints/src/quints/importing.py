@@ -205,8 +205,10 @@ def match_receivables(
     deterministically from the invoice number, so a payment carrying either —
     or the plain number — identifies its invoice exactly. On a match the
     draft's counter leg becomes the receivable clearing, linked `^<number>`
-    and flagged `*` (complete as drafted)."""
-    from .match import reference_index
+    and flagged `*` (complete as drafted). A reference that fits more than one
+    open invoice matches nothing: the draft stays flagged `!` for a human,
+    which is the only honest outcome."""
+    from .match import find_invoice, payment_text, reference_index
 
     opens = recv_mod.compute_from_entries(existing, TodayDate.today(), cfg)
     if not opens:
@@ -217,14 +219,10 @@ def match_receivables(
         cash = draft.postings[0]
         if cash.units is None or cash.units.number is None or cash.units.number <= 0:
             continue  # only incoming payments clear receivables
-        blob = " ".join(
-            [draft.payee or "", draft.narration or ""]
-            + [str(v) for v in (draft.meta or {}).values()]
-        ).upper()
-        compact = re.sub(r"[^A-Z0-9]", "", blob)
-        number = next((n for ref, n in index.items() if ref in compact), None)
-        if number is None:
+        hit = find_invoice(index, *payment_text(draft))
+        if hit is None or hit.number is None:
             continue
+        number = hit.number
         postings = list(draft.postings)
         if len(postings) == 1:
             # Only the cash leg is known — add the elided receivable clearing

@@ -8,6 +8,10 @@ currency: CHF
 issue_date: 2026-07-02
 supply: Juli 2026
 customer: acme
+# The customer's own reference for this invoice — their PO number. It is
+# printed next to the invoice number and travels in the QR-bill's structured
+# billing information, so their accounts-payable software can match it.
+customer_reference: PO-2026-118
 items:
   - description: Consulting — July
     quantity: 1

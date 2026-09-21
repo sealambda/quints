@@ -19,10 +19,16 @@ from quints.invoice.model import (
     document_path,
     load_customers,
     load_invoice,
+    money,
+)
+from quints.invoice.reference import (
+    PaymentReference,
+    decode_qrr,
+    format_reference,
+    legacy_qrr,
     make_qrr,
     make_scor,
-    money,
-    qrr_check_digit,
+    payment_reference,
 )
 
 ISSUER = Issuer(
@@ -105,24 +111,249 @@ def test_compute_export_no_vat():
     assert t.vat_amount == Decimal("0") and t.grand_total == Decimal("771.16")
 
 
-def test_qrr_check_digit():
+def test_qrr_is_valid_and_reversible():
+    from stdnum.ch import esr
+
     ref = make_qrr("ACME202606")
-    assert len(ref) == 27
-    assert qrr_check_digit(ref) == "0"  # recursive mod-10 over the full number → 0
+    assert len(ref) == 27 and esr.is_valid(ref)  # mod-10 recursive check digit
+    assert decode_qrr(ref) == "ACME202606"  # without knowing the issuer's prefix
+    # The bank-assigned identification owns the first six digits (UBS: BESR-ID).
+    prefixed = make_qrr("ACME202606", "123456")
+    assert prefixed.startswith("123456") and esr.is_valid(prefixed)
+    assert decode_qrr(prefixed) == "ACME202606"
+    assert decode_qrr(ref.replace("0", "1", 1)) != "ACME202606"  # wrong check digit → None
+    # Spaced the way a bank re-prints it, and as the payment part groups it.
+    assert decode_qrr("00 00000 00019 99860 06390 99176") == "INV2026014"
+
+
+def test_qrr_is_injective_where_the_legacy_scheme_collided():
+    # The real numbering that broke the old scheme: every one of these kept
+    # only "202608" and rendered as the same reference, so a payment was
+    # credited to whichever invoice happened to be indexed last.
+    numbers = ["ACAD202608", "AYUN202608", "KEI202608", "ACAD202608B"]
+    assert len({legacy_qrr(n) for n in numbers}) == 1  # the bug
+    assert len({make_qrr(n) for n in numbers}) == len(numbers)  # fixed
+    assert [decode_qrr(make_qrr(n)) for n in numbers] == numbers
+    # Leading zeros survive too — "0042" and "42" are different invoices.
+    assert make_qrr("0042") != make_qrr("42")
+
+
+def test_reference_refuses_to_truncate():
+    with pytest.raises(ValueError, match="at most 21"):
+        make_scor("A" * 22)
+    with pytest.raises(ValueError, match="at most 12"):
+        make_qrr("INV" + "0" * 12)
+    with pytest.raises(ValueError, match="6 digits"):
+        make_qrr("INV1", "12345")
+
+
+def test_references_in_reads_a_reference_followed_by_words():
+    """A bank prints the reference inside a sentence. Mod-97-10 accepts about
+    one arbitrary string in 97, so a reader that stopped at the first
+    verifying candidate would now and then keep a garbage prefix and drop the
+    real reference — this is one of the strings where that happens."""
+    from quints.invoice.reference import references_in
+
+    scor = make_scor("ACME202606")
+    spaced = " ".join(scor[i : i + 4] for i in range(0, len(scor), 4))
+    for text in (
+        f"ref {scor} ZAHLUNG ERHALTEN",
+        f"Gutschrift {spaced} vielen dank",
+        f"{scor}",
+    ):
+        assert scor in references_in(text), text
+    # A 27-digit QR reference is read the same way, however it is grouped —
+    # and with its leading zeros stripped, as some statement exports print it.
+    qrr = make_qrr("ACME202606")
+    grouped = format_reference("QRR", qrr)
+    assert references_in(f"GUTSCHRIFT {grouped} SEPA") == [qrr]
+    assert references_in(f"QRR {qrr.lstrip('0')} SEPA") == [qrr]
+
+
+def test_numbers_in_joins_adjacent_tokens_but_prefers_exact_ones():
+    from quints.invoice.reference import numbers_in
+
+    spaced = numbers_in("Rechnung ACAD 202608 beglichen")
+    assert "ACAD202608" in spaced
+    hyphenated = numbers_in("ACAD-2026-08")
+    assert "ACAD202608" in hyphenated
+    # Exact tokens come before any join: a stray trailing letter must not turn
+    # a payment for ACAD202608 into one for ACAD202608B.
+    mixed = numbers_in("ACAD202608 B")
+    assert mixed.index("ACAD202608") < mixed.index("ACAD202608B")
 
 
 def test_make_scor_matches_ig_example():
     # Worked example from the SIX Implementation Guidelines QR-bill (Annex A).
     assert make_scor("539007547034") == "RF18539007547034"
+    assert make_scor("INV2026014") == "RF47INV2026014"
+
+
+def test_scheme_follows_the_one_iban_and_refuses_to_guess_between_two():
+    inv = _domestic()
+    only_iban = BankAccount(iban="CH93 0076 2011 6238 5295 7")
+    assert payment_reference(inv, only_iban) == PaymentReference(
+        "SCOR", "RF46ACME202606", "RF46 ACME 2026 06"
+    )
+    # A QR-IBAN on its own can only be paid by QRR.
+    only_qr = BankAccount(qr_iban="CH44 3199 9123 0008 8901 2")
+    assert payment_reference(inv, only_qr).kind == "QRR"
+    # Both configured: the choice decides which account is paid and must be
+    # explicit — the previous scaffold wrote exactly this shape, and silently
+    # flipping it would re-render old invoices with a different reference.
+    both = {"qr_iban": "CH44 3199 9123 0008 8901 2", "iban": "CH93 0076 2011 6238 5295 7"}
+    with pytest.raises(ValueError, match="both `iban` and `qr_iban` but no `reference:`"):
+        payment_reference(inv, BankAccount.model_validate(both))
+    scor = BankAccount.model_validate({**both, "reference": "scor"})
+    assert payment_reference(inv, scor).kind == "SCOR"
+    qrr = BankAccount.model_validate({**both, "reference": "qrr"})
+    assert payment_reference(inv, qrr).kind == "QRR"
+    # An export invoice never asks: a credit transfer is SCOR whatever the account.
+    export = _domestic()
+    export.kind = "export"
+    assert payment_reference(export, BankAccount.model_validate(both)).kind == "SCOR"
+    # …and asking for QRR without one is refused, with the way out named.
+    with pytest.raises(ValueError, match="no `qr_iban`"):
+        qr.build_bill(
+            inv,
+            ISSUER,
+            BankAccount(iban="CH93 0076 2011 6238 5295 7", reference="qrr"),
+            compute(inv),
+        )
+    assert payment_reference(export, only_qr).kind == "SCOR"
+
+
+def test_invoice_number_must_yield_a_reference():
+    # Validated at load with the same rule the references are built from:
+    # ASCII letters and digits only, and short enough for a SCOR reference.
+    with pytest.raises(ValueError, match="no ASCII letter or digit"):
+        _invoice(number="ÄÖ-–")
+    with pytest.raises(ValueError, match="at most 21"):
+        _invoice(number="INV" + "0" * 19)
+    assert _invoice(number="INV-2026/014").number == "INV-2026/014"  # punctuation is fine
+
+
+def test_manual_reference_is_validated_against_the_scheme(tmp_path: Path):
+    base = (
+        "number: X1\nkind: domestic\ncurrency: CHF\nissue_date: 2026-07-02\n"
+        "customer: {name: A, address: [B]}\n"
+        "items:\n  - {description: Work, quantity: 1, unit_price: 100}\n"
+    )
+    (tmp_path / "ok.yaml").write_text(base + "reference: RF18 5390 0754 7034\n")
+    inv = load_invoice(tmp_path / "ok.yaml")
+    assert inv.reference == "RF18539007547034"  # kept in its compact form
+    (tmp_path / "bad.yaml").write_text(base + "reference: RF17 5390 0754 7034\n")
+    with pytest.raises(ValueError, match="not a valid SCOR"):
+        load_invoice(tmp_path / "bad.yaml")
+    (tmp_path / "nonsense.yaml").write_text(base + "reference: ACME/2026\n")
+    with pytest.raises(ValueError, match="neither a QR reference"):
+        load_invoice(tmp_path / "nonsense.yaml")
+    # A QRR override on an account that pays by SCOR is a mismatch, not a coin flip.
+    (tmp_path / "qrr.yaml").write_text(base + "reference: 21 00000 00003 13947 14300 09017\n")
+    with pytest.raises(ValueError, match="paid with a SCOR reference"):
+        payment_reference(
+            load_invoice(tmp_path / "qrr.yaml"), BankAccount(iban="CH93 0076 2011 6238 5295 7")
+        )
+
+
+def test_yaml_integers_are_accepted_only_at_full_length():
+    """`qr_reference_id: 123456` unquoted is a YAML int and loses nothing;
+    `012345` unquoted is octal 5349 by the time pydantic sees it, so the only
+    honest answer is to ask for quotes — never to zero-fill into a wrong id."""
+    acct = BankAccount.model_validate(
+        {"iban": "CH93 0076 2011 6238 5295 7", "qr_reference_id": 123456}
+    )
+    assert acct.qr_reference_id == "123456"
+    with pytest.raises(ValueError, match="Quote it"):
+        BankAccount.model_validate({"iban": "CH93 0076 2011 6238 5295 7", "qr_reference_id": 5349})
+    # Same rule for a QR reference set by hand: 27 digits or quotes.
+    full = make_qrr("ACME202606", "123456")
+    assert _invoice(reference=int(full)).reference == full
+    with pytest.raises(ValueError, match="Quote it"):
+        _invoice(reference=2026085)
 
 
 def test_qr_payload_structure():
-    t = compute(_domestic())
-    acct = ISSUER.account("CHF")
-    lines = qr.payload(qr.build_bill(_domestic(), ISSUER, acct, t.grand_total)).splitlines()
-    assert lines[0] == "SPC" and lines[-1] == "EPD"
+    # This issuer configured a QR-IBAN and nothing else, so it pays by QRR.
+    inv = _domestic()
+    t = compute(inv)
+    lines = qr.payload(qr.build_bill(inv, ISSUER, ISSUER.account("CHF"), t)).splitlines()
+    assert lines[0] == "SPC" and lines[-1].startswith("//S1")
     assert lines[3] == "CH4431999123000889012"
     assert "QRR" in lines and "CHF" in lines
+    assert make_qrr("ACME202606") in lines
+    assert lines[lines.index("EPD") - 1] == "ACME202606"  # unstructured message
+
+
+def test_qr_payload_carries_swico_billing_information():
+    inv = _domestic()
+    inv.customer_reference = "PO-4711"
+    inv.terms_days = 30
+    payload = qr.payload(qr.build_bill(inv, ISSUER, ISSUER.account("CHF"), compute(inv)))
+    # Tags ascending, each once; /30/ is the issuer's UID digits only, /32/ the
+    # rate on the whole invoice, /40/ net 30 days. No /31/: `supply` is free text.
+    assert payload.splitlines()[-1] == (
+        "//S1/10/ACME202606/11/260702/20/PO-4711/30/267359056/32/8.1/40/0:30"
+    )
+    # A slash in a value is escaped in the payload, the way Swico's own
+    # example writes it (`/10/X.66711\/8824`).
+    inv.customer_reference = "MW/2020/04"
+    inv.terms_days = None  # no payment conditions → no /40/ at all
+    payload = qr.payload(qr.build_bill(inv, ISSUER, ISSUER.account("CHF"), compute(inv)))
+    assert payload.splitlines()[-1] == (
+        "//S1/10/ACME202606/11/260702/20/MW\\/2020\\/04/30/267359056/32/8.1"
+    )
+
+
+def test_swico_escapes_and_fits_the_140_character_budget():
+    from quints.invoice import swico
+
+    assert swico.escape(r"X.66711/8824") == r"X.66711\/8824"  # the Swico example
+    assert swico.escape("a\\b") == "a\\\\b"
+    inv = _domestic()
+    # Payment conditions, VAT details and the issuer's UID go first; the
+    # customer's reference — what their side matches on — survives them all.
+    inv.customer_reference = "P" * 90
+    built = swico.billing_information(inv, ISSUER, compute(inv), inv.number)
+    assert built is not None and built == f"//S1/10/ACME202606/11/260702/20/{'P' * 90}"
+    assert len(built) + len(inv.number) <= swico.MAX_LENGTH
+    # Only when even that does not fit is it dropped — and then not silently.
+    inv.customer_reference = "P" * 120
+    with pytest.warns(UserWarning, match="no room left for customer_reference"):
+        built = swico.billing_information(inv, ISSUER, compute(inv), inv.number)
+    assert built == "//S1/10/ACME202606/11/260702"
+
+
+def test_export_invoice_prints_a_scor_reference():
+    from quints.invoice import render as r
+
+    inv = Invoice(
+        number="GLOBEX202608",
+        kind="export",
+        currency="EUR",
+        issue_date=date(2026, 8, 5),
+        customer=Party(
+            name="Globex Ltd",
+            address=["1 Liffey Street", "Dublin 1"],
+            country="IE",
+            vat_id="IE1234567T",
+        ),
+        items=[LineItem(description="Work", quantity=Decimal("1"), unit_price=Decimal("500"))],
+        locale="en",
+        customer_reference="PO-99",
+        references=[{"label": "Leitweg-ID", "value": "991-12345-67"}],  # type: ignore[list-item]
+    )
+    ctx = r.build_context(
+        inv,
+        ISSUER,
+        compute(inv),
+        {"reference": payment_reference(inv, ISSUER.account("EUR")).formatted},
+    )
+    assert ctx["payment"]["reference"] == "RF35 GLOB EX20 2608"
+    assert ctx["references"] == [
+        {"label": "Your reference", "value": "PO-99"},
+        {"label": "Leitweg-ID", "value": "991-12345-67"},
+    ]
 
 
 # ── customer registry ─────────────────────────────────────────────────────────
@@ -204,6 +435,17 @@ def test_load_invoice_toml(tmp_path: Path):
 
 
 # ── ledger draft + cross-check ────────────────────────────────────────────────
+
+
+def test_draft_quotes_customer_text_safely():
+    from beancount.parser import parser as raw_parser
+
+    inv = _domestic()
+    inv.customer_reference = 'PO "Phase 2" \\ final'
+    text = draft.build_draft(inv, compute(inv), config.Config())
+    entries, errors, _ = raw_parser.parse_string(text)
+    assert not errors and len(entries) == 1
+    assert entries[0].meta["customer_reference"] == 'PO "Phase 2" \\ final'
 
 
 def test_draft_is_balanced_and_complete():

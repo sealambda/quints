@@ -34,7 +34,7 @@ from rich.table import Table
 
 from . import config, ledger, receivables, ui
 from . import inbox as inbox_mod
-from .invoice.model import make_qrr, make_scor
+from .invoice import reference as ref_mod
 
 THRESHOLD = 0.5
 _TOL = Decimal("0.005")
@@ -49,14 +49,94 @@ class Match:
     reasons: list[str]
 
 
-def reference_index(open_invoices: list[receivables.OpenInvoice]) -> dict[str, str]:
-    """Every reference form an incoming payment may carry → invoice number."""
-    idx: dict[str, str] = {}
+@dataclass(frozen=True)
+class ReferenceIndex:
+    """Every reference form an incoming payment may carry → invoice number.
+
+    A key two open invoices share identifies neither of them, so it is held
+    apart in `ambiguous` instead of silently resolving to whichever invoice
+    was indexed last. That is not hypothetical: the legacy QR reference kept
+    only an invoice number's digits, so `ACAD202608` and `ACAD202608B` map
+    onto the same one. Such a payment is reported as unmatched with the
+    reason, and a human picks the invoice."""
+
+    by_key: dict[str, str]
+    ambiguous: dict[str, tuple[str, ...]]
+
+
+@dataclass(frozen=True)
+class ReferenceHit:
+    """What a payment's text pointed at. `number` is None when it pointed at
+    an ambiguous reference — found, but not identifying."""
+
+    number: str | None
+    reason: str
+
+
+def reference_index(open_invoices: list[receivables.OpenInvoice]) -> ReferenceIndex:
+    """Index the open invoices by every reference form a payment may quote."""
+    keys: dict[str, set[str]] = {}
     for inv in open_invoices:
-        idx[inv.number.upper()] = inv.number
-        idx[make_qrr(inv.number)] = inv.number  # QRR — QR-IBAN payments
-        idx[make_scor(inv.number)] = inv.number  # SCOR/RF — SEPA transfers
-    return idx
+        number = inv.number
+        candidates = [number.upper(), ref_mod.compact_number(number)]
+        for make in (ref_mod.make_scor, ref_mod.make_qrr, ref_mod.legacy_qrr):
+            try:
+                candidates.append(make(number))
+            except ValueError:
+                continue  # a number this scheme cannot carry — the others still can
+        for key in candidates:
+            if key:
+                keys.setdefault(key, set()).add(number)
+    return ReferenceIndex(
+        by_key={k: next(iter(v)) for k, v in keys.items() if len(v) == 1},
+        ambiguous={k: tuple(sorted(v)) for k, v in keys.items() if len(v) > 1},
+    )
+
+
+def payment_text(t: data.Transaction) -> list[str]:
+    """The strings a payment can carry a reference in (not beancount's own
+    `filename`/`lineno`, which are bookkeeping, not payment details)."""
+    meta = {k: v for k, v in (t.meta or {}).items() if k not in ("filename", "lineno")}
+    return [t.payee or "", t.narration or "", *(str(v) for v in meta.values())]
+
+
+def find_invoice(index: ReferenceIndex, *texts: str | None) -> ReferenceHit | None:
+    """The invoice a payment identifies — by exact reference, never substring.
+
+    Structured references (SCOR `RF…`, 27-digit QRR) are read first, spacing
+    and check digits verified; a QR reference is also decoded, so one minted
+    with a bank identification quints never saw still resolves. Plain invoice
+    numbers are then matched as whole tokens: a substring test credits a
+    payment for `ACAD202608B` to `ACAD202608`, and a payment carrying the
+    correct `RF80 ACAD 2026 08B` to both."""
+    text = " ".join(t for t in texts if t)
+    ambiguous: list[str] = []
+    for ref in ref_mod.references_in(text):
+        for key in (ref, ref_mod.decode_qrr(ref)):
+            if not key:
+                continue
+            number = index.by_key.get(key)
+            if number:
+                return ReferenceHit(number, "invoice reference in payment details")
+            if key in index.ambiguous:
+                # A reference that fits two invoices is not decoded further:
+                # whatever it decodes to would be a guess dressed as a match.
+                ambiguous.append(key)
+                break
+    for token in ref_mod.numbers_in(text):
+        number = index.by_key.get(token)
+        if number:
+            return ReferenceHit(number, "invoice number in payment details")
+        if token in index.ambiguous:
+            ambiguous.append(token)
+    if ambiguous:
+        key = ambiguous[0]
+        return ReferenceHit(
+            None,
+            f"reference {key} fits {len(index.ambiguous[key])} open invoices "
+            f"({', '.join(index.ambiguous[key])}) — cannot tell them apart",
+        )
+    return None
 
 
 def _norm(s: str | None) -> str:
@@ -136,22 +216,18 @@ def compute(
         src = _txn_dict(fname, t)
 
         if units.number > 0:  # incoming → open invoice
-            blob = " ".join(
-                [t.payee or "", t.narration or ""] + [str(v) for v in (t.meta or {}).values()]
-            ).upper()
-            compact = re.sub(r"[^A-Z0-9]", "", blob)
-            hit = next((n for ref, n in ref_idx.items() if ref in compact), None)
-            if hit:
+            hit = find_invoice(ref_idx, *payment_text(t))
+            if hit and hit.number:
                 matches.append(
                     Match(
-                        "payment→invoice",
-                        1.0,
-                        src,
-                        inv_dict(by_number[hit]),
-                        ["invoice reference in payment details"],
+                        "payment→invoice", 1.0, src, inv_dict(by_number[hit.number]), [hit.reason]
                     )
                 )
                 continue
+            # An ambiguous reference is worth saying out loud: it rides along
+            # with every payee/amount candidate below, so the table explains
+            # why a payment that *does* quote a reference is still scored.
+            found = [hit.reason] if hit else []
             for o in opens:
                 psim = similarity(t.payee, o.payee)
                 exact = o.currency == units.currency and abs(o.open_amount - units.number) <= _TOL
@@ -164,6 +240,7 @@ def compute(
                             src,
                             inv_dict(o),
                             [
+                                *found,
                                 f"payee ≈ {psim:.2f}",
                                 f"amount {'equals' if exact else 'differs from'} open "
                                 f"{o.open_amount} {o.currency}",

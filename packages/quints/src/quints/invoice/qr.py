@@ -5,12 +5,13 @@ from __future__ import annotations
 import re
 import warnings
 from collections.abc import Sequence
-from decimal import Decimal
 from pathlib import Path
 
 from qrbill import QRBill
 
-from .model import BankAccount, Invoice, Issuer, make_qrr, make_scor
+from . import reference as ref_mod
+from . import swico
+from .model import BankAccount, Invoice, Issuer, Totals
 
 
 def _structured(name: str, lines: Sequence[str], country: str) -> dict[str, str | None]:
@@ -37,29 +38,28 @@ def _structured(name: str, lines: Sequence[str], country: str) -> dict[str, str 
     }
 
 
-def reference_for(inv: Invoice, account: BankAccount) -> str | None:
-    if inv.reference:
-        return inv.reference
-    if account.qr_iban:
-        return make_qrr(inv.number)  # QRR — mandatory with a QR-IBAN
-    return make_scor(inv.number)  # SCOR (ISO 11649) with a regular IBAN
-
-
-def build_bill(inv: Invoice, issuer: Issuer, account: BankAccount, grand: Decimal) -> QRBill:
+def build_bill(inv: Invoice, issuer: Issuer, account: BankAccount, totals: Totals) -> QRBill:
     customer = inv.resolved_customer
     currency = inv.currency
     if currency not in ("CHF", "EUR"):
         raise ValueError(f"Swiss QR-bill supports only CHF or EUR, not {currency!r}")
+    payment_ref = ref_mod.payment_reference(inv, account)
+    # The unstructured message is what the bank forwards on the creditor's
+    # statement, so it carries the invoice number; the structured billing
+    # information is for the payer's software and carries everything else.
+    message = inv.number
+    billing = swico.billing_information(inv, issuer, totals, message) or ""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         bill = QRBill(
-            account=account.qr_iban or account.iban,
+            account=ref_mod.creditor_iban(account, payment_ref.kind, currency),
             creditor=_structured(issuer.name, issuer.address, issuer.country),
             debtor=_structured(customer.name, customer.address, customer.country),
-            amount=f"{grand:.2f}",
+            amount=f"{totals.grand_total:.2f}",
             currency=currency,
-            reference_number=reference_for(inv, account),
-            additional_information=f"{inv.number}",
+            reference_number=payment_ref.value,
+            additional_information=message,
+            billing_information=billing,
         )
     # The Implementation Guidelines allow Arial, Frutiger, Helvetica and
     # Liberation Sans in the payment part, and nothing else. qrbill asks for
