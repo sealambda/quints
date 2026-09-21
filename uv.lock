@@ -159,7 +159,7 @@ dev = [{ name = "pytest", specifier = ">=8" }]
 
 [[package]]
 name = "beangulp-stripe"
-version = "0.1.1"
+version = "0.2.0"
 source = { editable = "packages/beangulp-stripe" }
 dependencies = [
     { name = "beancount" },
@@ -1723,7 +1723,7 @@ wheels = [
 
 [[package]]
 name = "quints"
-version = "0.12.0"
+version = "0.13.0"
 source = { editable = "packages/quints" }
 dependencies = [
     { name = "babel" },
