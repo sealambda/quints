@@ -6,6 +6,12 @@ from .. import config
 from .model import Invoice, Totals, document_path
 
 
+def _quoted(value: str) -> str:
+    """A beancount string literal — free text from the customer must not be
+    able to break the draft out of its quotes."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 def build_draft(inv: Invoice, totals: Totals, cfg: config.Config | None = None) -> str:
     """A balanced receivable booking matching what `verify.cross_check` expects."""
     cfg = cfg or config.get()
@@ -24,9 +30,13 @@ def build_draft(inv: Invoice, totals: Totals, cfg: config.Config | None = None) 
 
     width = max(len(a) for a, _ in legs) + 4
     lines = [
-        f'{inv.issue_date} * "{customer.name}" "{narration}" ^{inv.number}',
-        f'    invoice: "{inv.number}"',
-        f'    document: "{doc.name}"  ; TODO file the PDF under {doc.parent}/',
+        f"{inv.issue_date} * {_quoted(customer.name)} {_quoted(narration)} ^{inv.number}",
+        f"    invoice: {_quoted(inv.number)}",
     ]
+    if inv.customer_reference:
+        # The payer quotes their own reference, not ours, when they ask about
+        # this invoice — so the ledger can be searched by it too.
+        lines.append(f"    customer_reference: {_quoted(inv.customer_reference)}")
+    lines.append(f"    document: {_quoted(doc.name)}  ; TODO file the PDF under {doc.parent}/")
     lines += [f"    {a:<{width}}{amt}" for a, amt in legs]
     return "\n".join(lines)

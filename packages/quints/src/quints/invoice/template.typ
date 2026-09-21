@@ -91,6 +91,12 @@
   ..(if d.invoice.supply != "" {
     (align(horizon, label(L.supply)), text(size: 9.5pt)[#d.invoice.supply])
   } else { () }),
+  // The customer's own references (PO number, Leitweg-ID, cost centre…).
+  // They belong next to the invoice number: it is what the payer's
+  // accounts-payable department matches the invoice on.
+  ..d.references.map(r => (
+    align(horizon, label(r.label)), fig(r.value),
+  )).flatten(),
 )
 #v(8mm)
 

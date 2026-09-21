@@ -140,6 +140,23 @@ def test_qr_bill_branch_reports_cleanly_too(tmp_path: Path) -> None:
     assert "Traceback" not in res.stderr
 
 
+def test_invalid_payment_reference_is_one_error_line(tmp_path: Path) -> None:
+    """A hand-set `reference` is validated by its check digits at load, so a
+    mistyped one never reaches qrbill's own 'reference number is invalid'."""
+    res = runner.invoke(
+        app,
+        _project(
+            tmp_path,
+            bic="COBADEFFXXX",
+            invoice=INVOICE + "reference: RF17 5390 0754 7034\n",
+        ),
+    )
+    assert res.exit_code == 1
+    assert res.stderr.startswith("ERROR: Invoice: reference — ")
+    assert "not a valid SCOR/ISO 11649" in res.stderr
+    assert "Traceback" not in res.stderr
+
+
 def test_traceback_escape_hatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A quints bug still needs a stack trace to debug."""
     monkeypatch.setenv("QUINTS_TRACEBACK", "1")

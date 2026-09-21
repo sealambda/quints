@@ -603,6 +603,7 @@ def invoice(
 
     from .invoice import draft as dr
     from .invoice import model as m
+    from .invoice import reference as ref_mod
     from .invoice import render as r
     from .invoice import verify as v
 
@@ -621,19 +622,23 @@ def invoice(
         account = cfg.income_export if inv.kind == "export" else cfg.income_domestic
         out = m.document_path(inv, account)
     path, totals, payload = r.render(inv, iss, out)
+    ref = ref_mod.payment_reference(inv, iss.account(inv.currency))
 
     qr_ok = None
     if payload:
         lines = payload.splitlines()
-        qr_ok = lines[:1] == ["SPC"] and lines[-1] == "EPD"
+        # The payload ends with EPD, or with the Swico billing information
+        # element that follows it.
+        qr_ok = lines[:1] == ["SPC"] and "EPD" in lines
     if not as_json:
         ui.console.print(
             f"[ok]Wrote[/] {path}  ·  {inv.kind}  ·  {inv.currency} {m.money(totals.grand_total)}"
         )
+        ui.console.print(f"[muted]ref {ref.kind} {ref.formatted}[/]")
         if payload:
             ui.console.print(
                 f"[muted]QR-bill payload: {'SPC…EPD ✓' if qr_ok else 'CHECK!'} "
-                f"({len(payload.splitlines())} lines, ref {inv.reference or 'auto-QRR'})[/]"
+                f"({len(payload.splitlines())} lines)[/]"
             )
 
     cc = None
@@ -680,6 +685,9 @@ def invoice(
                 "currency": inv.currency,
                 "issue_date": inv.issue_date,
                 "customer": inv.resolved_customer.name,
+                "reference": ref.value,
+                "reference_type": ref.kind,
+                "customer_reference": inv.customer_reference,
                 "pdf": str(path),
                 "totals": totals.model_dump(),
                 "qr_payload_ok": qr_ok,

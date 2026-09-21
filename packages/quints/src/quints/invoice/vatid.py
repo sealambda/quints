@@ -9,6 +9,8 @@ VAT module (e.g. US — no VAT regime) are accepted as-is. Online checks
 
 from __future__ import annotations
 
+from stdnum.ch import uid as ch_uid
+from stdnum.ch import vat as ch_vat
 from stdnum.eu import vat as euvat
 from stdnum.exceptions import ValidationError
 from stdnum.util import get_cc_module
@@ -41,6 +43,17 @@ def validate(vat_id: str, country: str) -> None:
     if not errors:  # no validator knows this country → accept
         return
     raise ValueError(f"invalid VAT number {vat_id!r} for country {country}: {errors[0]}")
+
+
+def swiss_uid_digits(vat_id: str) -> str | None:
+    """The nine UID digits of a Swiss VAT number, or None if it isn't one.
+
+    `CHE-106.017.086 MWST` → `106017086`: what the Swico S1 billing
+    information's `/30/` tag carries (no `CHE`, no dots, no `MWST`)."""
+    compact = ch_vat.compact(vat_id)
+    if not compact.startswith("CHE") or not ch_uid.is_valid(compact[:12]):
+        return None
+    return compact[3:12]
 
 
 def _strip_prefix(compact: str, cc: str) -> str:

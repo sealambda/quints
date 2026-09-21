@@ -14,12 +14,19 @@ phone: "+41 76 297 79 35"
 # belonging to nobody. Replace all of them with your own.
 bank:
   CHF:
-    # QR-IBAN (QR-IID variant) — a Swiss QR-bill with a QRR reference.
-    qr_iban: CH44 3199 9123 0008 8901 2
-    # Regular IBAN — CHF arriving from abroad can't use the QR scheme.
+    # The account every CHF invoice is paid into. With a regular IBAN the
+    # QR-bill carries a SCOR reference (RF…), which spells out the invoice
+    # number — readable on a bank statement and in a reminder email.
     iban: CH93 0076 2011 6238 5295 7
     bic: POFICHBEXXX
     bank_name: PostFinance AG, Bern
+    # Paid by the numeric Swiss QR reference (QRR) instead? That needs a
+    # QR-IBAN and the six-digit identification your bank assigns you (UBS
+    # calls it the BESR-ID) — it has to be the first six digits of every QR
+    # reference. Uncomment all three, and keep `iban` for CHF from abroad:
+    # reference: qrr
+    # qr_iban: CH44 3199 9123 0008 8901 2
+    # qr_reference_id: "123456"
   EUR:
     # Regular IBAN — foreign transfers can't use the QR-bill scheme.
     iban: DE89 3704 0044 0532 0130 00

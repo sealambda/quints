@@ -24,7 +24,13 @@ from rich.table import Table
 
 from . import config, ledger, ui
 
-_INVOICE_ID = re.compile(r"^[A-Z]{2,}[0-9]{4,}$")
+# An invoice-shaped link: letters, then digits, then at most two trailing
+# letters — a credit note's or re-issue's `B`. A real number like ACAD202608B
+# must not fall out of receivables for carrying one. Nothing wider on purpose:
+# `invoice_id` only trusts a *lone* invoice-shaped link, so a pattern that also
+# took a hyphenated project or period link (`^PROJ2024-A`, `^FY2024-Q1`) would
+# make the invoice booked beside it ambiguous and drop it instead.
+_INVOICE_ID = re.compile(r"^[A-Z]{2,}[0-9]{4,}[A-Z]{0,2}$")
 _TOL = Decimal("0.005")
 
 

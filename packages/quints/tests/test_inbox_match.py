@@ -1,9 +1,10 @@
 """Tests for quints inbox (inventory/dedup) and quints match (scored matching)."""
 
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
-from quints import config, inbox, match
+from quints import config, inbox, match, receivables
 
 LEDGER = """
 2024-01-01 open Assets:CH:GmbH:Current:UBS:CHF CHF
@@ -72,7 +73,7 @@ STAGING = """
 
 
 def test_match_all_kinds(tmp_path: Path) -> None:
-    from quints.invoice.model import make_qrr
+    from quints.invoice.reference import make_qrr
 
     led = _repo(tmp_path)
     staging = tmp_path / "staging"
@@ -95,6 +96,87 @@ def test_match_all_kinds(tmp_path: Path) -> None:
     assert booked.target["payee"] == "Pixeltools" and booked.score >= 0.9
     # the already-documented booking must not appear as a target
     assert all(m.target.get("payee") != "Linked Supplier" for m in results)
+
+
+_COLLIDING = """
+2024-01-01 open Assets:CH:GmbH:Current:UBS:CHF CHF
+2024-01-01 open Assets:CH:GmbH:Receivable:Trade
+2024-01-01 open Income:CH:GmbH:Consulting:External:Domestic
+
+2026-08-31 * "Academy" "August invoiced" ^ACAD202608
+  invoice: "ACAD202608"
+  Assets:CH:GmbH:Receivable:Trade       1000.00 CHF
+  Income:CH:GmbH:Consulting:External:Domestic
+
+2026-08-31 * "Academy" "August extra invoiced" ^ACAD202608B
+  invoice: "ACAD202608B"
+  Assets:CH:GmbH:Receivable:Trade        500.00 CHF
+  Income:CH:GmbH:Consulting:External:Domestic
+"""
+
+
+def _opens(numbers: list[str]) -> list[receivables.OpenInvoice]:
+    return [
+        receivables.OpenInvoice(
+            number=n,
+            payee="Academy",
+            invoice_date=date(2026, 8, 31),
+            currency="CHF",
+            open_amount=Decimal("1000.00"),
+            age_days=1,
+        )
+        for n in numbers
+    ]
+
+
+def test_reference_index_keeps_colliding_references_out_of_lookup() -> None:
+    from quints.invoice.reference import legacy_qrr, make_qrr, make_scor
+
+    index = match.reference_index(_opens(["ACAD202608", "ACAD202608B"]))
+    # Each invoice is findable by number and by either current-scheme reference.
+    for number in ("ACAD202608", "ACAD202608B"):
+        assert index.by_key[number] == number
+        assert index.by_key[make_scor(number)] == number
+        assert index.by_key[make_qrr(number)] == number
+    # The legacy reference fits both, so it identifies neither.
+    legacy = legacy_qrr("ACAD202608")
+    assert legacy not in index.by_key
+    assert index.ambiguous[legacy] == ("ACAD202608", "ACAD202608B")
+    hit = match.find_invoice(index, f"Zahlung {legacy}")
+    assert hit is not None and hit.number is None
+    assert "cannot tell them apart" in hit.reason
+
+
+def test_find_invoice_decodes_a_reference_it_never_minted() -> None:
+    # The issuer's bank owns the first six digits of the QR reference; a
+    # matcher that only compared strings would miss every payment for an
+    # issuer who configured a qr_reference_id.
+    from quints.invoice.reference import format_reference, make_qrr
+
+    index = match.reference_index(_opens(["ACAD202608", "ACAD202608B"]))
+    printed = format_reference("QRR", make_qrr("ACAD202608B", "123456"))
+    hit = match.find_invoice(index, f"GUTSCHRIFT {printed} SEPA")
+    assert hit is not None and hit.number == "ACAD202608B"
+
+
+def test_match_reports_why_a_referenced_payment_is_still_unmatched(tmp_path: Path) -> None:
+    from quints.invoice.reference import legacy_qrr
+
+    led = tmp_path / "main.bean"
+    led.write_text(_COLLIDING)
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "ubs.bean").write_text(
+        f'2026-09-10 ! "Academy" "payment {legacy_qrr("ACAD202608")}"\n'
+        f"  Assets:CH:GmbH:Current:UBS:CHF   1000.00 CHF\n"
+        f"  Expenses:CH:GmbH:FIXME          -1000.00 CHF\n"
+    )
+    results = match.compute(led, today=date(2026, 9, 10), cfg=config.Config())
+    payments = [m for m in results if m.kind == "payment→invoice"]
+    # Both colliding invoices are offered as scored candidates, and every one
+    # of them says up front why the quoted reference did not decide it.
+    assert {m.target["invoice"] for m in payments} == {"ACAD202608", "ACAD202608B"}
+    assert all("cannot tell them apart" in m.reasons[0] for m in payments)
 
 
 def test_match_empty_is_quiet(tmp_path: Path) -> None:

@@ -64,36 +64,6 @@ def round_step(v: Decimal, step: Decimal) -> Decimal:
     return (v / step).quantize(Decimal("1"), ROUND_HALF_UP) * step
 
 
-# ── Swiss QRR reference (ESR mod-10 recursive check digit) ─────────────────────
-
-_MOD10 = [0, 9, 4, 6, 8, 2, 7, 1, 3, 5]
-
-
-def qrr_check_digit(number: str) -> str:
-    carry = 0
-    for ch in number:
-        carry = _MOD10[(carry + int(ch)) % 10]
-    return str((10 - carry) % 10)
-
-
-def make_qrr(base: str) -> str:
-    """A valid 27-digit QR-reference from an arbitrary string's digits."""
-    digits = "".join(c for c in base if c.isdigit())[:26].rjust(26, "0")
-    return digits + qrr_check_digit(digits)
-
-
-def make_scor(base: str) -> str:
-    """ISO 11649 Creditor Reference (SCOR) from an alphanumeric string.
-
-    Valid with a regular IBAN on QR-bills and in SEPA credit transfers
-    (check digits per modulo 97-10, like an IBAN)."""
-    ref = "".join(c for c in base if c.isalnum()).upper()[:21]
-    if not ref:
-        raise ValueError("SCOR reference needs at least one alphanumeric character")
-    num = "".join(str(int(c, 36)) for c in ref + "RF00")
-    return f"RF{98 - int(num) % 97:02d}{ref}"
-
-
 # ── model ─────────────────────────────────────────────────────────────────────
 
 
@@ -160,6 +130,18 @@ class CustomerRegistry(RootModel[dict[str, Customer]]):
             ) from None
 
 
+class ExtraReference(BaseModel):
+    """A labelled reference the customer's side needs quoted on the invoice.
+
+    The long tail nobody can model up front — a Leitweg-ID, an Italian
+    CIG/CUP, a cost centre, a contract or framework-agreement number. It is
+    printed next to the invoice number with the label as given, so it reads
+    the way the customer's accounts-payable department expects it to."""
+
+    label: str = Field(min_length=1, description="Printed as given, e.g. 'Leitweg-ID'.")
+    value: str = Field(min_length=1, description="The reference itself.")
+
+
 class LineItem(BaseModel):
     description: str
     quantity: Decimal
@@ -185,7 +167,35 @@ class Invoice(BaseModel):
     supply: str = ""
     locale: str = "de_CH"  # CLDR locale for labels + number/date formatting
     vat: VatBlock = Field(default_factory=VatBlock)
-    reference: str | None = None
+    # The payment reference. Unset is the normal case: quints derives it from
+    # the invoice number in the scheme the bank account resolves to (see
+    # `reference.py`). Set it only to re-issue an invoice that went out with a
+    # reference from elsewhere; it is validated at load and must match the
+    # account's scheme.
+    reference: str | None = Field(
+        default=None,
+        description=(
+            "Payment reference override — a QR reference (all digits) or a SCOR "
+            "creditor reference (RF…), validated by its check digits. Leave unset "
+            "to derive it from the invoice number."
+        ),
+    )
+    customer_reference: str | None = Field(
+        default=None,
+        description=(
+            "The customer's own reference for this invoice — their PO or order "
+            "number. Printed next to the invoice number and carried in the "
+            "QR-bill's structured billing information (Swico S1 /20/) for their "
+            "accounts-payable software."
+        ),
+    )
+    references: list[ExtraReference] = Field(
+        default_factory=list,
+        description=(
+            "Further labelled references to print, for whatever the customer's "
+            "side demands (Leitweg-ID, CIG/CUP, cost centre, contract number)."
+        ),
+    )
     notes: list[str] = Field(default_factory=list)
     round_5: bool | None = None  # None → 0.05 rounding iff currency is CHF
     terms_days: int | None = 30  # None → no payment-terms line
@@ -207,6 +217,44 @@ class Invoice(BaseModel):
                 "e.g. locale: es_ES (Spanish/Spain), de_CH, or en"
             )
         return data
+
+    @field_validator("number")
+    @classmethod
+    def _usable_number(cls, v: str) -> str:
+        # Every payment reference is derived from the number's ASCII letters
+        # and digits, so a number with nothing to derive from — or too much for
+        # any scheme to carry — fails here rather than at render time.
+        from .reference import SCOR_MAX_CHARS, compact_number
+
+        core = compact_number(v)
+        if not core:
+            raise ValueError(
+                f"invoice number {v!r} has no ASCII letter or digit — the payment "
+                f"reference is derived from those"
+            )
+        if len(core) > SCOR_MAX_CHARS:
+            raise ValueError(
+                f"invoice number {v!r} is {len(core)} alphanumeric characters; a "
+                f"payment reference carries at most {SCOR_MAX_CHARS} (12 for a QR "
+                f"reference)"
+            )
+        return v
+
+    @field_validator("reference", mode="before")
+    @classmethod
+    def _valid_reference(cls, v: object) -> str | None:
+        """Validate an override at load, and keep it in its compact form.
+
+        `mode="before"`: an unquoted all-digit QR reference arrives as a YAML
+        integer, which is accepted only at its full 27 digits."""
+        if v is None:
+            return None
+        from .reference import QRR_LENGTH, parse_reference, yaml_digits
+
+        raw = yaml_digits(v, QRR_LENGTH, "reference")
+        if not raw.strip():
+            return None
+        return parse_reference(raw).value
 
     @field_validator("locale")
     @classmethod
@@ -286,6 +334,38 @@ class BankAccount(BaseModel):
     bic: str | None = None  # BIC/SWIFT — required on export invoices
     holder: str | None = None  # account holder, when it is not the issuer
     bank_name: str | None = None  # the institution, e.g. "Wise Europe SA, Brussels"
+    reference: Literal["scor", "qrr"] | None = Field(
+        default=None,
+        description=(
+            "Which payment reference invoices paid into this account carry. "
+            "`scor` is the readable ISO 11649 creditor reference (RF…) and needs "
+            "the regular `iban`; `qrr` is the numeric Swiss QR reference and "
+            "needs `qr_iban` plus the bank's `qr_reference_id`. Unset follows the "
+            "one IBAN configured; an account with both must set it."
+        ),
+    )
+    qr_reference_id: str | None = Field(
+        default=None,
+        description=(
+            "The six-digit identification your bank assigns you (UBS: BESR-ID / "
+            "'ID number'). Banks require it as the first six digits of every QR "
+            "reference you issue; without it they are zeros."
+        ),
+    )
+
+    @field_validator("qr_reference_id", mode="before")
+    @classmethod
+    def _check_qr_reference_id(cls, v: object) -> str | None:
+        # `mode="before"`: `qr_reference_id: 123456` is a YAML integer; fine at
+        # six digits, refused (quote it) when a leading zero made it shorter.
+        if v is None:
+            return None
+        from .reference import QRR_ID_DIGITS, check_qr_reference_id, yaml_digits
+
+        raw = yaml_digits(v, QRR_ID_DIGITS, "qr_reference_id")
+        if not raw.strip():
+            return None
+        return check_qr_reference_id(raw)
 
     @field_validator("iban", "qr_iban")
     @classmethod

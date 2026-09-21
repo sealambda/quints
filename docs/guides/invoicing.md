@@ -57,10 +57,12 @@ One account per invoicing currency, under `bank`:
 ```yaml
 bank:
   CHF:
-    qr_iban: CH44 3199 9123 0008 8901 2  # QR-bill with a QRR reference
-    iban: CH93 0076 2011 6238 5295 7     # CHF arriving from abroad
+    iban: CH93 0076 2011 6238 5295 7     # the account invoices are paid into
     bic: POFICHBEXXX
     bank_name: PostFinance AG, Bern      # optional
+    # reference: qrr                     # see "Payment reference" below
+    # qr_iban: CH44 3199 9123 0008 8901 2
+    # qr_reference_id: "123456"          # the six digits your bank assigns you
   EUR:
     iban: DE89 3704 0044 0532 0130 00
     bic: COBADEFFXXX
@@ -92,6 +94,103 @@ IBANs, and flags a BIC whose country doesn't match the IBAN's — normal for a
 payment provider (a Wise EUR account is a Belgian IBAN), wrong if you pasted
 another account's code. It exits non-zero when something is off, so it fits a
 pre-flight check.
+
+## Payment reference
+
+Every invoice asks to be paid with a structured reference, so the payment
+arrives carrying its own invoice id. Two schemes exist, and an account can
+use exactly one of them:
+
+**SCOR** — the ISO 11649 Creditor Reference, and the default. It is `RF`, two
+check digits, then the invoice number itself:
+
+```text
+RF47 INV2 0260 14
+```
+
+Readable on a bank statement, quotable in a reminder email, valid on a Swiss
+QR-bill *and* in a SEPA transfer. It is paid into the regular `iban`.
+
+**QRR** — the Swiss QR reference: 26 digits plus a check digit, printed
+`2 + 5x5`. It is numeric by design — it cannot carry letters, so the invoice
+number is encoded into it — and it works **only** with a QR-IBAN. Banks
+assign you a six-digit identification (UBS calls it the BESR-ID) that has to
+occupy the first six digits of every QR reference you issue; configure it as
+`qr_reference_id` or your references go out starting `000000`.
+
+Which one an account uses:
+
+```yaml
+bank:
+  CHF:
+    reference: scor        # or qrr; omit to let quints resolve it
+    iban: CH93 0076 2011 6238 5295 7
+    # reference: qrr needs both of these:
+    qr_iban: CH44 3199 9123 0008 8901 2
+    qr_reference_id: "123456"   # quoted: YAML reads a leading zero as octal
+```
+
+Omitted, `reference:` follows the one IBAN the account has: a regular `iban`
+alone means `scor`, a `qr_iban` alone means `qrr`. An account with **both**
+has to say which — quints refuses to guess, because the choice decides which
+account the money lands in, and re-rendering an old invoice must reproduce
+the reference the customer already holds. Export invoices are always SCOR: an
+ordinary credit transfer has no QR-bill to carry a QRR.
+
+The reference is derived from the invoice number and nothing else, which is
+what lets `quints import` and `quints match` credit an incoming payment to
+its invoice — by the reference it quotes, the plain number, or a QR reference
+decoded back into one. Two invoices never share a reference as long as their
+numbers differ in a letter or digit: case and punctuation are not carried, so
+`INV-014` and `INV014` would collide (the matcher then reports the payment as
+ambiguous instead of guessing). A number too long to encode is refused instead
+of truncated, because a truncated reference is a payment credited to somebody
+else's invoice. `quints invoice` prints the reference it used:
+
+```text
+ref SCOR RF47 INV2 0260 14
+```
+
+Set `reference:` on the *invoice* only to re-issue one that went out with a
+reference from elsewhere — it is validated by its check digits at load, and
+refused if it doesn't match the account's scheme.
+
+## Your customer's references
+
+Accounts-payable departments pay against their own numbers.
+`customer_reference` is their PO or order number; `references` is the long
+tail — a Leitweg-ID, a CIG/CUP, a cost centre, a framework contract:
+
+```yaml
+number: INV2026014
+customer: acme
+customer_reference: PO-2026-118
+references:
+  - label: Leitweg-ID
+    value: 991-12345-67
+  - label: Kostenstelle
+    value: KST-4711
+```
+
+Both are printed next to the invoice number and date, on domestic and export
+invoices alike, with `customer_reference` labelled in the invoice's language
+("Ihre Referenz" / "Your reference" / "Su referencia") and the extras labelled
+exactly as you wrote them. `customer_reference` also lands in the ledger draft
+as `customer_reference:` metadata, so the books can be searched by the number
+the customer quotes.
+
+On a QR-bill it additionally travels in the structured *billing information*
+element, in Swico's S1 syntax:
+
+```text
+//S1/10/INV2026014/11/260702/20/PO-2026-118/30/267359056/32/8.1/40/0:30
+```
+
+That is the invoice number, its date, your customer's reference, your UID, the
+VAT rate and the payment terms — machine-readable for the payer's
+accounts-payable software. Banks do not forward it with the payment; what comes
+back to you is the reference and the unstructured message, which carries the
+invoice number.
 
 ## Branding
 
