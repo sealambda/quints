@@ -104,9 +104,9 @@ quints fx revalue --at 2026-12-31     # year-end revaluation entry to paste (Art
 quints import ubs <statement.mt940>   # → staging/, never straight into your books
 ```
 
-Wise and Stripe importers exist too (`import wise` / `import stripe`, with
-`--fetch` to pull from their APIs, and `--invoices` to file each Stripe
-charge's customer invoice PDF into `inbox/`). Drafts land in `staging/` flagged
+Yapeal, Wise and Stripe importers exist too (`import yapeal` for a CSV export;
+`import wise` / `import stripe` with `--fetch` to pull from their APIs, and
+`--invoices` to file each Stripe charge's customer invoice PDF into `inbox/`). Drafts land in `staging/` flagged
 for the VAT decision + a linked document; nothing reaches your books until you
 review it.
 
@@ -142,6 +142,7 @@ installing `quints` pulls them in.
 |---|---|
 | [`quints`](packages/quints) | Swiss VAT (MWST) reports & settlement, Bezugsteuer helpers, QR-bill invoicing, KMU statutory statements (OR Art. 959a/959b), statement importing into a review staging area, Fava extension |
 | [`beangulp-mt940`](packages/beangulp-mt940) | beangulp importer for SWIFT MT940 bank statements (UBS et al.) |
+| [`beangulp-yapeal`](packages/beangulp-yapeal) | beangulp importer for Yapeal CSV bank statements |
 | [`beangulp-wise`](packages/beangulp-wise) | beangulp importer for Wise balance statements, with an SCA-capable API client |
 | [`beangulp-stripe`](packages/beangulp-stripe) | beangulp importer for Stripe balance transactions, with a thin API client |
 | [`beanprice-bazg`](packages/beanprice-bazg) | beanprice source for official Swiss BAZG/EZV daily FX rates |
@@ -156,5 +157,5 @@ make check     # ruff, basedpyright, import-linter, deptry, vulture, pytest
 ```
 
 `make check` is the whole quality gate; CI runs exactly it. Pushing a `vX.Y.Z`
-tag builds and publishes all five distributions to PyPI (trusted publishing). See
+tag builds and publishes every distribution to PyPI (trusted publishing). See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the architecture and conventions.

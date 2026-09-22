@@ -62,9 +62,10 @@ example project. If a documented command breaks, CI fails before you see it.
 
 ## The building blocks
 
-`quints` is assembled from five standalone PyPI distributions —
+`quints` is assembled from standalone PyPI distributions —
 [`quints`](https://pypi.org/project/quints/),
 [`beangulp-mt940`](https://pypi.org/project/beangulp-mt940/),
+[`beangulp-yapeal`](https://pypi.org/project/beangulp-yapeal/),
 [`beangulp-wise`](https://pypi.org/project/beangulp-wise/),
 [`beangulp-stripe`](https://pypi.org/project/beangulp-stripe/),
 [`beanprice-bazg`](https://pypi.org/project/beanprice-bazg/) — each usable on

@@ -42,7 +42,7 @@ publishes everything; unchanged packages are no-ops.
 
 ## 4. The tag does the rest
 
-`.github/workflows/publish.yaml` on a `v*.*.*` tag: builds all five behind
+`.github/workflows/publish.yaml` on a `v*.*.*` tag: builds every package behind
 `make check`, publishes each to PyPI via trusted publishing (per-package
 `pypi-<package>` environment, `skip-existing: true` so unbumped versions
 no-op), Sigstore-signs the artifacts, and creates a GitHub release with

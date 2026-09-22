@@ -1,7 +1,7 @@
 # Contributing to quints
 
 Thanks for helping out. This is a [uv](https://docs.astral.sh/uv/) workspace:
-the five distributions live under `packages/*`, and `quints` itself is composed
+the distributions live under `packages/*`, and `quints` itself is composed
 from the standalone `beangulp-*` / `beanprice-*` building blocks.
 
 ## Setup
