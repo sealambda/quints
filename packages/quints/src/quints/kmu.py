@@ -69,6 +69,10 @@ KMU_NAMES: dict[str, dict[str, str]] = {
     "2970": {"en": "Retained earnings", "de": "Gewinnvortrag oder Verlustvortrag"},
     "2979": {"en": "Profit or loss for the year", "de": "Jahresgewinn oder Jahresverlust"},
     "3400": {"en": "Revenue from services", "de": "Dienstleistungserlöse"},
+    "3600": {
+        "en": "Other revenue from goods and services",
+        "de": "Übrige Erlöse aus Lieferungen und Leistungen",
+    },
     "4400": {"en": "Purchased services", "de": "Aufwand für bezogene Dienstleistungen"},
     "5000": {"en": "Wages and salaries", "de": "Lohnaufwand"},
     "5700": {"en": "Social security expenses", "de": "Sozialversicherungsaufwand"},
@@ -76,6 +80,7 @@ KMU_NAMES: dict[str, dict[str, str]] = {
     "6530": {"en": "Accounting and consulting fees", "de": "Buchführungs- und Beratungsaufwand"},
     "6570": {"en": "IT expenses", "de": "Informatikaufwand"},
     "6600": {"en": "Advertising", "de": "Werbeaufwand"},
+    "6700": {"en": "Other operating expenses", "de": "Sonstiger betrieblicher Aufwand"},
     "6620": {"en": "Commissions", "de": "Provisionen"},
     "6640": {"en": "Travel expenses", "de": "Reisespesen"},
     "6800": {"en": "Depreciation", "de": "Abschreibungen"},

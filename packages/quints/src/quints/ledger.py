@@ -49,6 +49,43 @@ VAT_RATE_CLASSES: dict[str, tuple[tuple[Date, Decimal], ...]] = {
 }
 
 
+# Saldosteuersätze (Art. 37 MWSTG): the ESTV grants a business one or more of
+# this discrete list, per branch/activity. The list itself is law — Verordnung
+# der ESTV über die Höhe der Saldosteuersätze nach Branchen und Tätigkeiten,
+# SR 641.202.62 (vom 5.9.2024, Stand 1.1.2025, AS 2024 500); the 2024 step came
+# with the rate increase (AS 2023 18). Newest first, like VAT_RATES.
+# Spelled as the ordinance prints them, in per cent.
+_SSS_FROM_2024 = "0.1 0.6 1.3 2.1 3.0 3.7 4.5 5.3 6.2 6.8"
+_SSS_UNTIL_2023 = "0.1 0.6 1.2 2.0 2.8 3.5 4.3 5.1 5.9 6.5"
+
+
+def _percents(spec: str) -> tuple[Decimal, ...]:
+    return tuple(Decimal(p) / 100 for p in spec.split())
+
+
+SALDO_RATES: tuple[tuple[Date, tuple[Decimal, ...]], ...] = (
+    (Date(2024, 1, 1), _percents(_SSS_FROM_2024)),
+    (Date(2011, 1, 1), _percents(_SSS_UNTIL_2023)),
+)
+
+
+def saldo_rates(on: Date) -> tuple[Decimal, ...]:
+    """The Saldosteuersätze the ESTV could grant on ``on`` (SR 641.202.62)."""
+    for start, rates in SALDO_RATES:
+        if on >= start:
+            return rates
+    raise ValueError(f"no Swiss Saldosteuersatz list known for {on}")
+
+
+def is_saldo_rate(rate: Decimal) -> bool:
+    """True if ``rate`` is (or was) a permitted Saldosteuersatz.
+
+    Any vintage counts: a business still declaring a pre-2024 supply under
+    Ziffer 322 does so at the rate granted back then.
+    """
+    return any(rate in rates for _start, rates in SALDO_RATES)
+
+
 def vat_rate(on: Date, rate_class: str = "standard") -> Decimal:
     """Swiss VAT rate of ``rate_class`` in force on ``on`` (Art. 25 MWSTG)."""
     table = VAT_RATE_CLASSES.get(rate_class)

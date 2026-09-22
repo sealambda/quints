@@ -5,6 +5,8 @@ from datetime import date as Date
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from quints import config, mwst
 
 _TOML = """
@@ -218,3 +220,18 @@ def test_marker_keys_are_configurable(tmp_path: Path) -> None:
     assert report.z230 == Decimal("300.00")
     assert report.z313_net == Decimal("400.00") and report.z313_tax == Decimal("10.40")
     assert report.violations == []
+
+
+def test_annual_filing_is_open_to_the_effective_method(tmp_path: Path) -> None:
+    # Art. 35a MWSTG (since 2025) lets either method settle once a year on
+    # request; `quints init` only writes [vat] for saldo, so this is the
+    # hand-written case and it has to validate.
+    path = tmp_path / "quints.toml"
+    path.write_text('[entity]\nvat_method = "effective"\n\n[vat]\nperiod = "year"\n')
+    cfg = config.load(path)
+    assert cfg.vat_method == "effective" and cfg.period_kind == "year"
+    assert cfg.saldo == ()
+
+    path.write_text('[vat]\nperiod = "month"\n')
+    with pytest.raises(config.ConfigError, match="quarter, half-year, year"):
+        config.load(path)

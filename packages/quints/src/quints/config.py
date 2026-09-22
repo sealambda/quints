@@ -19,6 +19,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, replace
 from datetime import date as Date
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 if sys.version_info >= (3, 11):
@@ -42,6 +43,39 @@ LEGAL_FORMS: dict[str, str] = {
     "ag": "AG",
     "einzelfirma": "Einzelfirma",
 }
+
+# VAT methods and their default filing period. Under the Saldosteuersatz
+# method the Steuerperiode splits into two Abrechnungsperioden (Art. 35 Abs. 1
+# Bst. b MWSTG); the effective method files quarterly. Since 2025 both may file
+# annually on request (Art. 35a MWSTG) — set ``[vat] period = "year"``.
+VAT_METHODS: dict[str, str] = {"effective": "quarter", "saldo": "half-year"}
+PERIOD_KINDS = ("quarter", "half-year", "year")
+
+
+class ConfigError(ValueError):
+    """quints.toml says something that cannot be true."""
+
+
+@dataclass(frozen=True)
+class SaldoRate:
+    """One Saldosteuersatz the ESTV granted, and the turnover it applies to.
+
+    ``rate`` is a fraction (6.2 % → ``Decimal("0.062")``) and must be one of
+    the rates the ordinance lists (:data:`quints.ledger.SALDO_RATES`); which
+    one a business gets is the ESTV's decision, hence config. ``marker`` is an
+    income sub-account marker like the Ziffer markers; the first entry with no
+    marker is the default rate. ``label`` is how ``mwst: "sss=<label>"`` names
+    it, and defaults to the per-cent spelling ("6.2").
+    """
+
+    rate: Decimal
+    marker: str = ""
+    label: str = ""
+
+    @property
+    def name(self) -> str:
+        """How ``mwst: "sss=<name>"`` spells it — per cent, as the ordinance prints it."""
+        return self.label or str((self.rate * 100).quantize(Decimal("0.1")))
 
 
 @dataclass(frozen=True)
@@ -99,10 +133,12 @@ class YapealImport:
 
 @dataclass(frozen=True)
 class Config:
+    """The entity. ``period_kind`` is the only derived value."""
+
     # [entity]
     entity_name: str = "Example GmbH"
     legal_form: str = "gmbh"  # key into LEGAL_FORMS; picks the Klasse-28 equity variant
-    vat_method: str = "effective"  # "saldo" would need a different Form-310 mapping
+    vat_method: str = "effective"  # key into VAT_METHODS: effective | saldo
     vat_registered_since: Date | None = None
     operating_currency: str = "CHF"
     # [ledger]
@@ -131,10 +167,19 @@ class Config:
     rounding_income: str = "Income:CH:GmbH:Rounding"
     income_domestic: str = "Income:CH:GmbH:Consulting:External:Domestic"
     income_export: str = "Income:CH:GmbH:Consulting:External:Export"
+    # Saldosteuersatz method only. The difference between the statutory VAT
+    # invoiced and the SSS owed lands in `saldo_difference` at settlement;
+    # Bezugsteuer is a cost, not a deduction, so it lands in
+    # `bezugsteuer_expense`. Both are excluded from the return by identity.
+    saldo_difference: str = "Income:CH:GmbH:VAT:SaldoDifference"
+    bezugsteuer_expense: str = "Expenses:CH:GmbH:Tax:Bezugsteuer"
     # [prices]
     prices_source: str = "beanprice_bazg"  # beanprice source module for `prices sync`
     prices_currencies: tuple[str, ...] = ("USD", "EUR")  # priced against operating_currency
     prices_tickers: tuple[tuple[str, str], ...] = ()  # currency -> source ticker, when they differ
+    # [vat]
+    vat_period: str = ""  # "" = the method's default (see VAT_METHODS)
+    saldo: tuple[SaldoRate, ...] = ()  # the granted Saldosteuersätze
     # [report]
     report_language: str = "en"
     # [import.*] — statement importers (plan 2); None = not configured
@@ -142,6 +187,19 @@ class Config:
     import_yapeal: YapealImport | None = None
     import_wise: WiseImport | None = None
     import_stripe: StripeImport | None = None
+
+    @property
+    def period_kind(self) -> str:
+        """The VAT filing period: explicit, else the method's statutory default."""
+        return self.vat_period or VAT_METHODS.get(self.vat_method, "quarter")
+
+    @property
+    def saldo_default(self) -> SaldoRate | None:
+        """The rate unmarked turnover falls to — the first entry without a marker."""
+        for granted in self.saldo:
+            if not granted.marker:
+                return granted
+        return self.saldo[0] if self.saldo else None
 
 
 def _rules(section: dict[str, object]) -> tuple[tuple[str, str, str], ...]:
@@ -245,6 +303,8 @@ def _from_mapping(raw: dict[str, object]) -> Config:
         "rounding_income",
         "income_domestic",
         "income_export",
+        "saldo_difference",
+        "bezugsteuer_expense",
     ):
         take(accounts, key, key)
     prices_ = section("prices")
@@ -257,8 +317,76 @@ def _from_mapping(raw: dict[str, object]) -> Config:
     if isinstance(tickers, dict):
         updates["prices_tickers"] = tuple(sorted((str(k), str(v)) for k, v in tickers.items()))
     take(report, "language", "report_language")
+    vat = section("vat")
+    take(vat, "period", "vat_period")
+    if "saldo" in vat:
+        updates["saldo"] = _saldo_rates(vat["saldo"])
     updates.update(_import_sections(raw))
     return replace(cfg, **updates)
+
+
+def _saldo_rates(raw: object) -> tuple[SaldoRate, ...]:
+    """Parse ``[[vat.saldo]]`` — rates are given in per cent, as the ESTV grants them."""
+    if not isinstance(raw, list):
+        raise ConfigError("[vat.saldo] must be a list of tables, e.g. [[vat.saldo]] rate = 6.2")
+    rates: list[SaldoRate] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise ConfigError("each [[vat.saldo]] entry must be a table with a `rate`")
+        if "rate" not in entry:
+            raise ConfigError("a [[vat.saldo]] entry has no `rate`")
+        try:
+            percent = Decimal(str(entry["rate"]))
+        except InvalidOperation:
+            raise ConfigError(f"[[vat.saldo]] rate {entry['rate']!r} is not a number") from None
+        rates.append(
+            SaldoRate(
+                rate=percent / 100,
+                marker=str(entry.get("marker", "")),
+                label=str(entry.get("label", "")),
+            )
+        )
+    return tuple(rates)
+
+
+def validate(cfg: Config) -> Config:
+    """Reject a quints.toml that cannot produce a correct return.
+
+    VAT law is not configurable: the method, the filing period and the
+    permitted Saldosteuersätze are all closed sets, so a typo has to fail here
+    rather than quietly produce a wrong Ziffer.
+    """
+    # Imported here: `ledger` is a sibling in the foundation layer and holds
+    # the statutory tables, but nothing else in config needs it.
+    from . import ledger
+
+    if cfg.vat_method not in VAT_METHODS:
+        raise ConfigError(
+            f"[entity] vat_method {cfg.vat_method!r} is unknown — "
+            f"supported: {', '.join(VAT_METHODS)}"
+        )
+    if cfg.vat_period and cfg.vat_period not in PERIOD_KINDS:
+        raise ConfigError(
+            f"[vat] period {cfg.vat_period!r} is unknown — supported: {', '.join(PERIOD_KINDS)}"
+        )
+    if cfg.vat_method == "saldo" and not cfg.saldo:
+        raise ConfigError(
+            '[entity] vat_method = "saldo" needs the rates the ESTV granted you, e.g.\n'
+            "           [[vat.saldo]]\n           rate = 6.2"
+        )
+    if cfg.vat_method != "saldo" and cfg.saldo:
+        raise ConfigError('[vat.saldo] is set but [entity] vat_method is not "saldo"')
+    for granted in cfg.saldo:
+        if not ledger.is_saldo_rate(granted.rate):
+            permitted = ", ".join(f"{r * 100:g}" for r in ledger.SALDO_RATES[0][1])
+            raise ConfigError(
+                f"[[vat.saldo]] rate {granted.rate * 100:g} is not a Saldosteuersatz — "
+                f"the ESTV grants one of {permitted} (SR 641.202.62)"
+            )
+    labels = [g.name for g in cfg.saldo]
+    if len(set(labels)) != len(labels):
+        raise ConfigError(f"[[vat.saldo]] has duplicate rates/labels: {', '.join(labels)}")
+    return cfg
 
 
 def load(path: Path | None = None) -> Config:
@@ -266,9 +394,9 @@ def load(path: Path | None = None) -> Config:
     if path is None:
         path = DEFAULT_PATH if DEFAULT_PATH.exists() else None
     if path is None:
-        return Config()
+        return validate(Config())
     with open(path, "rb") as f:
-        return _from_mapping(tomllib.load(f))
+        return validate(_from_mapping(tomllib.load(f)))
 
 
 _current: Config | None = None

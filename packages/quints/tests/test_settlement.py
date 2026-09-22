@@ -30,6 +30,7 @@ def _report(**overrides: str | Decimal) -> MwstReport:
     # standard-rate row is enough to stand in for a quarter of sales here.
     return dataclasses.replace(
         report,
+        output_vat=report.z303_tax,
         rate_rows=[
             RateRow("303", "standard", Decimal("0.081"), report.z303_net, report.z303_tax, True)
         ],

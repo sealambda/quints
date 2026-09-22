@@ -13,7 +13,7 @@ Resolution: `--config <path>` > `./quints.toml` > built-in defaults.
 [entity]
 name = "Jane Doe"
 legal_form = "einzelfirma"          # gmbh | ag | einzelfirma
-vat_method = "effective"            # saldo is not supported
+vat_method = "effective"            # effective | saldo (Saldosteuersatz)
 vat_registered_since = 2026-01-01   # earlier periods are pre-liability
 operating_currency = "CHF"
 ```
@@ -62,6 +62,45 @@ standard rate. Set a marker to `""` to disable it. A `mwst:` metadata tag on
 a transaction or posting overrides them, and the account's `kmu:` code
 supplies the rest (Erlösminderungen → Ziffer 235, the 400/405 split) — see
 the [VAT guide](../guides/vat.md).
+
+## `[vat]`
+
+Only the Saldosteuersatz method needs this section; the effective method's
+quarterly period is the default.
+
+```toml
+[vat]
+period = "half-year"    # quarter | half-year | year
+
+# The Saldosteuersätze the ESTV granted you. The first entry without a
+# marker is the default; `marker` sends an income sub-account to another
+# rate, and `mwst: "sss=1.3"` pins a single booking.
+[[vat.saldo]]
+rate = 6.2
+
+[[vat.saldo]]
+rate = 1.3
+marker = ":Handel"
+```
+
+`period` drives the `-p/--period` labels and the 60-day due date: the
+effective method files quarterly, the Saldosteuersatz method half-yearly
+(Art. 35 MWSTG), and either may file annually on request since 2025
+(Art. 35a MWSTG). A `rate` the ESTV cannot grant is rejected at load — the
+permitted list is law (SR 641.202.62), so it ships in quints, date-ranged.
+
+With `vat_method = "saldo"`, `[accounts]` also carries the two accounts only
+that method books to:
+
+```toml
+saldo_difference = "Income:CH:Einzelfirma:VAT:SaldoDifference"
+bezugsteuer_expense = "Expenses:CH:Einzelfirma:Tax:Bezugsteuer"
+```
+
+The first takes the gap between the VAT your invoices collected and the SSS
+you owe; the second takes the reverse charge, which the SSS does not pay back.
+Both are excluded from the return by account identity, so a hand-written
+settlement cannot mis-file them. See the [VAT guide](../guides/vat.md).
 
 ## `[report]`
 

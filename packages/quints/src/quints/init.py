@@ -39,6 +39,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from datetime import date as Date
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +48,7 @@ if sys.version_info >= (3, 11):
 else:  # pragma: no cover
     import tomli as tomllib
 
-from . import config, kmu
+from . import config, kmu, ledger
 
 # Accounts the backbone adds beyond the configurable set in `config.Config`,
 # written in the GmbH namespace; `_sub` re-homes them for other legal forms.
@@ -64,7 +65,10 @@ class Answers:
 
     entity_name: str = "Example GmbH"
     legal_form: str = "gmbh"  # key into config.LEGAL_FORMS
-    vat_method: str = "effective"  # "saldo" is not supported yet
+    vat_method: str = "effective"  # key into config.VAT_METHODS
+    # The Saldosteuersätze the ESTV granted, in per cent ("6.2"); required
+    # when vat_method is "saldo", rejected otherwise.
+    saldo_rates: tuple[str, ...] = ()
     vat_registered_since: Date | None = Date(2026, 1, 1)
     operating_currency: str = "CHF"
     report_language: str = "en"
@@ -88,6 +92,7 @@ def answers_from_mapping(raw: dict[str, Any]) -> Answers:
         entity_name=raw.get("entity_name", d.entity_name),
         legal_form=str(raw.get("legal_form", d.legal_form)).lower(),
         vat_method=raw.get("vat_method", d.vat_method),
+        saldo_rates=tuple(str(r) for r in raw.get("saldo_rates", d.saldo_rates)),
         vat_registered_since=since,
         operating_currency=raw.get("operating_currency", d.operating_currency),
         report_language=raw.get("report_language", d.report_language),
@@ -161,6 +166,9 @@ def _cfg(answers: Answers) -> config.Config:
         rounding_income=_sub(base.rounding_income, c),
         income_domestic=_sub(base.income_domestic, c),
         income_export=_sub(base.income_export, c),
+        saldo_difference=_sub(base.saldo_difference, c),
+        bezugsteuer_expense=_sub(base.bezugsteuer_expense, c),
+        saldo=tuple(config.SaldoRate(Decimal(spec) / 100) for spec in sorted(answers.saldo_rates)),
     )
 
 
@@ -207,6 +215,15 @@ def _backbone(answers: Answers) -> list[_Account]:
         _Account(cfg.rounding_income, "6950", (oc,)),
         _Account(cfg.fx_gain, "6950", (oc,)),
     ]
+    if answers.vat_method == "saldo":
+        # The SSS pays the input tax back through the rate, so the reverse
+        # charge is a cost and the gap between the VAT invoiced and the SSS
+        # owed is revenue. InputVAT stays opened but unused — a later switch
+        # to the effective method needs it, and `vat report` flags any use.
+        accounts += [
+            _Account(cfg.saldo_difference, "3600", (oc,)),
+            _Account(cfg.bezugsteuer_expense, "6700", (oc,)),
+        ]
     if "yapeal" in answers.importers:
         d = config.YapealImport()
         accounts.append(_Account(_sub(d.account, c), "1020", (d.currency,)))
@@ -378,7 +395,13 @@ def _sample_quarter(answers: Answers) -> str:
             f'{year}-08-12 * "Foreign SaaS" "Cloud hosting (reverse charge)"',
             [
                 (_sub(_IT_HOSTING, c), "100.00", "EUR"),
-                (cfg.input_vat, "7.53", "CHF @@ 8.10 EUR"),
+                # Under the SSS method the self-assessed tax is a cost, not a
+                # deduction (Art. 37 MWSTG) — see the VAT guide.
+                (
+                    cfg.bezugsteuer_expense if answers.vat_method == "saldo" else cfg.input_vat,
+                    "7.53",
+                    "CHF @@ 8.10 EUR",
+                ),
                 (cfg.bezugsteuer, "-7.53", "CHF @@ 8.10 EUR"),
                 (_sub(_WISE_EUR, c), "-100.00", "EUR"),
             ],
@@ -646,7 +669,7 @@ def _quints_toml(answers: Answers) -> str:
         "[entity]",
         f'name = "{answers.entity_name}"',
         f'legal_form = "{answers.legal_form}"           # gmbh | ag | einzelfirma',
-        f'vat_method = "{answers.vat_method}"            # "saldo" is not supported yet',
+        f'vat_method = "{answers.vat_method}"            # effective | saldo',
     ]
     if since is not None:
         lines.append(
@@ -677,9 +700,11 @@ def _quints_toml(answers: Answers) -> str:
         *_marker_lines(cfg),
         f'income_domestic = "{cfg.income_domestic}"',
         f'income_export = "{cfg.income_export}"',
+        *_saldo_account_lines(answers, cfg),
         f'fx_gain = "{cfg.fx_gain}"',
         f'fx_loss = "{cfg.fx_loss}"',
         f'rounding_income = "{cfg.rounding_income}"',
+        *_vat_section(answers),
         "",
         "[report]",
         f'language = "{answers.report_language}"                     # or "de"; --lang overrides',
@@ -688,6 +713,46 @@ def _quints_toml(answers: Answers) -> str:
         lines.append("")
         lines.append(_import_section(importer, answers))
     return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def _saldo_account_lines(answers: Answers, cfg: config.Config) -> list[str]:
+    """The two accounts only the Saldosteuersatz method books to."""
+    if answers.vat_method != "saldo":
+        return []
+    return [
+        "# SSS only: the gap between the VAT invoiced and the SSS owed, and",
+        "# the reverse charge that the SSS does not pay back.",
+        f'saldo_difference = "{cfg.saldo_difference}"',
+        f'bezugsteuer_expense = "{cfg.bezugsteuer_expense}"',
+    ]
+
+
+def _vat_section(answers: Answers) -> list[str]:
+    """``[vat]`` — only the Saldosteuersatz method needs anything here.
+
+    The effective method's quarterly period is the default, so an effective
+    project's quints.toml stays exactly as it was.
+    """
+    if answers.vat_method != "saldo":
+        return []
+    cfg = _cfg(answers)
+    lines = [
+        "",
+        "[vat]",
+        "# quarter | half-year | year. The Saldosteuersatz method files",
+        "# half-yearly (Art. 35 MWSTG); annual settlement is on request",
+        "# (Art. 35a MWSTG, turnover up to 5.005 Mio. CHF, three instalments).",
+        f'period = "{cfg.period_kind}"',
+        "",
+        "# The Saldosteuersätze the ESTV granted you (Art. 37 MWSTG; the",
+        "# permitted values are law — Verordnung der ESTV, SR 641.202.62).",
+        "# The first entry without a marker is the default rate; add a",
+        "# `marker` to send an income sub-account to another rate, or tag one",
+        '# booking with `mwst: "sss=<rate>"`.',
+    ]
+    for granted in cfg.saldo:
+        lines += ["[[vat.saldo]]", f"rate = {granted.name}"]
+    return lines
 
 
 def _import_section(importer: str, answers: Answers) -> str:
@@ -785,6 +850,38 @@ _IMPORTER_USAGE = {
         "customer invoice PDF into `inbox/` (needs *Invoices: Read* on the key)."
     ),
 }
+
+
+# The draft-completion sentence, verbatim per method: the effective wording is
+# byte-identical to what the scaffold has always emitted.
+_AGENTS_VAT_STEP = {
+    "effective": (
+        "   Complete the counter leg, decide the VAT treatment (InputVAT /\n"
+        "   Bezugsteuer / none), link the source document, flip `!` to `*`, and move"
+    ),
+    "saldo": (
+        "   Complete the counter leg, decide the VAT treatment (Bezugsteuer or\n"
+        "   none — never InputVAT), link the source document, flip `!` to `*`, and move"
+    ),
+}
+
+
+def _agents_vat_step(answers: Answers) -> str:
+    """How a staging draft is completed — the VAT options depend on the method."""
+    return _AGENTS_VAT_STEP.get(answers.vat_method, _AGENTS_VAT_STEP["effective"])
+
+
+def _agents_vat_note(answers: Answers) -> str:
+    """One saldo-only sentence in the money-out loop; empty for effective."""
+    if answers.vat_method != "saldo":
+        return ""
+    return (
+        "\n   These books use the **Saldosteuersatz method**: input VAT is never\n"
+        "   deducted, so book purchases **gross** — no InputVAT posting.\n"
+        "   Bezugsteuer on foreign services is still owed at the statutory rate\n"
+        "   but is a cost, not a deduction (`quints vat convert --bezugsteuer`\n"
+        "   prints the right pair). `quints vat report` flags any InputVAT."
+    )
 
 
 def _agents_import_step(answers: Answers) -> str:
@@ -900,10 +997,9 @@ account with no valid `kmu:` code.
   {bank}  -250.00 CHF
 ```
 
-   Complete the counter leg, decide the VAT treatment (InputVAT /
-   Bezugsteuer / none), link the source document, flip `!` to `*`, and move
+{_agents_vat_step(answers)}
    it into `books/{year}.bean`. `quints match` scores staging drafts and
-   inbox documents against invoices and bookings.
+   inbox documents against invoices and bookings.{_agents_vat_note(answers)}
 3. **Always** `quints check` before you consider the books consistent.
 
 ## The loop — money in (invoice → receivable → payment)
@@ -1011,10 +1107,29 @@ def _validate(answers: Answers) -> None:
             f"{', '.join(config.LEGAL_FORMS)} (the KMU Kontenrahmen's Klasse-28 "
             f"variants; Personengesellschaft is not supported yet)"
         )
-    if answers.vat_method != "effective":
+    if answers.vat_method not in config.VAT_METHODS:
         raise InitError(
-            f"vat_method {answers.vat_method!r} is not supported yet (only 'effective')"
+            f"unknown vat_method {answers.vat_method!r} — "
+            f"supported: {', '.join(config.VAT_METHODS)}"
         )
+    if answers.vat_method == "saldo" and not answers.saldo_rates:
+        raise InitError(
+            "vat_method 'saldo' needs the Saldosteuersätze the ESTV granted you, "
+            'e.g. saldo_rates = ["6.2"] (SR 641.202.62)'
+        )
+    if answers.vat_method != "saldo" and answers.saldo_rates:
+        raise InitError("saldo_rates is only meaningful with vat_method 'saldo'")
+    for spec in answers.saldo_rates:
+        try:
+            percent = Decimal(spec)
+        except InvalidOperation:
+            raise InitError(f"saldo rate {spec!r} is not a number") from None
+        if not ledger.is_saldo_rate(percent / 100):
+            permitted = ", ".join(f"{r * 100:g}" for r in ledger.SALDO_RATES[0][1])
+            raise InitError(
+                f"{spec} is not a Saldosteuersatz — the ESTV grants one of "
+                f"{permitted} (Verordnung der ESTV, SR 641.202.62)"
+            )
     unknown = [i for i in answers.importers if i not in _KNOWN_IMPORTERS]
     if unknown:
         raise InitError(
