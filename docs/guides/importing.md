@@ -18,6 +18,13 @@ Drafts every movement on the account into `staging/`. Each draft is flagged:
 Rules live in `quints.toml` under `[import.ubs]` — `[payee regex,
 counter account, flag]` triples. See [quints.toml](../reference/configuration.md).
 
+## Yapeal (CSV)
+
+`quints import yapeal <statement.csv>` drafts a Yapeal account's activity from
+the CSV export the same way, with rules under `[import.yapeal]`. The scaffold
+ships a sample statement (`statements/yapeal.csv`); enable the importer with
+`quints init --importers ubs,yapeal` or by adding the section to `quints.toml`.
+
 ## Wise and Stripe
 
 <!-- no-test: --fetch needs API credentials and network -->

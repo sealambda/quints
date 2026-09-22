@@ -1,6 +1,6 @@
 # quints monorepo
 
-uv workspace; the five distributions live in `packages/*` (see README for what each does).
+uv workspace; the distributions live in `packages/*` (see README for what each does).
 
 ## Quality gate
 

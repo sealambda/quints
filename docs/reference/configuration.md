@@ -75,6 +75,11 @@ rules = [
     ["cloudflare", "Expenses:CH:Einzelfirma:IT:Hosting", "!"],
 ]
 
+[import.yapeal]
+account = "Assets:CH:Einzelfirma:Current:Yapeal:CHF"
+iban = "CH9300762011623852957"      # optional — matched against file content
+rules = []
+
 [import.wise]
 fees_account = "Expenses:CH:Einzelfirma:BankFees:Wise"
 holder = "Jane Doe"                 # filter multi-profile API tokens
