@@ -30,6 +30,7 @@ class VatPosting:
     note: str
     input_account: str = ""
     bezugsteuer_account: str = ""
+    rate_class: str = "standard"
 
     def render(self) -> str:
         """The two lines you paste into the ledger (comment + posting)."""
@@ -38,16 +39,20 @@ class VatPosting:
     def render_bezugsteuer(self) -> str:
         """Reverse-charge posting pair (Bezugsteuer, Art. 45 ff. MWSTG).
 
-        Self-assessed 8.1% on a foreign supplier's net invoice: debit InputVAT
-        (deduction, Ziffer 400), credit Bezugsteuer (declaration, Ziffer 382).
-        Both carry the foreign VAT as an ``@@`` price so the pair balances
-        against the invoice currency.
+        Self-assessed at the rate in force on a foreign supplier's net invoice:
+        debit InputVAT (deduction, Ziffer 400/405), credit Bezugsteuer
+        (declaration, Ziffer 383 — 382 for a pre-2024 supply). Both carry the
+        foreign VAT as an ``@@`` price so the pair balances against the invoice
+        currency.
         """
         price = "" if self.currency == "CHF" else f" @@ {self.foreign_vat} {self.currency}"
+        # A non-standard rate has to travel with the posting, or `vat report`
+        # would value the declaration at the standard rate and flag it.
+        tag = "" if self.rate_class == "standard" else f'\n        mwst: "{self.rate_class}"'
         return (
             f"    ; Bezugsteuer Art. 45 MWSTG: {self.note}\n"
             f"    {self.input_account:<38} {self.chf:>8} CHF{price}\n"
-            f"    {self.bezugsteuer_account:<38} {-self.chf:>8} CHF{price}"
+            f"    {self.bezugsteuer_account:<38} {-self.chf:>8} CHF{price}{tag}"
         )
 
 
@@ -58,17 +63,22 @@ def convert(
     price_map: bc_prices.PriceMap,
     net: bool = False,
     cfg: config.Config | None = None,
+    rate_class: str = "standard",
 ) -> VatPosting:
     """Convert a foreign VAT amount (or net price with ``net``) to a CHF posting.
 
-    Raises :class:`RateUnavailable` if the price DB has no rate for that date.
+    ``rate_class`` picks the Art. 25 MWSTG rate applied to a ``net`` amount —
+    ``standard`` (8.1 %), ``reduced`` (2.6 %) or ``lodging`` (3.8 %), always
+    looked up by date. Raises :class:`RateUnavailable` if the price DB has no
+    rate for that date, and ``ValueError`` for an unknown rate class.
     """
     ccy = currency.upper()
+    vat = ledger.vat_rate(on, rate_class)  # validates rate_class before any I/O
     rate_date, r = ledger.rate(price_map, ccy, on)
     if r is None:
         raise RateUnavailable(ccy, on)
 
-    foreign_vat = ledger.rappen(amount * ledger.vat_rate(on)) if net else amount
+    foreign_vat = ledger.rappen(amount * vat) if net else amount
     chf = ledger.rappen(foreign_vat * Decimal(r))
     src = f"BAZG {rate_date:%Y-%m-%d}" if rate_date else "?"
 
@@ -87,4 +97,5 @@ def convert(
         note,
         input_account=cfg.input_vat,
         bezugsteuer_account=cfg.bezugsteuer,
+        rate_class=rate_class,
     )

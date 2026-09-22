@@ -114,7 +114,16 @@ class Config:
     bezugsteuer: str = "Liabilities:CH:GmbH:Tax:Bezugsteuer"
     payable_vat: str = "Liabilities:CH:GmbH:Tax:PayableVAT"
     income_prefix: str = "Income:CH:GmbH"
-    export_marker: str = ":Export"
+    # Income sub-account markers routing turnover to a Form-310 Ziffer. The
+    # longest/most specific is tested first, so ":ExportGoods" wins over
+    # ":Export". An empty string disables a marker.
+    export_marker: str = ":Export"  # Ziffer 221 — Ort der Leistung im Ausland
+    export_goods_marker: str = ":ExportGoods"  # Ziffer 220 — Exporte, Art. 23
+    exempt_marker: str = ":Exempt"  # Ziffer 230 — ausgenommen, Art. 21
+    optioned_marker: str = ":Optioned"  # Ziffer 205 memo — Option, Art. 22
+    # Rate-class markers (Art. 25 MWSTG); unmarked taxable turnover is standard.
+    reduced_marker: str = ":Reduced"  # 2.6 % → Ziffer 313
+    lodging_marker: str = ":Lodging"  # 3.8 % Beherbergung → Ziffer 343
     entity_marker: str = ":CH:GmbH:"
     fx_gain: str = "Income:CH:GmbH:FX:CurrencyGain"
     fx_loss: str = "Expenses:CH:GmbH:FX:CurrencyLoss"
@@ -224,6 +233,11 @@ def _from_mapping(raw: dict[str, object]) -> Config:
         "payable_vat",
         "income_prefix",
         "export_marker",
+        "export_goods_marker",
+        "exempt_marker",
+        "optioned_marker",
+        "reduced_marker",
+        "lodging_marker",
         "entity_marker",
         "fx_gain",
         "fx_loss",

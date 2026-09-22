@@ -46,6 +46,84 @@ def test_vat_report_and_settle_json(tmp_path: Path) -> None:
     assert "VAT Settlement" in d["settlement"]["text"]
 
 
+FORM_310_LEDGER = """
+2026-01-01 open Assets:CH:GmbH:Current:UBS:CHF CHF
+  kmu: "1020"
+2026-01-01 open Assets:CH:GmbH:Tax:InputVAT CHF
+  kmu: "1170"
+2026-01-01 open Assets:CH:GmbH:Equipment:Office CHF
+  kmu: "1510"
+2026-01-01 open Liabilities:CH:GmbH:Tax:OutputVAT CHF
+  kmu: "2200"
+2026-01-01 open Income:CH:GmbH:Consulting:External:Domestic CHF
+  kmu: "3400"
+2026-01-01 open Income:CH:GmbH:Books:Reduced CHF
+  kmu: "3200"
+2026-01-01 open Income:CH:GmbH:Consulting:External:Export CHF
+  kmu: "3400"
+
+2026-07-02 * "Acme AG" "Consulting"
+  Assets:CH:GmbH:Current:UBS:CHF                 1081.00 CHF
+  Income:CH:GmbH:Consulting:External:Domestic   -1000.00 CHF
+  Liabilities:CH:GmbH:Tax:OutputVAT               -81.00 CHF
+
+2026-07-05 * "Buchhandlung" "Books"
+  Assets:CH:GmbH:Current:UBS:CHF                  513.00 CHF
+  Income:CH:GmbH:Books:Reduced                   -500.00 CHF
+  Liabilities:CH:GmbH:Tax:OutputVAT               -13.00 CHF
+
+2026-07-10 * "Globex Ltd" "Export consulting"
+  Assets:CH:GmbH:Current:UBS:CHF                  300.00 CHF
+  Income:CH:GmbH:Consulting:External:Export      -300.00 CHF
+
+2026-08-20 * "Möbel AG" "Desk"
+  Assets:CH:GmbH:Equipment:Office                1000.00 CHF
+  Assets:CH:GmbH:Tax:InputVAT                      81.00 CHF
+  Assets:CH:GmbH:Current:UBS:CHF                -1081.00 CHF
+
+2026-09-01 * "Acme AG" "VAT at the wrong rate"
+  Assets:CH:GmbH:Current:UBS:CHF                  107.70 CHF
+  Income:CH:GmbH:Consulting:External:Domestic    -100.00 CHF
+  Liabilities:CH:GmbH:Tax:OutputVAT                -7.70 CHF
+"""
+
+
+def test_vat_report_json_covers_form_310(tmp_path: Path) -> None:
+    """The whole return through the CLI: every Ziffer, as decimal strings."""
+    led = tmp_path / "m.bean"
+    led.write_text(FORM_310_LEDGER)
+    res = runner.invoke(app, ["vat", "report", "-q", "2026-Q3", "--json", "-f", str(led)])
+    assert res.exit_code == 0, res.output
+    d = json.loads(res.output)
+    assert d["z200"] == "1900.00" and d["z221"] == "300.00"
+    assert d["z289"] == "300.00" and d["z299"] == "1600.00"
+    assert (d["z303_net"], d["z303_tax"]) == ("1100.00", "88.70")
+    assert (d["z313_net"], d["z313_tax"]) == ("500.00", "13.00")
+    assert d["z399"] == "101.70"
+    # The desk is an investment (kmu 1510) → Ziffer 405, not 400.
+    assert (d["z400"], d["z405"], d["z479"]) == ("0", "81.00", "81.00")
+    assert d["z500"] == "20.70" and d["z510"] == "0"
+    rows = {r["ziffer"]: r for r in d["rate_rows"]}
+    assert rows["303"]["rate"] == "0.081" and rows["313"]["rate"] == "0.026"
+    assert rows["343"]["rate"] == "0.038" and rows["343"]["net"] == "0"
+    assert "302" not in rows  # the old vintage is unused and stays hidden
+    # 7.70 on 100.00 is last year's rate — reported, not silently filed.
+    (v,) = d["violations"]
+    assert v["expected"] == "8.10" and v["posted"] == "7.70"
+
+
+def test_vat_convert_json_rate_class(tmp_path: Path) -> None:
+    led = tmp_path / "m.bean"
+    led.write_text(LEDGER)
+    argv = ["vat", "convert", "100", "EUR", "2026-07-02", "--net", "--rate", "reduced"]
+    res = runner.invoke(app, [*argv, "--json", "-f", str(led)])
+    assert res.exit_code == 0, res.output
+    assert json.loads(res.output)["chf"] == "2.42"  # 2.6 % of 100 EUR at 0.93
+
+    bad = runner.invoke(app, [*argv[:-1], "nope", "-f", str(led)])
+    assert bad.exit_code == 1 and "unknown VAT rate class" in bad.output
+
+
 def test_vat_status_json(tmp_path: Path) -> None:
     led = tmp_path / "m.bean"
     led.write_text(LEDGER)

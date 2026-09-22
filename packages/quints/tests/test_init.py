@@ -186,7 +186,8 @@ def test_generated_ledger_reports_expected_numbers(tmp_path: Path):
 
     report = mwst.compute(main, "2026-07-01", "2026-09-30", cfg)
     assert report.z303_tax == Decimal("81.00")  # 8.1% output VAT on 1000 CHF
-    assert report.z382_tax == Decimal("7.53")  # Bezugsteuer (reverse charge)
+    assert report.z383_tax == Decimal("7.53")  # Bezugsteuer (Form 310 ab 2024)
+    assert report.z405 == Decimal("7.53")  # its deduction: übriger Betriebsaufwand
     assert report.z299 == Decimal("1000.00")  # domestic turnover
     assert report.z221 == Decimal("470.00")  # export: 500 EUR @ 0.94
 

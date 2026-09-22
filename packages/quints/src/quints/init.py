@@ -618,6 +618,24 @@ def _pyproject_toml(answers: Answers) -> str:
     )
 
 
+# (marker key, value attribute, comment) for the [accounts] VAT block.
+_MARKERS: tuple[tuple[str, str], ...] = (
+    ("export_marker", "Ziffer 221 (Ort der Leistung im Ausland)"),
+    ("export_goods_marker", "Ziffer 220 (Exporte, Art. 23)"),
+    ("exempt_marker", "Ziffer 230 (ausgenommen, Art. 21)"),
+    ("optioned_marker", "Ziffer 205 (Option nach Art. 22)"),
+    ("reduced_marker", "2.6 % rate class → Ziffer 313"),
+    ("lodging_marker", "3.8 % Beherbergung → Ziffer 343"),
+)
+
+
+def _marker_lines(cfg: config.Config) -> list[str]:
+    """The VAT marker assignments, comments aligned in one column."""
+    pairs = [(f'{key} = "{getattr(cfg, key)}"', comment) for key, comment in _MARKERS]
+    width = max(len(assignment) for assignment, _ in pairs) + 2
+    return [f"{assignment:<{width}}# {comment}" for assignment, comment in pairs]
+
+
 def _quints_toml(answers: Answers) -> str:
     cfg = _cfg(answers)
     since = answers.vat_registered_since
@@ -653,7 +671,10 @@ def _quints_toml(answers: Answers) -> str:
         f'payable_vat = "{cfg.payable_vat}"',
         f'receivable = "{cfg.receivable}"',
         f'income_prefix = "{cfg.income_prefix}"',
-        f'export_marker = "{cfg.export_marker}"           # income sub-account marker → Ziffer 221',
+        "# Income sub-account markers route turnover to a Form-310 Ziffer, and",
+        "# the rate markers pick the Art. 25 rate class. A `mwst:` metadata tag",
+        "# on a transaction or posting overrides them — see the VAT guide.",
+        *_marker_lines(cfg),
         f'income_domestic = "{cfg.income_domestic}"',
         f'income_export = "{cfg.income_export}"',
         f'fx_gain = "{cfg.fx_gain}"',

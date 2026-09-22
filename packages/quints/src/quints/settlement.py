@@ -1,10 +1,12 @@
 """VAT settlement (period close) and outstanding-liability tracking.
 
 A settlement crystallizes a period's accrued VAT into the PayableVAT liability:
-it debits OutputVAT (303) and Bezugsteuer (382) and credits InputVAT (479),
-leaving the net (500) owed to the ESTV. Payment follows later — Swiss VAT is due
-60 days after period end (Art. 86 MWSTG). Settlement and its eventual payment
-share a ``^VAT-<period>`` link, and the settlement carries a ``due:`` date, so
+it debits OutputVAT (every rate row, 302–343) and Bezugsteuer (382/383) and
+credits InputVAT (479), leaving the net (500) owed to the ESTV — or, when input
+VAT ran ahead, a credit (510) that stands as a receivable from the ESTV until
+it is refunded or offset. Payment follows later — Swiss VAT is due 60 days after
+period end (Art. 86 MWSTG). Settlement and its eventual payment share a
+``^VAT-<period>`` link, and the settlement carries a ``due:`` date, so
 outstanding liabilities can be listed until paid.
 
 Like `vat convert`, this only *prints* the transaction to paste — it never writes the
@@ -79,8 +81,10 @@ def build_settlement(
         due=str(d1 + timedelta(days=PAYMENT_DUE_DAYS)),
         link=link,
         narration=f"{label} VAT Settlement",
-        output_vat=report.z303_tax,
-        bezugsteuer=report.z382_tax,
+        # The OutputVAT *account* balance — every rate row, both vintages,
+        # net of the credit notes that reversed it (Ziffer 235).
+        output_vat=sum((r.tax for r in report.rate_rows), Decimal("0")),
+        bezugsteuer=report.bezugsteuer_tax,
         input_vat=report.z479,
         net=report.z500,
         payable_after=payable_before - report.z500,
@@ -198,7 +202,14 @@ def render_settlement(s: Settlement, console: Console | None = None) -> None:
     console = console or ui.console
     console.print()
     console.rule(f"[bold]Settlement[/] {s.link}  ·  paste into your ledger")
-    console.print(f"[muted]net owed {ui.money(s.net)} CHF · due {s.due}[/]")
+    # A negative net is Ziffer 510: input VAT ran ahead, so the block debits
+    # PayableVAT and the balance stands as a claim on the ESTV.
+    headline = (
+        f"net owed {ui.money(s.net)} CHF · due {s.due}"
+        if s.net >= 0
+        else f"credit {ui.money(-s.net)} CHF from the ESTV (Ziffer 510)"
+    )
+    console.print(f"[muted]{headline}[/]")
     console.print()
     console.print(settlement_text(s), markup=False, highlight=False)
     console.print()
@@ -221,11 +232,13 @@ def render_status(
 
     t = Table(box=box.SIMPLE_HEAVY, pad_edge=False)
     t.add_column("Period", no_wrap=True)
-    t.add_column("Owed CHF", justify="right", no_wrap=True)
+    t.add_column("Owed CHF", justify="right", no_wrap=True)  # negative = credit
     t.add_column("Due", no_wrap=True)
     t.add_column("Status", no_wrap=True)
     for liab in liabilities:
-        if liab.days_left is None:
+        if liab.owed < 0:  # Ziffer 510 — a claim on the ESTV, nothing to pay
+            status = "[refund]credit[/]"
+        elif liab.days_left is None:
             status = "[muted]no due date[/]"
         elif liab.days_left < 0:
             status = f"[owe]OVERDUE {-liab.days_left} d[/]"
@@ -236,6 +249,7 @@ def render_status(
     if unlinked:
         t.add_row("[muted](unlinked)[/]", ui.money(unlinked), "—", "")
     t.add_section()
-    t.add_row("[bold]Total[/]", f"[owe]{ui.money(total)}[/]", "", "")
+    style = "owe" if total >= 0 else "refund"
+    t.add_row("[bold]Total[/]", f"[{style}]{ui.money(total)}[/]", "", "")
     console.print(t)
     console.print()
