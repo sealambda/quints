@@ -1,8 +1,9 @@
 """Fava extension: the quints review panel (docs/plans/06, plan 5.4.1).
 
 The read-only half of the approval-queue surface: VAT status, open
-receivables, staging drafts, and inbox backlog — the same compute layer
-the CLI's ``--json`` exposes, rendered inside the UI users already run.
+receivables and payables, staging drafts, and inbox backlog — the same
+compute layer the CLI's ``--json`` exposes, rendered inside the UI users
+already run.
 
 Enable in the beancount file:
 
@@ -20,7 +21,7 @@ from beancount.core import data
 from fava.beans import abc as fava_abc
 from fava.ext import FavaExtensionBase
 
-from .. import config, receivables, settlement
+from .. import config, payables, receivables, settlement
 from .. import inbox as inbox_mod
 
 _DRAFT_LINE = re.compile(r"^\d{4}-\d{2}-\d{2} +([*!]) ", re.M)
@@ -47,7 +48,7 @@ def _entries(entries: Sequence[fava_abc.Directive]) -> data.Directives:
 
 
 class QuintDashboard(FavaExtensionBase):
-    """VAT, receivables, and review-queue panel."""
+    """VAT, open items, and review-queue panel."""
 
     report_title = "Quint"
 
@@ -74,6 +75,11 @@ class QuintDashboard(FavaExtensionBase):
 
     def open_receivables(self):
         return receivables.compute_from_entries(
+            _entries(self.ledger.all_entries), self.today(), self._cfg
+        )
+
+    def open_payables(self):
+        return payables.compute_from_entries(
             _entries(self.ledger.all_entries), self.today(), self._cfg
         )
 

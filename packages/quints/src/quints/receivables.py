@@ -15,6 +15,7 @@ from datetime import date as Date
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from typing import Protocol
 
 from beancount.core import data
 from beancount.core import prices as bc_prices
@@ -105,6 +106,16 @@ def compute_from_entries(
     return out
 
 
+class OpenItem(Protocol):
+    """What the open-item machinery below needs of a row: a currency and an
+    amount still open. :class:`OpenInvoice` satisfies it, and so does
+    :class:`quints.payables.OpenBill` — receivables and payables age the same
+    way, so they consolidate and print their totals through the same code."""
+
+    currency: str
+    open_amount: Decimal
+
+
 @dataclass
 class CurrencyTotal:
     """One currency's open total and its value in the consolidation currency."""
@@ -127,16 +138,16 @@ class Consolidation:
 
 
 def consolidate(
-    open_invoices: Sequence[OpenInvoice],
+    open_items: Sequence[OpenItem],
     price_map: bc_prices.PriceMap,
     at: Date,
     currency: str,
 ) -> Consolidation:
-    """Sum open invoices per currency and convert each total at the latest
+    """Sum open items per currency and convert each total at the latest
     rate on/before ``at`` (the same price DB every other report uses)."""
     currency = currency.upper()
     sums: dict[str, Decimal] = {}
-    for o in open_invoices:
+    for o in open_items:
         sums[o.currency] = sums.get(o.currency, Decimal("0")) + o.open_amount
     totals: list[CurrencyTotal] = []
     grand = Decimal("0")
@@ -209,9 +220,23 @@ def render(
             f"{ui.money(o.open_amount)} {o.currency}",
         )
     t.add_section()
+    render_totals(t, open_invoices, consolidation, at, console)
+
+
+def render_totals(
+    t: Table,
+    open_items: Sequence[OpenItem],
+    consolidation: Consolidation | None,
+    at: Date,
+    console: Console,
+) -> None:
+    """Print a five-column open-item table with its totals footer.
+
+    Shared by `quints receivables` and `quints payables`: per-currency totals,
+    the consolidated row, and the rate notes that belong under the table."""
     if consolidation is None:
         totals: dict[str, Decimal] = {}
-        for o in open_invoices:
+        for o in open_items:
             totals[o.currency] = totals.get(o.currency, Decimal("0")) + o.open_amount
         for ccy, total in sorted(totals.items()):
             t.add_row("[bold]Total[/]", "", "", "", f"[bold]{ui.money(total)} {ccy}[/]")

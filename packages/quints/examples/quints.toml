@@ -23,6 +23,7 @@ output_vat = "Liabilities:CH:GmbH:Tax:OutputVAT"
 bezugsteuer = "Liabilities:CH:GmbH:Tax:Bezugsteuer"
 payable_vat = "Liabilities:CH:GmbH:Tax:PayableVAT"
 receivable = "Assets:CH:GmbH:Receivable:Trade"
+payable = "Liabilities:CH:GmbH:Payable:Trade"
 income_prefix = "Income:CH:GmbH"
 # Income sub-account markers route turnover to a Form-310 Ziffer, and
 # the rate markers pick the Art. 25 rate class. A `mwst:` metadata tag

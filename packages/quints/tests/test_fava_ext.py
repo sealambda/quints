@@ -10,11 +10,19 @@ LEDGER = """
 2024-01-01 open Assets:CH:GmbH:Current:UBS:CHF
 2024-01-01 open Income:CH:GmbH:Consulting:External:Domestic
 2024-01-01 open Liabilities:CH:GmbH:Tax:PayableVAT
+2024-01-01 open Liabilities:CH:GmbH:Payable:Trade
+2024-01-01 open Expenses:CH:GmbH:Admin:Bookkeeping
 
 2026-07-02 * "ACME" "June invoiced" ^ACME202606
   invoice: "ACME202606"
   Assets:CH:GmbH:Receivable:Trade        500.00 CHF
   Income:CH:GmbH:Consulting:External:Domestic
+
+2026-07-04 * "Treuhand Muster" "Bookkeeping Q2" ^TM-2026-4711
+  bill: "TM-2026-4711"
+  due: 2026-08-03
+  Expenses:CH:GmbH:Admin:Bookkeeping     480.00 CHF
+  Liabilities:CH:GmbH:Payable:Trade
 
 2026-07-10 * "ESTV" "Q2 settled" ^VAT-2026-Q2
   due: 2026-08-31
@@ -43,6 +51,8 @@ def test_dashboard_renders(tmp_path: Path):
     html = page.get_data(as_text=True)
 
     assert "ACME202606" in html and "500.00" in html  # receivable open
+    assert "TM-2026-4711" in html and "480.00" in html  # payable open
+    assert "2026-08-03" in html  # aged against the bill's due date
     assert "VAT-2026-Q2" in html and "123.45" in html  # VAT outstanding
     assert "2026-07-12-ubs.bean" in html  # staging queue
     assert "2026-07-12.receipt.pdf" in html  # inbox backlog

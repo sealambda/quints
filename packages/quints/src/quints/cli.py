@@ -47,6 +47,9 @@ from . import (
     mwst as mwst_mod,
 )
 from . import (
+    payables as pay_mod,
+)
+from . import (
     prices as prices_mod,
 )
 from . import (
@@ -140,7 +143,7 @@ app = typer.Typer(
 # registered, so registration order below is deliberate).
 PANEL_START = "Getting started"
 PANEL_VAT = "VAT"
-PANEL_INVOICING = "Invoicing & receivables"
+PANEL_INVOICING = "Invoicing & open items"  # invoicing, receivables, payables
 PANEL_BANK = "Banking & reconciliation"
 PANEL_REPORTS = "Reports & year-end"
 PANEL_RATES = "Rates & FX"
@@ -796,6 +799,45 @@ def receivables(
     recv_mod.render(open_invoices, ref, consolidation)
 
 
+@app.command(rich_help_panel=PANEL_INVOICING)
+def payables(
+    at: str | None = typer.Option(
+        None, "--at", metavar="YYYY-MM-DD", help="Aging as of this date (default: today)."
+    ),
+    consolidate: str | None = typer.Option(
+        None,
+        "--in",
+        metavar="CCY",
+        help="Consolidation currency for the grand total "
+        "(default: operating currency from quints.toml).",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    file: Path = _file_option(),
+):
+    """Open supplier bills (aging by due date), plus a consolidated total."""
+    _require_ledger(file)
+    open_bills, consolidation, ref = pay_mod.compute(
+        file, _parse_date(at) if at else None, currency=consolidate
+    )
+    if as_json:
+        import dataclasses
+
+        _json_out(
+            {
+                "at": str(ref),
+                "open": [dataclasses.asdict(b) for b in open_bills],
+                "totals": [dataclasses.asdict(ct) for ct in consolidation.totals],
+                "consolidated": {
+                    "currency": consolidation.currency,
+                    "total": str(consolidation.grand_total),
+                    "missing_rates": consolidation.missing,
+                },
+            }
+        )
+        return
+    pay_mod.render(open_bills, ref, consolidation)
+
+
 # ── banking & reconciliation ──────────────────────────────────────────────────
 
 import_app = typer.Typer(
@@ -993,6 +1035,7 @@ def _report_import(
                 "receivable_matches": [
                     {**txn(t), "invoice": n} for n, t in result.receivable_matches
                 ],
+                "payable_matches": [{**txn(t), "bill": n} for n, t in result.payable_matches],
                 "fee_tax_periods": result.fee_tax_periods,
                 "invoices": [dataclasses.asdict(d) for d in invoices or []],
                 "balances": [
@@ -1024,6 +1067,14 @@ def _report_import(
             fg="green",
         )
         for number, draft in result.receivable_matches:
+            typer.echo(f"  {draft.date}  {draft.postings[0].units}  ^{number}")
+    if result.payable_matches:
+        typer.secho(
+            f"{len(result.payable_matches)} payment(s) matched open supplier bills "
+            f"(payable clearing drafted):",
+            fg="green",
+        )
+        for number, draft in result.payable_matches:
             typer.echo(f"  {draft.date}  {draft.postings[0].units}  ^{number}")
     if result.drafts:
         typer.secho(f"{len(result.drafts)} draft(s) → {result.out_path}", fg="green")

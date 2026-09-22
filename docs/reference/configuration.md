@@ -41,6 +41,7 @@ output_vat = "Liabilities:CH:Einzelfirma:Tax:OutputVAT"
 bezugsteuer = "Liabilities:CH:Einzelfirma:Tax:Bezugsteuer"
 payable_vat = "Liabilities:CH:Einzelfirma:Tax:PayableVAT"
 receivable = "Assets:CH:Einzelfirma:Receivable:Trade"
+payable = "Liabilities:CH:Einzelfirma:Payable:Trade"
 income_prefix = "Income:CH:Einzelfirma"
 export_marker = ":Export"             # Ziffer 221 (Ort der Leistung im Ausland)
 export_goods_marker = ":ExportGoods"  # Ziffer 220 (Exporte, Art. 23)
@@ -101,6 +102,16 @@ The first takes the gap between the VAT your invoices collected and the SSS
 you owe; the second takes the reverse charge, which the SSS does not pay back.
 Both are excluded from the return by account identity, so a hand-written
 settlement cannot mis-file them. See the [VAT guide](../guides/vat.md).
+
+## `[payables]`
+
+```toml
+[payables]
+default_terms_days = 30    # due date for a bill that carries no `due:`
+```
+
+`quints payables` ages open supplier bills against their due date: the `due:`
+metadata on the bill transaction, or its date plus these terms.
 
 ## `[report]`
 

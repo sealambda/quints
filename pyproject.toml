@@ -120,7 +120,7 @@ exhaustive = true
 layers = [
     "cli : fava : plugins",
     "settlement : report_pdf : match : importing : init",
-    "mwst : kmu : vat : fx : prices : inbox : receivables : invoice",
+    "mwst : kmu : vat : fx : prices : inbox : payables : receivables : invoice",
     "config : ledger : ui",
 ]
 

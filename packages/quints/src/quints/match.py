@@ -1,15 +1,22 @@
 """Explainable matching across the review queue (docs/plans/06 step 3).
 
-Three deterministic match kinds, each with a human-readable reason list:
+Five deterministic match kinds, each with a human-readable reason list:
 
 - ``payment→invoice`` — incoming staging drafts vs. open receivables, by
   QRR/SCOR/plain-number reference (exact, score 1.0) or payee similarity +
   amount equality.
+- ``payment→payable`` — outgoing staging drafts vs. open supplier bills, by
+  the supplier's own reference (exact, score 1.0) or payee similarity +
+  amount equality inside a window after the bill date. An amount that fits
+  several open bills identifies none of them, exactly as a colliding
+  reference doesn't: it is reported, and it never scores 1.0.
 - ``draft→inbox`` — outgoing staging drafts vs. inbox documents, by payee
   similarity + date proximity from the filename convention.
 - ``inbox→booked`` — inbox documents vs. already-booked transactions that
   lack a ``document:`` link (evidence arriving after booking). Requires a
   date hint; payee-only matching is too noisy against recurring suppliers.
+- ``inbox→payable`` — the same, for a booked supplier bill: the evidence a
+  payables line is missing is the bill itself.
 
 No AI here: scores are reproducible and auditable. The judgment layer
 decides what to do with sub-1.0 candidates.
@@ -18,6 +25,7 @@ decides what to do with sub-1.0 candidates.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date as Date
 from datetime import datetime, timezone
@@ -32,17 +40,22 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from . import config, ledger, receivables, ui
+from . import config, ledger, payables, receivables, ui
 from . import inbox as inbox_mod
 from .invoice import reference as ref_mod
 
 THRESHOLD = 0.5
 _TOL = Decimal("0.005")
+# How long after a supplier bill a bank payment can still be its payment.
+# Wide enough for a bill paid late, narrow enough that last year's bill from
+# the same supplier isn't offered as a candidate for this year's payment.
+PAYMENT_WINDOW_DAYS = 180
 
 
 @dataclass
 class Match:
-    kind: str  # payment→invoice | draft→inbox | inbox→booked
+    kind: str  # payment→invoice | payment→payable | draft→inbox
+    #            | inbox→booked | inbox→payable
     score: float
     source: dict[str, str | None]
     target: dict[str, str | None]
@@ -75,9 +88,24 @@ class ReferenceHit:
 
 def reference_index(open_invoices: list[receivables.OpenInvoice]) -> ReferenceIndex:
     """Index the open invoices by every reference form a payment may quote."""
+    return numbers_index(inv.number for inv in open_invoices)
+
+
+def bill_reference_index(open_bills: Sequence[payables.OpenBill]) -> ReferenceIndex:
+    """The same index over open *supplier* bills.
+
+    A creditor reference (SCOR, ``RF…``) spells the issuer's own invoice
+    number out, so a payment quoting the supplier's reference identifies the
+    bill exactly — the receivables lookup, pointed the other way. Bills held
+    together by the (payee, amount) fallback are left out: that key is ours,
+    not something a payment could ever quote."""
+    return numbers_index(b.number for b in open_bills if b.keyed_by != payables.KEY_FALLBACK)
+
+
+def numbers_index(numbers: Iterable[str]) -> ReferenceIndex:
+    """Index document numbers by every reference form a payment may quote."""
     keys: dict[str, set[str]] = {}
-    for inv in open_invoices:
-        number = inv.number
+    for number in numbers:
         candidates = [number.upper(), ref_mod.compact_number(number)]
         for make in (ref_mod.make_scor, ref_mod.make_qrr, ref_mod.legacy_qrr):
             try:
@@ -180,6 +208,80 @@ def _txn_dict(staging_file: str | None, t: data.Transaction) -> dict[str, str | 
     }
 
 
+def _bill_dict(b: payables.OpenBill) -> dict[str, str | None]:
+    return {
+        "bill": b.number,
+        "keyed_by": b.keyed_by,
+        "payee": b.payee,
+        "date": str(b.bill_date),
+        "due": str(b.due_date),
+        "open": str(b.open_amount),
+        "currency": b.currency,
+    }
+
+
+def payable_matches(
+    t: data.Transaction,
+    src: dict[str, str | None],
+    open_bills: Sequence[payables.OpenBill],
+    index: ReferenceIndex,
+) -> list[Match]:
+    """Score one outgoing draft against the open supplier bills.
+
+    The supplier's reference decides it outright when the payment carries
+    one. Otherwise the evidence is the amount, the payee and the timing —
+    and the amount only counts when it *identifies*: a payment that fits two
+    open bills of the same size is reported against both, with the reason,
+    and neither reaches 1.0."""
+    units = t.postings[0].units
+    if not isinstance(units, Amount) or units.number is None:
+        return []
+    paid = -units.number  # positive: what left the account
+    by_number = {b.number: b for b in open_bills}
+    hit = find_invoice(index, *payment_text(t))
+    if hit and hit.number and hit.number in by_number:
+        return [Match("payment→payable", 1.0, src, _bill_dict(by_number[hit.number]), [hit.reason])]
+    found = [hit.reason] if hit else []
+
+    candidates = [b for b in open_bills if 0 <= (t.date - b.bill_date).days <= PAYMENT_WINDOW_DAYS]
+    exact = [
+        b for b in candidates if b.currency == units.currency and abs(b.open_amount - paid) <= _TOL
+    ]
+    exact_keys = {(b.number, b.currency) for b in exact}
+    out: list[Match] = []
+    for b in candidates:
+        psim = similarity(t.payee, b.payee)
+        is_exact = (b.number, b.currency) in exact_keys
+        identifying = is_exact and len(exact) == 1
+        score = round(0.6 * psim + 0.4 * identifying, 2)
+        if score < THRESHOLD:
+            continue
+        if identifying:
+            amount = f"amount equals open {b.open_amount} {b.currency}"
+        elif is_exact:
+            amount = (
+                f"amount {paid} {units.currency} fits {len(exact)} open bills "
+                f"({', '.join(sorted(x.number for x in exact))}) — cannot tell them apart"
+            )
+        else:
+            amount = f"amount differs from open {b.open_amount} {b.currency}"
+        out.append(
+            Match(
+                "payment→payable",
+                score,
+                src,
+                _bill_dict(b),
+                [
+                    *found,
+                    f"payee ≈ {psim:.2f}",
+                    amount,
+                    f"paid {(t.date - b.bill_date).days} d after the bill ({b.bill_date})",
+                ],
+            )
+        )
+    return out
+
+
 def compute(
     ledger_path: Path,
     staging_dir: Path | None = None,
@@ -193,11 +295,13 @@ def compute(
 
     entries, _ = ledger.load_entries(ledger_path)
     opens = receivables.compute_from_entries(entries, today, cfg)
+    bills = payables.compute_from_entries(entries, today, cfg)
     docs = [d for d in inbox_mod.scan(root, entries) if not d.duplicate_of and not d.linked]
     drafts = load_staging(staging_dir) if staging_dir.is_dir() else []
 
     matches: list[Match] = []
     ref_idx = reference_index(opens)
+    bill_idx = bill_reference_index(bills)
     by_number = {o.number: o for o in opens}
 
     def inv_dict(o: receivables.OpenInvoice) -> dict[str, str | None]:
@@ -247,7 +351,8 @@ def compute(
                             ],
                         )
                     )
-        else:  # outgoing → inbox document
+        else:  # outgoing → an open supplier bill, an inbox document, or both
+            matches += payable_matches(t, src, bills, bill_idx)
             for d in docs:
                 psim = similarity(t.payee, d.payee_hint or d.name)
                 if d.date_hint:
@@ -268,7 +373,12 @@ def compute(
                 continue
             if any(k.startswith("document") for k in (e.meta or {})):
                 continue
-            if not any(p.account.startswith(("Expenses:", "Income:")) for p in e.postings):
+            # A booked supplier bill is reported as its own kind: what a
+            # payables line is missing is the bill document itself.
+            bill_key = payables.booked_bill(e, cfg)
+            if bill_key is None and not any(
+                p.account.startswith(("Expenses:", "Income:")) for p in e.postings
+            ):
                 continue
             for d, d_date in dated_docs:
                 dsc = date_score(e.date, d_date, 7)
@@ -277,12 +387,15 @@ def compute(
                 psim = similarity(e.payee, d.payee_hint or d.name)
                 score = round(0.7 * psim + 0.3 * dsc, 2)
                 if score >= THRESHOLD:
+                    target = _txn_dict(None, e)
+                    if bill_key is not None:
+                        target["bill"] = bill_key
                     matches.append(
                         Match(
-                            "inbox→booked",
+                            "inbox→payable" if bill_key is not None else "inbox→booked",
                             score,
                             {"document": d.name},
-                            {**_txn_dict(None, e), "staging_file": None},
+                            target,
                             [f"payee ≈ {psim:.2f}", f"dated {d.date_hint} vs booked {e.date}"],
                         )
                     )
@@ -316,6 +429,7 @@ def render(matches: list[Match], console: Console | None = None) -> None:
         )
         tgt = (
             m.target.get("invoice")
+            or m.target.get("bill")
             or m.target.get("document")
             or (
                 f"{m.target['date']} {m.target['payee'] or '?'} "
