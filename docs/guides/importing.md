@@ -79,16 +79,47 @@ When a month's fee debit carries VAT, the import says which month needs its
 tax invoice pulled by hand from the Dashboard (Settings → Plans and fees →
 Invoice history), which the quarterly VAT close needs.
 
+## Supplier bills (payables)
+
+A supplier bill is booked when it arrives, not when it is paid: the expense
+(and any input VAT) against the trade-payables account from `quints.toml`.
+
+```beancount
+2026-08-20 * "Treuhand Muster" "Bookkeeping — first half" ^TM-2026-4711
+  bill: "TM-2026-4711"
+  due: 2026-09-19
+  Expenses:CH:GmbH:Admin:Bookkeeping   480.00 CHF
+  Liabilities:CH:GmbH:Payable:Trade   -480.00 CHF
+```
+
+`bill:` is the supplier's own invoice number; `due:` is what the aging is
+measured against. Both are optional. Without `due:`, the payment terms run
+from the bill date — 30 days, or `[payables] default_terms_days`. Without
+`bill:`, a lone `^link` names the bill; with neither, the bill is grouped by
+payee and amount, which nets against a payment for the same payee and the
+same amount and nothing else.
+
+The bank payment clears the liability. `quints match` scores every outgoing
+draft against the open bills: the supplier's own reference decides it
+outright, otherwise an amount that fits exactly one open bill, from a payee
+whose name matches, inside the window after the bill date. An amount that
+fits two open bills identifies neither — both are listed with the reason and
+the draft stays flagged for you.
+
 ## Review helpers
 
 ```bash
 quints match
 quints inbox
+quints payables
 ```
 
-`match` scores staging drafts and inbox documents against invoices and
-existing bookings, so you see what belongs together before you book. `inbox`
-inventories `inbox/` — filename hints, duplicates, documents already linked.
+`match` scores staging drafts and inbox documents against invoices, open
+supplier bills and existing bookings, so you see what belongs together before
+you book. `inbox` inventories `inbox/` — filename hints, duplicates, documents
+already linked. `payables` ages the supplier bills you still owe, in their
+original currency plus a consolidated total; `--at` reports as of a date,
+`--json` for an agent.
 
 Drop source PDFs into `inbox/` named `YYYY-MM-DD.payee.narrative.pdf`; once
 booked, file them under `documents/` mirroring the account path, and link

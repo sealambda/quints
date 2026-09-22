@@ -164,6 +164,7 @@ class Config:
     fx_gain: str = "Income:CH:GmbH:FX:CurrencyGain"
     fx_loss: str = "Expenses:CH:GmbH:FX:CurrencyLoss"
     receivable: str = "Assets:CH:GmbH:Receivable:Trade"
+    payable: str = "Liabilities:CH:GmbH:Payable:Trade"
     rounding_income: str = "Income:CH:GmbH:Rounding"
     income_domestic: str = "Income:CH:GmbH:Consulting:External:Domestic"
     income_export: str = "Income:CH:GmbH:Consulting:External:Export"
@@ -173,6 +174,8 @@ class Config:
     # `bezugsteuer_expense`. Both are excluded from the return by identity.
     saldo_difference: str = "Income:CH:GmbH:VAT:SaldoDifference"
     bezugsteuer_expense: str = "Expenses:CH:GmbH:Tax:Bezugsteuer"
+    # [payables]
+    payables_default_terms_days: int = 30  # due date when a bill carries no `due:`
     # [prices]
     prices_source: str = "beanprice_bazg"  # beanprice source module for `prices sync`
     prices_currencies: tuple[str, ...] = ("USD", "EUR")  # priced against operating_currency
@@ -300,6 +303,7 @@ def _from_mapping(raw: dict[str, object]) -> Config:
         "fx_gain",
         "fx_loss",
         "receivable",
+        "payable",
         "rounding_income",
         "income_domestic",
         "income_export",
@@ -307,6 +311,8 @@ def _from_mapping(raw: dict[str, object]) -> Config:
         "bezugsteuer_expense",
     ):
         take(accounts, key, key)
+    payables_ = section("payables")
+    take(payables_, "default_terms_days", "payables_default_terms_days")
     prices_ = section("prices")
     take(prices_, "source", "prices_source")
     if "currencies" in prices_:

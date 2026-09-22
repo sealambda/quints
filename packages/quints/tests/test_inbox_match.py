@@ -198,3 +198,194 @@ def test_match_skips_draft_without_amount(tmp_path: Path) -> None:
     results = match.compute(led, today=date(2026, 7, 12), cfg=config.Config())
     # no draft→inbox / payment→invoice candidates from the amount-less draft
     assert all(m.source.get("staging_file") is None for m in results)
+
+
+# ── payables: the money-out half of the review loop ──────────────────────────
+
+_PAYABLES = """
+2024-01-01 open Assets:CH:GmbH:Current:UBS:CHF CHF
+2024-01-01 open Liabilities:CH:GmbH:Payable:Trade
+2024-01-01 open Expenses:CH:GmbH:Marketing:Tools
+
+2026-07-01 * "Treuhand Muster" "Bookkeeping Q2" ^TM-2026-4711
+  bill: "TM-2026-4711"
+  due: 2026-07-31
+  Expenses:CH:GmbH:Marketing:Tools        480.00 CHF
+  Liabilities:CH:GmbH:Payable:Trade
+
+2026-07-03 * "Pixeltools" "Plus July" ^PT-2026-9
+  bill: "PT-2026-9"
+  Expenses:CH:GmbH:Marketing:Tools         40.86 CHF
+  Liabilities:CH:GmbH:Payable:Trade
+"""
+
+_PAYMENT = """
+2026-07-20 ! "TREUHAND MUSTER AG" "payment order"
+  Assets:CH:GmbH:Current:UBS:CHF         -480.00 CHF
+  Expenses:CH:GmbH:FIXME                  480.00 CHF
+"""
+
+
+def _payables_repo(tmp_path: Path, ledger: str = _PAYABLES, staging: str = _PAYMENT) -> Path:
+    led = tmp_path / "main.bean"
+    led.write_text(ledger)
+    box = tmp_path / "inbox"
+    box.mkdir()
+    (box / "2026-07-03.pixeltools.bill.pdf").write_bytes(b"%PDF-pixeltools-bill")
+    out = tmp_path / "staging"
+    out.mkdir()
+    (out / "2026-07-21-ubs.bean").write_text(staging)
+    return led
+
+
+def test_payment_matches_the_only_open_bill_of_that_amount(tmp_path: Path) -> None:
+    led = _payables_repo(tmp_path)
+    results = match.compute(led, today=date(2026, 7, 21), cfg=config.Config())
+    (pay,) = [m for m in results if m.kind == "payment→payable"]
+    assert pay.score == 1.0 and pay.target["bill"] == "TM-2026-4711"
+    assert pay.target["due"] == "2026-07-31" and pay.target["open"] == "480.00"
+    assert pay.reasons == [
+        "payee ≈ 1.00",
+        "amount equals open 480.00 CHF",
+        "paid 19 d after the bill (2026-07-01)",
+    ]
+
+
+def test_inbox_document_matches_a_booked_supplier_bill(tmp_path: Path) -> None:
+    led = _payables_repo(tmp_path)
+    results = match.compute(led, today=date(2026, 7, 21), cfg=config.Config())
+    (doc,) = [m for m in results if m.kind == "inbox→payable"]
+    assert doc.source["document"] == "2026-07-03.pixeltools.bill.pdf"
+    assert doc.target["bill"] == "PT-2026-9" and doc.score >= 0.9
+    # a booked bill is reported as a payable, not twice
+    assert not [m for m in results if m.kind == "inbox→booked"]
+
+
+def test_an_amount_that_fits_two_bills_identifies_neither(tmp_path: Path) -> None:
+    led = _payables_repo(
+        tmp_path,
+        ledger=_PAYABLES
+        + """
+2026-07-02 * "Treuhand Muster" "Bookkeeping, second engagement" ^TM-2026-4712
+  bill: "TM-2026-4712"
+  Expenses:CH:GmbH:Marketing:Tools        480.00 CHF
+  Liabilities:CH:GmbH:Payable:Trade
+""",
+    )
+    results = match.compute(led, today=date(2026, 7, 21), cfg=config.Config())
+    payments = [m for m in results if m.kind == "payment→payable"]
+    assert {m.target["bill"] for m in payments} == {"TM-2026-4711", "TM-2026-4712"}
+    # Reported, explained — and never presented as a decided match.
+    assert all(m.score < 1.0 for m in payments)
+    assert all("cannot tell them apart" in "; ".join(m.reasons) for m in payments)
+
+
+def test_payment_quoting_the_suppliers_reference_matches_on_it(tmp_path: Path) -> None:
+    # A creditor reference (SCOR) spells the supplier's own invoice number
+    # out, so a part payment quoting it still identifies the bill.
+    from quints.invoice.reference import make_scor
+
+    led = _payables_repo(
+        tmp_path,
+        staging=f"""
+2026-07-25 ! "SAMMELZAHLUNG" "e-banking {make_scor("TM-2026-4711")}"
+  Assets:CH:GmbH:Current:UBS:CHF         -200.00 CHF
+  Expenses:CH:GmbH:FIXME                  200.00 CHF
+""",
+    )
+    results = match.compute(led, today=date(2026, 7, 25), cfg=config.Config())
+    (pay,) = [m for m in results if m.kind == "payment→payable"]
+    assert pay.score == 1.0 and pay.target["bill"] == "TM-2026-4711"
+    assert pay.reasons == ["invoice reference in payment details"]
+
+
+def test_a_payment_outside_the_window_is_not_a_candidate(tmp_path: Path) -> None:
+    led = _payables_repo(
+        tmp_path,
+        staging=_PAYMENT.replace("2026-07-20", "2026-06-20"),  # before the bill exists
+    )
+    results = match.compute(led, today=date(2026, 6, 20), cfg=config.Config())
+    assert not [m for m in results if m.kind == "payment→payable"]
+
+
+def test_import_clears_a_payable_it_can_identify(tmp_path: Path) -> None:
+    """The draft an importer writes: counter leg on the payables account,
+    `bill:` metadata, the link, flagged complete."""
+    from beancount.core import data
+    from beancount.core.amount import Amount
+
+    from quints import importing
+    from quints import ledger as ledger_mod
+
+    led = tmp_path / "main.bean"
+    led.write_text(_PAYABLES)
+    existing, _errors = ledger_mod.load_entries(led)
+    draft = data.Transaction(
+        meta={},
+        date=date(2026, 7, 20),
+        flag="!",
+        payee="TREUHAND MUSTER AG",
+        narration="payment order",
+        tags=frozenset(),
+        links=frozenset(),
+        postings=[
+            data.Posting(
+                "Assets:CH:GmbH:Current:UBS:CHF",
+                Amount(Decimal("-480.00"), "CHF"),
+                None,
+                None,
+                None,
+                None,
+            )
+        ],
+    )
+    result = importing.ImportResult(source="test", drafts=[draft])
+    importing.match_payables(result, existing, config.Config())
+    assert [n for n, _ in result.payable_matches] == ["TM-2026-4711"]
+    matched = result.drafts[0]
+    assert matched.flag == "*" and matched.meta["bill"] == "TM-2026-4711"
+    assert matched.links == frozenset({"TM-2026-4711"})
+    assert matched.postings[1].account == "Liabilities:CH:GmbH:Payable:Trade"
+
+
+def test_import_leaves_an_ambiguous_payment_alone(tmp_path: Path) -> None:
+    from beancount.core import data
+    from beancount.core.amount import Amount
+
+    from quints import importing
+    from quints import ledger as ledger_mod
+
+    led = tmp_path / "main.bean"
+    led.write_text(
+        _PAYABLES
+        + """
+2026-07-02 * "Treuhand Muster" "Bookkeeping, second engagement" ^TM-2026-4712
+  bill: "TM-2026-4712"
+  Expenses:CH:GmbH:Marketing:Tools        480.00 CHF
+  Liabilities:CH:GmbH:Payable:Trade
+"""
+    )
+    existing, _errors = ledger_mod.load_entries(led)
+    draft = data.Transaction(
+        meta={},
+        date=date(2026, 7, 20),
+        flag="!",
+        payee="TREUHAND MUSTER AG",
+        narration="payment order",
+        tags=frozenset(),
+        links=frozenset(),
+        postings=[
+            data.Posting(
+                "Assets:CH:GmbH:Current:UBS:CHF",
+                Amount(Decimal("-480.00"), "CHF"),
+                None,
+                None,
+                None,
+                None,
+            )
+        ],
+    )
+    result = importing.ImportResult(source="test", drafts=[draft])
+    importing.match_payables(result, existing, config.Config())
+    assert result.payable_matches == []
+    assert result.drafts[0].flag == "!"  # still a human's call

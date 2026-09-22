@@ -22,8 +22,12 @@ input_vat = "Assets:XX:AG:VAT:In"
 output_vat = "Liabilities:XX:AG:VAT:Out"
 bezugsteuer = "Liabilities:XX:AG:VAT:Reverse"
 payable_vat = "Liabilities:XX:AG:VAT:Due"
+payable = "Liabilities:XX:AG:Creditors"
 income_prefix = "Income:XX:AG"
 entity_marker = ":XX:AG:"
+
+[payables]
+default_terms_days = 20
 
 [report]
 language = "de"
@@ -52,6 +56,8 @@ def test_defaults_are_generic_swiss_gmbh() -> None:
     cfg = config.Config()
     assert cfg.entity_name == "Example GmbH"
     assert cfg.input_vat == "Assets:CH:GmbH:Tax:InputVAT"
+    assert cfg.payable == "Liabilities:CH:GmbH:Payable:Trade"
+    assert cfg.payables_default_terms_days == 30
     assert cfg.vat_registered_since is None
     # importers are opt-in: no [import.*] section, no importer
     assert cfg.import_ubs is None

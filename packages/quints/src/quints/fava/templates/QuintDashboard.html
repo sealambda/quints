@@ -1,5 +1,6 @@
 {% set liabilities, unlinked, vat_total, today = extension.vat_status() %}
 {% set open_invoices = extension.open_receivables() %}
+{% set open_bills = extension.open_payables() %}
 {% set staging = extension.staging() %}
 {% set inbox = extension.inbox() %}
 
@@ -49,6 +50,30 @@
           <td>{{ o.invoice_date }}</td>
           <td class="num"{% if o.age_days > 30 %} style="color: var(--budget-negative)"{% endif %}>{{ o.age_days }}</td>
           <td class="num">{{ o.open_amount }} {{ o.currency }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  <h3>Open payables</h3>
+  {% if not open_bills %}
+    <p>Nothing open — every supplier bill is paid. ✓</p>
+  {% else %}
+    <table is="sortable-table">
+      <thead>
+        <tr><th data-sort="string">Bill</th><th data-sort="string">Supplier</th>
+            <th data-sort="string">Due</th><th data-sort="num">Overdue (d)</th>
+            <th data-sort="num">Open</th></tr>
+      </thead>
+      <tbody>
+        {% for b in open_bills %}
+        <tr>
+          <td>{{ b.number }}</td>
+          <td>{{ b.payee }}</td>
+          <td>{{ b.due_date }}</td>
+          <td class="num"{% if b.days_overdue > 0 %} style="color: var(--budget-negative)"{% endif %}>{{ b.days_overdue }}</td>
+          <td class="num">{{ b.open_amount }} {{ b.currency }}</td>
         </tr>
         {% endfor %}
       </tbody>

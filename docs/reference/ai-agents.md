@@ -41,6 +41,7 @@ quints vat report -q 2026-Q3 --json
 quints vat status --json
 quints report bilanz --at 2026-12-31 --json
 quints receivables --json
+quints payables --json
 quints invoice invoicing/acme-2026-07.yaml --json
 ```
 

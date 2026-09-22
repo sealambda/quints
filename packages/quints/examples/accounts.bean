@@ -9,6 +9,8 @@
   kmu: "1100"  ; Trade receivables
 2026-01-01 open Assets:CH:GmbH:Tax:InputVAT CHF
   kmu: "1170"  ; Input VAT
+2026-01-01 open Liabilities:CH:GmbH:Payable:Trade
+  kmu: "2000"  ; Trade payables
 2026-01-01 open Liabilities:CH:GmbH:Tax:OutputVAT CHF
   kmu: "2200"  ; VAT due
 2026-01-01 open Liabilities:CH:GmbH:Tax:Bezugsteuer CHF
@@ -41,3 +43,5 @@
   kmu: "1020"  ; Bank deposits
 2026-01-01 open Expenses:CH:GmbH:BankFees:Stripe
   kmu: "6940"  ; Bank charges
+2026-01-01 open Expenses:CH:GmbH:Admin:Bookkeeping
+  kmu: "6530"  ; Accounting and consulting fees

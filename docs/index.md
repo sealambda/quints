@@ -49,6 +49,7 @@ setup — including the legal-form choice.
 |---|---|---|
 | File quarterly VAT | `quints vat report -q 2026-Q3` | [Quarterly VAT](guides/vat.md) |
 | See who owes you | `quints receivables` | [Invoicing](guides/invoicing.md) |
+| See what you owe | `quints payables` | [Import statements](guides/importing.md) |
 | Send a QR-bill invoice | `quints invoice <invoice.yaml>` | [Invoicing](guides/invoicing.md) |
 | Check an IBAN and its BIC | `quints iban` | [Invoicing](guides/invoicing.md) |
 | Pick QRR or SCOR for your QR-bills | `issuer.yaml` → `bank.<CCY>` | [Payment references](guides/payment-references.md) |

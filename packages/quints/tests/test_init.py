@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from quints import config, init, kmu, ledger, mwst, receivables
+from quints import config, init, kmu, ledger, mwst, payables, receivables
 from quints.cli import app
 
 runner = CliRunner()
@@ -54,6 +54,16 @@ def test_backbone_accounts_carry_known_kmu_codes():
         assert codes, "backbone emitted no accounts"
         unknown = [c for c in codes if c not in kmu.KMU_NAMES]
         assert not unknown, f"kmu codes absent from KMU_NAMES: {unknown}"
+
+
+def test_backbone_opens_the_trade_payables_account():
+    # `quints payables` reads the account named in quints.toml; the chart has
+    # to open it, with the KMU code the statutory statements roll it up to.
+    for legal_form, component in (("gmbh", "GmbH"), ("einzelfirma", "Einzelfirma")):
+        files = _files(init.Answers(legal_form=legal_form))
+        account = f"Liabilities:CH:{component}:Payable:Trade"
+        assert f'open {account}\n  kmu: "2000"' in files["accounts.bean"]
+        assert f'payable = "{account}"' in files["quints.toml"]
 
 
 def test_backbone_opens_yapeal_account(tmp_path: Path):
@@ -150,7 +160,7 @@ def test_einzelfirma_ledger_loads_and_reports(tmp_path: Path):
     assert cfg.legal_form == "einzelfirma"
     assert cfg.entity_marker == ":CH:Einzelfirma:"
     erfolg = kmu.compute_erfolg(main, "2026-01-01", "2026-12-31", cfg)
-    assert erfolg.result == Decimal("1376.00")
+    assert erfolg.result == Decimal("896.00")
     bilanz = kmu.compute_bilanz(main, "2026-12-31", cfg)
     assert bilanz.legal_form == "einzelfirma"
     assert bilanz.total_assets == bilanz.total_liabilities_equity
@@ -193,13 +203,22 @@ def test_generated_ledger_reports_expected_numbers(tmp_path: Path):
     assert report.z221 == Decimal("470.00")  # export: 500 EUR @ 0.94
 
     erfolg = kmu.compute_erfolg(main, "2026-01-01", "2026-12-31", cfg)
-    assert erfolg.ebit == Decimal("1376.00")  # revenue 1470 − IT expense 94
-    assert erfolg.result == Decimal("1376.00")
+    # revenue 1470 − IT expense 94 − the bookkeeping bill 480
+    assert erfolg.ebit == Decimal("896.00")
+    assert erfolg.result == Decimal("896.00")
 
     open_inv, _cons, _at = receivables.compute(main, Date(2026, 12, 31), cfg)
     assert [o.number for o in open_inv] == ["INV2026015"]
     assert open_inv[0].open_amount == Decimal("500.00")
     assert open_inv[0].currency == "EUR"
+
+    # The sample supplier bill is the one thing still owed, aged against the
+    # `due:` it carries.
+    open_bills, _pcons, _pat = payables.compute(main, Date(2026, 12, 31), cfg)
+    assert [b.number for b in open_bills] == ["TM-2026-4711"]
+    assert open_bills[0].open_amount == Decimal("480.00")
+    assert open_bills[0].due_date == Date(2026, 9, 19)
+    assert open_bills[0].keyed_by == payables.KEY_BILL
 
 
 def test_sample_invoices_render_and_reconcile(tmp_path: Path):
@@ -374,6 +393,10 @@ def test_agent_payload_is_loaded_and_accurate():
     assert files["CLAUDE.md"] == "@AGENTS.md\n"
     agents = files["AGENTS.md"]
     assert "quints report konten --year 2026" in agents
+    # both halves of the loop, and the machine-readable roster
+    assert "quints payables --json" in agents
+    assert "A **supplier bill** is booked when it arrives" in agents
+    assert 'bill: "BILL-4711"' in agents and "due: 2026-09-19" in agents
     assert "Sample data — replace before the books are real" in agents
     assert "QUINTS_WISE_API_TOKEN" in agents
     assert "quints import stripe" not in agents  # only the configured roster

@@ -208,6 +208,65 @@ def test_receivables_json_consolidation_currency_and_missing_rate(tmp_path: Path
     assert d["consolidated"]["total"] == "0"
 
 
+PAYABLES_LEDGER = """
+2024-01-01 open Liabilities:CH:GmbH:Payable:Trade
+2024-01-01 open Assets:CH:GmbH:Current:UBS:CHF
+2024-01-01 open Expenses:CH:GmbH:Admin:Bookkeeping
+
+2026-07-02 * "Treuhand Muster" "Bookkeeping Q2" ^TM-2026-4711
+  bill: "TM-2026-4711"
+  due: 2026-08-01
+  Expenses:CH:GmbH:Admin:Bookkeeping   480.00 CHF
+  Liabilities:CH:GmbH:Payable:Trade
+
+2026-07-03 * "Foreign SaaS" "Hosting" ^FS-9001
+  bill: "FS-9001"
+  Expenses:CH:GmbH:Admin:Bookkeeping   200.00 EUR
+  Liabilities:CH:GmbH:Payable:Trade
+
+2026-07-10 price EUR 0.93 CHF
+"""
+
+
+def test_payables_json(tmp_path: Path) -> None:
+    led = tmp_path / "m.bean"
+    led.write_text(PAYABLES_LEDGER)
+    res = runner.invoke(app, ["payables", "--at", "2026-08-15", "--json", "-f", str(led)])
+    assert res.exit_code == 0, res.output
+    d = json.loads(res.output)
+    first, second = d["open"]
+    assert first["number"] == "TM-2026-4711" and first["keyed_by"] == "bill"
+    assert first["open_amount"] == "480.00" and first["days_overdue"] == 14
+    assert first["due_date"] == "2026-08-01"
+    # no `due:` on the EUR bill — billed 07-03 plus the default 30-day terms
+    assert second["number"] == "FS-9001" and second["due_date"] == "2026-08-02"
+    totals = {t["currency"]: t for t in d["totals"]}
+    assert totals["EUR"]["converted"] == "186.00"  # 200 EUR at 0.93
+    assert d["consolidated"] == {"currency": "CHF", "total": "666.00", "missing_rates": []}
+
+
+def test_payables_and_match_end_to_end_through_the_cli(tmp_path: Path) -> None:
+    # The two commands a review session actually runs, against one project.
+    led = tmp_path / "main.bean"
+    led.write_text(PAYABLES_LEDGER)
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "2026-07-21-ubs.bean").write_text(
+        '2026-07-20 ! "TREUHAND MUSTER AG" "payment order"\n'
+        "  Assets:CH:GmbH:Current:UBS:CHF  -480.00 CHF\n"
+        "  Expenses:CH:GmbH:FIXME           480.00 CHF\n"
+    )
+    res = runner.invoke(app, ["payables", "--at", "2026-07-21", "-f", str(led)])
+    assert res.exit_code == 0, res.output
+    assert "TM-2026-4711" in res.output and "Open payables" in res.output
+
+    res = runner.invoke(app, ["match", "--json", "-f", str(led), "--staging", str(staging)])
+    assert res.exit_code == 0, res.output
+    (m,) = [m for m in json.loads(res.output)["matches"] if m["kind"] == "payment\u2192payable"]
+    assert m["score"] == 1.0 and m["target"]["bill"] == "TM-2026-4711"
+    assert "amount equals open 480.00 CHF" in m["reasons"]
+
+
 def test_prices_sync_json_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The real CLI driving the real BAZG source — only HTTP is faked.
 

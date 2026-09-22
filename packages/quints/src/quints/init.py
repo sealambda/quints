@@ -53,6 +53,7 @@ from . import config, kmu, ledger
 # Accounts the backbone adds beyond the configurable set in `config.Config`,
 # written in the GmbH namespace; `_sub` re-homes them for other legal forms.
 _IT_HOSTING = "Expenses:CH:GmbH:IT:Hosting"
+_BOOKKEEPING = "Expenses:CH:GmbH:Admin:Bookkeeping"
 _PRIMARY_BANK = "Assets:CH:GmbH:Current:UBS:CHF"
 _WISE_EUR = "Assets:CH:GmbH:Current:Wise:EUR"
 
@@ -163,6 +164,7 @@ def _cfg(answers: Answers) -> config.Config:
         fx_gain=_sub(base.fx_gain, c),
         fx_loss=_sub(base.fx_loss, c),
         receivable=_sub(base.receivable, c),
+        payable=_sub(base.payable, c),
         rounding_income=_sub(base.rounding_income, c),
         income_domestic=_sub(base.income_domestic, c),
         income_export=_sub(base.income_export, c),
@@ -204,6 +206,7 @@ def _backbone(answers: Answers) -> list[_Account]:
         _Account(_sub(_PRIMARY_BANK, c), "1020", ("CHF",)),
         _Account(cfg.receivable, "1100"),
         _Account(cfg.input_vat, "1170", (oc,)),
+        _Account(cfg.payable, "2000"),
         _Account(cfg.output_vat, "2200", (oc,)),
         _Account(cfg.bezugsteuer, "2200", (oc,)),
         _Account(cfg.payable_vat, "2200", (oc,)),
@@ -236,9 +239,11 @@ def _backbone(answers: Answers) -> list[_Account]:
             accounts.append(_Account(_sub(acct, c), "1020", (ccy,)))
         accounts.append(_Account(_sub(config.StripeImport().fees_account, c), "6940"))
     # The demo quarter settles a EUR reverse-charge purchase, so it needs a
-    # EUR bank even when the Wise importer is off.
+    # EUR bank even when the Wise importer is off, and books one supplier
+    # bill, so it needs somewhere to book it.
     if answers.include_samples:
         accounts.append(_Account(_sub(_WISE_EUR, c), "1020", ("EUR",)))
+        accounts.append(_Account(_sub(_BOOKKEEPING, c), "6530"))
 
     seen: set[str] = set()
     unique: list[_Account] = []
@@ -350,6 +355,12 @@ def _sample_quarter(answers: Answers) -> str:
     Mirrors the conventions in test_mwst: a domestic sale with 8.1% output
     VAT, a zero-rated EUR export, and a EUR reverse-charge purchase
     (Bezugsteuer). Amounts are literals — deterministic, no rate lookups.
+
+    One supplier bill stays open so `quints payables` has something to show.
+    It carries no VAT on purpose — the supplier is under the CHF 100'000
+    registration threshold, which is the common case for a micro-company's
+    smaller suppliers, and it keeps the demo quarter's VAT return the one
+    the docs print.
     """
     cfg = _cfg(answers)
     c = _component(answers)
@@ -404,6 +415,17 @@ def _sample_quarter(answers: Answers) -> str:
                 ),
                 (cfg.bezugsteuer, "-7.53", "CHF @@ 8.10 EUR"),
                 (_sub(_WISE_EUR, c), "-100.00", "EUR"),
+            ],
+        ),
+        (
+            f'{year}-08-20 * "Treuhand Muster" "Bookkeeping — first half" ^TM-{year}-4711\n'
+            f"  ; a supplier under the VAT registration threshold: no input VAT to\n"
+            f"  ; reclaim. Left unpaid, so `quints payables` has something to show.\n"
+            f'  bill: "TM-{year}-4711"  ; the supplier\'s own invoice number\n'
+            f"  due: {year}-09-19       ; what the aging is measured against",
+            [
+                (_sub(_BOOKKEEPING, c), "480.00", "CHF"),
+                (cfg.payable, "-480.00", "CHF"),
             ],
         ),
     ]
@@ -693,6 +715,7 @@ def _quints_toml(answers: Answers) -> str:
         f'bezugsteuer = "{cfg.bezugsteuer}"',
         f'payable_vat = "{cfg.payable_vat}"',
         f'receivable = "{cfg.receivable}"',
+        f'payable = "{cfg.payable}"',
         f'income_prefix = "{cfg.income_prefix}"',
         "# Income sub-account markers route turnover to a Form-310 Ziffer, and",
         "# the rate markers pick the Art. 25 rate class. A `mwst:` metadata tag",
@@ -930,6 +953,14 @@ def _agents_md(answers: Answers) -> str:
     marker = cfg.entity_marker
     year = _open_date(answers).year
     bank = _sub(_PRIMARY_BANK, _component(answers))
+    # The sample supplier bill in the money-out loop, laid out like the
+    # entries `_sample_quarter` writes.
+    expense = _sub(_BOOKKEEPING, _component(answers))
+    bill_legs = "\n".join(
+        _txn("", [(expense, "480.00", "CHF"), (cfg.payable, "-480.00", "CHF")], len(expense) + 3)[
+            1:
+        ]
+    )
     return f"""# Working on {answers.entity_name}'s books with an AI agent
 
 These are plain-text ([beancount](https://beancount.github.io)) books managed
@@ -1000,7 +1031,22 @@ account with no valid `kmu:` code.
 {_agents_vat_step(answers)}
    it into `books/{year}.bean`. `quints match` scores staging drafts and
    inbox documents against invoices and bookings.{_agents_vat_note(answers)}
-3. **Always** `quints check` before you consider the books consistent.
+
+3. A **supplier bill** is booked when it arrives, not when it is paid:
+   against `{cfg.payable}`, with the supplier's own
+   invoice number in `bill:` and the payment term in `due:`.
+
+```beancount
+{year}-08-20 * "Treuhand Muster" "Bookkeeping" ^BILL-4711
+  bill: "BILL-4711"
+  due: {year}-09-19
+{bill_legs}
+```
+
+   The bank draft that pays it clears the liability — matched to the bill,
+   its counter leg becomes that clearing. `quints payables` shows what is
+   still owed, aged by due date.
+4. **Always** `quints check` before you consider the books consistent.
 
 ## The loop — money in (invoice → receivable → payment)
 
@@ -1031,6 +1077,7 @@ quints vat report -q {year}-Q3 --json
 quints vat status --json
 quints report bilanz --at {year}-12-31 --json
 quints receivables --json
+quints payables --json
 ```
 
 JSON Schemas for the invoicing files are hosted at

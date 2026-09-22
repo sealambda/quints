@@ -57,11 +57,12 @@ from beangulp_wise import Importer as WiseImporter
 from beangulp_wise import ScaChallenge, WiseClient, merge_conversions
 from beangulp_yapeal import Importer as YapealImporter
 
-from . import config, ledger
+from . import config, ledger, payables
 from . import receivables as recv_mod
 from .invoice.model import slugify
 
 LEGACY_WINDOW_DAYS = 3
+_PAYABLE_TOL = Decimal("0.005")  # Rappen-level equality on a cleared bill
 DEFAULT_STAGING = Path("staging")
 
 
@@ -145,6 +146,9 @@ class ImportResult:
     receivable_matches: list[tuple[str, data.Transaction]] = field(
         default_factory=list
     )  # (invoice number, draft)
+    payable_matches: list[tuple[str, data.Transaction]] = field(
+        default_factory=list
+    )  # (bill number, draft)
     fee_tax_periods: list[str] = field(default_factory=list)  # YYYY-MM, see _fee_tax_periods
 
 
@@ -244,6 +248,77 @@ def match_receivables(
         result.receivable_matches.append((number, matched))
 
 
+def match_payables(
+    result: ImportResult, existing: Sequence[data.Directive], cfg: config.Config
+) -> None:
+    """Link outgoing drafts to open supplier bills — the payables mirror.
+
+    A supplier bill is booked on receipt against the payables account; the
+    bank payment clears it. On a match the draft's counter leg becomes that
+    clearing, linked `^<bill>` with `bill:` metadata and flagged `*`.
+
+    Applied only where the evidence identifies one bill and nothing else:
+    the payment quotes the supplier's own reference (a creditor reference
+    spells their invoice number out), or exactly one open bill carries that
+    amount in that currency, the payee names match, and the payment falls in
+    the window after the bill date. Weaker evidence stays a candidate that
+    `quints match` reports with its reasons and a human decides — the same
+    refusal to guess `match_receivables` makes on a colliding reference.
+    """
+    from .match import (
+        PAYMENT_WINDOW_DAYS,
+        bill_reference_index,
+        find_invoice,
+        payment_text,
+        similarity,
+    )
+
+    opens = payables.compute_from_entries(existing, TodayDate.today(), cfg)
+    if not opens:
+        return
+    index = bill_reference_index(opens)
+    by_number = {b.number: b for b in opens}
+
+    for i, draft in enumerate(result.drafts):
+        cash = draft.postings[0]
+        if cash.units is None or cash.units.number is None or cash.units.number >= 0:
+            continue  # only outgoing payments clear payables
+        paid = -cash.units.number
+        hit = find_invoice(index, *payment_text(draft))
+        bill = by_number.get(hit.number) if hit and hit.number else None
+        if bill is None:
+            fits = [
+                b
+                for b in opens
+                if b.currency == cash.units.currency
+                and abs(b.open_amount - paid) <= _PAYABLE_TOL
+                and 0 <= (draft.date - b.bill_date).days <= PAYMENT_WINDOW_DAYS
+                and similarity(draft.payee, b.payee) == 1.0
+            ]
+            if len(fits) != 1:
+                continue  # nothing, or nothing that tells two bills apart
+            bill = fits[0]
+        postings = list(draft.postings)
+        if len(postings) == 1:
+            # Only the cash leg is known — add the elided payable clearing
+            # posting so the matched draft still balances.
+            postings.append(data.Posting(cfg.payable, None, None, None, None, None))
+        elif len(postings) == 2:
+            postings[1] = postings[1]._replace(account=cfg.payable)
+        else:
+            continue  # ambiguous shape — leave the draft unmatched, still flagged
+        meta = dict(draft.meta or {})
+        meta["bill"] = bill.number
+        matched = draft._replace(
+            flag="*",
+            meta=meta,
+            links=frozenset(draft.links or ()) | {bill.number},
+            postings=postings,
+        )
+        result.drafts[i] = matched
+        result.payable_matches.append((bill.number, matched))
+
+
 def _write_staging(result: ImportResult, out_dir: Path, source: str) -> None:
     if not (result.drafts or result.balances):
         return
@@ -279,6 +354,7 @@ def run_yapeal(
     result.skipped_ref = total - len(extracted)
     _split(result, extracted, _cash_pool(existing, {yapeal.account}))
     match_receivables(result, existing, cfg)
+    match_payables(result, existing, cfg)
     _write_staging(result, out_dir, "yapeal")
     return result
 
@@ -303,6 +379,7 @@ def run_ubs(
     result.skipped_ref = total - len(extracted)
     _split(result, extracted, _cash_pool(existing, {ubs.account}))
     match_receivables(result, existing, cfg)
+    match_payables(result, existing, cfg)
     _write_staging(result, out_dir, "ubs")
     return result
 
@@ -334,6 +411,7 @@ def run_wise(
     result.skipped_ref = _txn_count(raw) - _txn_count(deduped)
     _split(result, merge_conversions(deduped), _cash_pool(existing, set(wise.account_map.values())))
     match_receivables(result, existing, cfg)
+    match_payables(result, existing, cfg)
     _write_staging(result, out_dir, "wise")
     return result
 
@@ -365,6 +443,7 @@ def run_stripe(
     result.skipped_ref = _txn_count(raw) - _txn_count(deduped)
     _split(result, deduped, _cash_pool(existing, set(stripe.account_map.values())))
     match_receivables(result, existing, cfg)
+    match_payables(result, existing, cfg)
     result.fee_tax_periods = _fee_tax_periods(statements)
     _write_staging(result, out_dir, "stripe")
     return result

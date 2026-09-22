@@ -71,8 +71,23 @@ account with no valid `kmu:` code.
    Complete the counter leg, decide the VAT treatment (InputVAT /
    Bezugsteuer / none), link the source document, flip `!` to `*`, and move
    it into `books/2026.bean`. `quints match` scores staging drafts and
-   inbox documents against invoices and bookings.
-3. **Always** `quints check` before you consider the books consistent.
+   inbox documents against invoices, bookings and open supplier bills.
+3. A **supplier bill** is booked when it arrives, not when it is paid:
+   against `Liabilities:CH:GmbH:Payable:Trade`, with the supplier's own
+   invoice number in `bill:` and the payment term in `due:`.
+
+```beancount
+2026-08-20 * "Treuhand Muster" "Bookkeeping" ^BILL-4711
+  bill: "BILL-4711"
+  due: 2026-09-19
+  Expenses:CH:GmbH:Admin:Bookkeeping       480.00 CHF
+  Liabilities:CH:GmbH:Payable:Trade       -480.00 CHF
+```
+
+   The bank draft that pays it clears the liability — matched to the bill,
+   its counter leg becomes that clearing. `quints payables` shows what is
+   still owed, aged by due date.
+4. **Always** `quints check` before you consider the books consistent.
 
 ## The loop — money in (invoice → receivable → payment)
 
@@ -103,6 +118,7 @@ quints vat report -q 2026-Q3 --json
 quints vat status --json
 quints report bilanz --at 2026-12-31 --json
 quints receivables --json
+quints payables --json
 ```
 
 JSON Schemas for the invoicing files are hosted at
