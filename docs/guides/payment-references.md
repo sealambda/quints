@@ -46,6 +46,18 @@ quints never emits any of them: it resolves the valid pair from your account,
 and refuses an explicit setting that would break the rule rather than quietly
 substituting another.
 
+## Side by side
+
+The same invoice under each scheme — the payment part is what the customer
+scans or retypes. With a QR-IBAN and the bank's identification, a QR
+reference whose tail is the invoice's own digits:
+
+![Payment part paid by QR reference: account CH44 3199 9123 0008 8901 2 (a QR-IBAN), reference 12 34561 00841 17000 00202 60143](../assets/payment-part-qrr.png)
+
+With the regular IBAN, a creditor reference that spells the invoice number out:
+
+![Payment part paid by creditor reference: account CH93 0076 2011 6238 5295 7, reference RF47 INV2 0260 14](../assets/payment-part-scor.png)
+
 ## A QR-IBAN is a second account number
 
 This is the part that trips people up. A QR-IBAN is not a formatting variant of

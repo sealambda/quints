@@ -45,6 +45,20 @@ trap 'rm -rf "$work"' EXIT
     income="documents/Income/CH/GmbH/Consulting/External"
     pdftoppm -png -singlefile -r 110 -f 1 -l 1 \
         "$income/Domestic/2026-07-02.acme.INV2026014.pdf" "$ASSETS/invoice-qr-bill"
+    # The same invoice under the other reference scheme: a QR-IBAN plus the
+    # bank's identification switches the QR-bill to a QR reference. The
+    # scaffold ships those two lines commented out — uncommenting them is the
+    # whole configuration change, so the docs' pair stays honest.
+    sed -e 's/^    # qr_iban:/    qr_iban:/' -e 's/^    # qr_reference_id:/    qr_reference_id:/' \
+        invoicing/issuer.yaml > invoicing/issuer-qrr.yaml
+    quints invoice invoicing/acme-2026-07.yaml --issuer invoicing/issuer-qrr.yaml \
+        --no-verify -o acme-qrr.pdf
+    # Payment parts side by side: the bottom 105 mm of each A4 page at 150 dpi
+    # (1240 x 1754 px; the payment part starts at 192 mm = 1134 px; a 3 mm margin above keeps the perforation line).
+    pdftoppm -png -singlefile -r 150 -x 0 -y 1116 -W 1240 -H 638 \
+        "$income/Domestic/2026-07-02.acme.INV2026014.pdf" "$ASSETS/payment-part-scor"
+    pdftoppm -png -singlefile -r 150 -x 0 -y 1116 -W 1240 -H 638 \
+        acme-qrr.pdf "$ASSETS/payment-part-qrr"
     pdftoppm -png -singlefile -r 110 -f 1 -l 1 \
         "$income/Export/2026-08-05.globex.INV2026015.pdf" "$ASSETS/invoice-export"
     pdftoppm -png -singlefile -r 110 -f 1 -l 1 statements-2026-de.pdf "$ASSETS/statements"
