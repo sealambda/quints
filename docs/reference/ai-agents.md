@@ -41,7 +41,12 @@ quints vat report -q 2026-Q3 --json
 quints vat status --json
 quints report bilanz --at 2026-12-31 --json
 quints receivables --json
+quints invoice invoicing/acme-2026-07.yaml --json
 ```
+
+The invoice one adds `reference` and `reference_type` (the payment reference
+it printed), `customer_reference`, and the ledger draft when the invoice is
+not booked yet.
 
 Stable keys, ISO dates, decimal strings — made to be parsed, not scraped.
 

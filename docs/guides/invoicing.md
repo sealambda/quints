@@ -98,44 +98,50 @@ pre-flight check.
 ## Payment reference
 
 Every invoice asks to be paid with a structured reference, so the payment
-arrives carrying its own invoice id. Two schemes exist, and an account can
-use exactly one of them:
+arrives carrying its own invoice id. Switzerland has two, each tied to a
+different kind of bank account, and quints picks the Swiss-native one whenever
+your account can carry it:
 
-**SCOR** — the ISO 11649 Creditor Reference, and the default. It is `RF`, two
-check digits, then the invoice number itself:
+**QRR** — the Swiss QR reference, paid into a **QR-IBAN**. The payer's bank
+refuses any payment to a QR-IBAN without a valid reference, so every payment
+that reaches you is matchable. It is numeric — quints encodes the invoice
+number so its digits stay visible at the end — and CHF-only. An account with a
+`qr_iban` uses it for CHF QR-bills without further ado; add the six-digit
+identification your bank assigns you, and keep the regular `iban` for CHF from
+abroad:
+
+```yaml
+bank:
+  CHF:
+    qr_iban: CH44 3199 9123 0008 8901 2
+    qr_reference_id: "123456"   # quoted: YAML reads a leading zero as octal
+    iban: CH93 0076 2011 6238 5295 7
+```
+
+**SCOR** — the ISO 11649 Creditor Reference, paid into the regular **IBAN**.
+`RF`, two check digits, then the invoice number itself:
 
 ```text
 RF47 INV2 0260 14
 ```
 
 Readable on a bank statement, quotable in a reminder email, valid on a Swiss
-QR-bill *and* in a SEPA transfer. It is paid into the regular `iban`.
-
-**QRR** — the Swiss QR reference: 26 digits plus a check digit, printed
-`2 + 5x5`. It is numeric by design — it cannot carry letters, so the invoice
-number is encoded into it — and it works **only** with a QR-IBAN. Banks
-assign you a six-digit identification (UBS calls it the BESR-ID) that has to
-occupy the first six digits of every QR reference you issue; configure it as
-`qr_reference_id` or your references go out starting `000000`.
-
-Which one an account uses:
+QR-bill in CHF and EUR *and* in a SEPA transfer. It is what an account without
+a `qr_iban` uses, what every QR-bill in EUR uses, and what every export invoice
+uses. Prefer it although you have a QR-IBAN? Say so:
 
 ```yaml
 bank:
   CHF:
-    reference: scor        # or qrr; omit to let quints resolve it
-    iban: CH93 0076 2011 6238 5295 7
-    # reference: qrr needs both of these:
+    reference: scor
     qr_iban: CH44 3199 9123 0008 8901 2
-    qr_reference_id: "123456"   # quoted: YAML reads a leading zero as octal
+    iban: CH93 0076 2011 6238 5295 7
 ```
 
-Omitted, `reference:` follows the one IBAN the account has: a regular `iban`
-alone means `scor`, a `qr_iban` alone means `qrr`. An account with **both**
-has to say which — quints refuses to guess, because the choice decides which
-account the money lands in, and re-rendering an old invoice must reproduce
-the reference the customer already holds. Export invoices are always SCOR: an
-ordinary credit transfer has no QR-bill to carry a QRR.
+[**Payment references**](payment-references.md) covers the whole picture — the
+three types the standard defines, the exact pairing rules with their
+citations, what the QR reference contains, how to choose, and how a payment
+finds its way back to the invoice.
 
 The reference is derived from the invoice number and nothing else, which is
 what lets `quints import` and `quints match` credit an incoming payment to

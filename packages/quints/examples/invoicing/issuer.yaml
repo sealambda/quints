@@ -14,17 +14,17 @@ phone: "+41 76 297 79 35"
 # belonging to nobody. Replace all of them with your own.
 bank:
   CHF:
-    # The account every CHF invoice is paid into. With a regular IBAN the
-    # QR-bill carries a SCOR reference (RF…), which spells out the invoice
-    # number — readable on a bank statement and in a reminder email.
+    # The account every CHF invoice is paid into. With only a regular IBAN the
+    # QR-bill carries a SCOR reference (RF…) spelling out the invoice number —
+    # readable on a bank statement and in a reminder email.
     iban: CH93 0076 2011 6238 5295 7
     bic: POFICHBEXXX
     bank_name: PostFinance AG, Bern
-    # Paid by the numeric Swiss QR reference (QRR) instead? That needs a
-    # QR-IBAN and the six-digit identification your bank assigns you (UBS
-    # calls it the BESR-ID) — it has to be the first six digits of every QR
-    # reference. Uncomment all three, and keep `iban` for CHF from abroad:
-    # reference: qrr
+    # Have a QR-IBAN? Add it and CHF QR-bills switch to the Swiss QR reference
+    # (QRR), paid into it: the payer's bank then refuses any payment without a
+    # valid reference. Your bank also assigns a six-digit identification (UBS:
+    # BESR-ID) that must lead every reference — quote it. Keep `iban` for CHF
+    # from abroad; set `reference: scor` to stay on RF references regardless.
     # qr_iban: CH44 3199 9123 0008 8901 2
     # qr_reference_id: "123456"
   EUR:

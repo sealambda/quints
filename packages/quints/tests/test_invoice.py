@@ -123,7 +123,29 @@ def test_qrr_is_valid_and_reversible():
     assert decode_qrr(prefixed) == "ACME202606"
     assert decode_qrr(ref.replace("0", "1", 1)) != "ACME202606"  # wrong check digit → None
     # Spaced the way a bank re-prints it, and as the payment part groups it.
-    assert decode_qrr("00 00000 00019 99860 06390 99176") == "INV2026014"
+    assert decode_qrr(format_reference("QRR", make_qrr("INV2026014"))) == "INV2026014"
+
+
+def test_qrr_keeps_the_invoice_digits_visible():
+    """The reference is numeric by decree, but a human reading a statement
+    should still recognise their invoice in it. Letters-then-digits numbers —
+    the usual shape — end in the number's own digits."""
+    ref = make_qrr("INV2026014", "123456")
+    assert ref[:-1] == "123456" + "1" + "0084117" + "000002026014"
+    assert format_reference("QRR", ref) == "12 34561 00841 17000 00202 6014" + ref[-1]
+    assert decode_qrr(ref) == "INV2026014"
+    # A purely numeric number, and leading zeros in the digit part, survive.
+    assert decode_qrr(make_qrr("20260001")) == "20260001"
+    assert make_qrr("INV0042") != make_qrr("INV42")
+    assert decode_qrr(make_qrr("INV0042")) == "INV0042"
+    # Any other shape falls back to bijective base 36, marked by its lead digit.
+    other = make_qrr("ACAD202608B")
+    assert other[6] == "2" and decode_qrr(other) == "ACAD202608B"
+    assert make_qrr("ABCDE1")[6] == "2"  # five letters do not fit the legible form
+    assert make_qrr("ACAD20260814")[6] == "1"  # twelve characters do, at the cap
+    # A body that is not a canonical encoding decodes to nothing, never to a
+    # plausible-looking invoice number.
+    assert decode_qrr(legacy_qrr("INV2026014")) is None
 
 
 def test_qrr_is_injective_where_the_legacy_scheme_collided():
@@ -189,30 +211,25 @@ def test_make_scor_matches_ig_example():
     assert make_scor("INV2026014") == "RF47INV2026014"
 
 
-def test_scheme_follows_the_one_iban_and_refuses_to_guess_between_two():
+def test_a_qr_iban_means_qrr_unless_told_otherwise():
     inv = _domestic()
     only_iban = BankAccount(iban="CH93 0076 2011 6238 5295 7")
     assert payment_reference(inv, only_iban) == PaymentReference(
         "SCOR", "RF46ACME202606", "RF46 ACME 2026 06"
     )
-    # A QR-IBAN on its own can only be paid by QRR.
     only_qr = BankAccount(qr_iban="CH44 3199 9123 0008 8901 2")
     assert payment_reference(inv, only_qr).kind == "QRR"
-    # Both configured: the choice decides which account is paid and must be
-    # explicit — the previous scaffold wrote exactly this shape, and silently
-    # flipping it would re-render old invoices with a different reference.
+    # Both configured: the QR-IBAN is the Swiss-native instrument — the payer's
+    # bank refuses a payment to it without a valid QR reference — so it takes
+    # over for CHF, exactly as it did before this module existed.
     both = {"qr_iban": "CH44 3199 9123 0008 8901 2", "iban": "CH93 0076 2011 6238 5295 7"}
-    with pytest.raises(ValueError, match="both `iban` and `qr_iban` but no `reference:`"):
-        payment_reference(inv, BankAccount.model_validate(both))
+    assert payment_reference(inv, BankAccount.model_validate(both)).kind == "QRR"
+    # `reference: scor` keeps the QR-IBAN on file and still issues RF references.
     scor = BankAccount.model_validate({**both, "reference": "scor"})
-    assert payment_reference(inv, scor).kind == "SCOR"
-    qrr = BankAccount.model_validate({**both, "reference": "qrr"})
-    assert payment_reference(inv, qrr).kind == "QRR"
-    # An export invoice never asks: a credit transfer is SCOR whatever the account.
-    export = _domestic()
-    export.kind = "export"
-    assert payment_reference(export, BankAccount.model_validate(both)).kind == "SCOR"
-    # …and asking for QRR without one is refused, with the way out named.
+    assert payment_reference(inv, scor) == PaymentReference(
+        "SCOR", "RF46ACME202606", "RF46 ACME 2026 06"
+    )
+    # Asking for QRR without a QR-IBAN is refused, with the way out named.
     with pytest.raises(ValueError, match="no `qr_iban`"):
         qr.build_bill(
             inv,
@@ -220,7 +237,31 @@ def test_scheme_follows_the_one_iban_and_refuses_to_guess_between_two():
             BankAccount(iban="CH93 0076 2011 6238 5295 7", reference="qrr"),
             compute(inv),
         )
+    # An export invoice never asks: a credit transfer is SCOR whatever the account.
+    export = _domestic()
+    export.kind = "export"
+    assert payment_reference(export, BankAccount.model_validate(both)).kind == "SCOR"
     assert payment_reference(export, only_qr).kind == "SCOR"
+
+
+def test_qr_reference_is_refused_outside_chf():
+    # Swiss Implementation Guidelines QR-bill 2.10 / 2.12.1: QR-IBAN and QR
+    # reference "can only be used for invoicing in CHF". A EUR QR-bill is
+    # IBAN + SCOR — picked automatically when the account is unset, refused
+    # rather than downgraded when `reference: qrr` was asked for, because the
+    # two schemes are paid into different accounts.
+    eur = _domestic()
+    eur.currency = "EUR"
+    both = {"qr_iban": "CH44 3199 9123 0008 8901 2", "iban": "CH93 0076 2011 6238 5295 7"}
+    assert payment_reference(eur, BankAccount.model_validate(both)).kind == "SCOR"
+    with pytest.raises(ValueError, match="for CHF only"):
+        payment_reference(eur, BankAccount.model_validate({**both, "reference": "qrr"}))
+    # A QR-IBAN alone cannot take a EUR QR-bill at all: the bill builder, which
+    # picks the account to be paid into, says so.
+    only_qr = BankAccount(qr_iban="CH44 3199 9123 0008 8901 2")
+    with pytest.raises(ValueError, match="CHF-only"):
+        qr.build_bill(eur, ISSUER, only_qr, compute(eur))
+    assert payment_reference(_domestic(), only_qr).kind == "QRR"
 
 
 def test_invoice_number_must_yield_a_reference():
