@@ -128,7 +128,9 @@ account's folder, date-prefixed — where beancount and Fava expect documents.
 > [`packages/quints/examples/`](packages/quints/examples) ships a working
 > `invoicing/` and `statements/` set. Clone the repo, `cd` in, and try
 > `quints invoice invoicing/acme-2026-07.yaml` and
-> `quints import ubs statements/ubs-2026.mt940`.
+> `quints import ubs statements/ubs-2026.mt940`. To run them against the
+> checkout rather than a released `quints` on your `PATH`, use the workspace
+> environment: `uv run --project ../.. quints …` from inside `examples/`.
 
 ## The building blocks
 

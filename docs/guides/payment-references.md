@@ -52,7 +52,7 @@ The same invoice under each scheme — the payment part is what the customer
 scans or retypes. With a QR-IBAN and the bank's identification, a QR
 reference whose tail is the invoice's own digits:
 
-![Payment part paid by QR reference: account CH44 3199 9123 0008 8901 2 (a QR-IBAN), reference 12 34561 00841 17000 00202 60143](../assets/payment-part-qrr.png)
+![Payment part paid by QR reference: account CH57 3000 0123 0008 8901 2 (a QR-IBAN), reference 12 34561 00841 17000 00202 60143](../assets/payment-part-qrr.png)
 
 With the regular IBAN, a creditor reference that spells the invoice number out:
 
@@ -66,9 +66,16 @@ institution id in the **30000–31999** range:
 
 ```text
 IBAN      CH93 0076 2011 6238 5295 7
-QR-IBAN   CH44 3199 9123 0008 8901 2
-               ^^^^^ 31999 — the QR-IID
+QR-IBAN   CH57 3000 0123 0008 8901 2
+               ^^^^^ 30000 — the QR-IID
 ```
+
+Every bank in the scheme owns exactly one QR-IID, listed in SIX's bank master
+(PostFinance 30000, UBS 30005, Raiffeisen 30808, …). Validators check against
+that list: the Guidelines' own sample QR-IBAN, `CH44 3199 9123 0008 8901 2`,
+sits on 31999, which no bank owns, so UBS's QR-bill portal answers it with
+"Please correct the QR IID". quints' samples therefore carry PostFinance's
+30000 — valid, belonging to nobody, and accepted by such checks.
 
 Both can point at the same underlying account, but they are addressed
 separately, and a QR-IBAN cannot receive an ordinary credit transfer at all. An
@@ -172,7 +179,7 @@ it your references go out starting `000000`:
 ```yaml
 bank:
   CHF:
-    qr_iban: CH44 3199 9123 0008 8901 2
+    qr_iban: CH57 3000 0123 0008 8901 2
     qr_reference_id: "123456"   # quoted — YAML reads a bare leading zero as octal
     iban: CH93 0076 2011 6238 5295 7   # keep it: CHF from abroad needs it
     bic: POFICHBEXXX
@@ -184,7 +191,7 @@ To keep the QR-IBAN on file but issue RF references anyway, say so:
 bank:
   CHF:
     reference: scor
-    qr_iban: CH44 3199 9123 0008 8901 2
+    qr_iban: CH57 3000 0123 0008 8901 2
     iban: CH93 0076 2011 6238 5295 7
 ```
 
