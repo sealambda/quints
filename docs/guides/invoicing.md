@@ -61,7 +61,7 @@ bank:
     bic: POFICHBEXXX
     bank_name: PostFinance AG, Bern      # optional
     # reference: qrr                     # see "Payment reference" below
-    # qr_iban: CH44 3199 9123 0008 8901 2
+    # qr_iban: CH57 3000 0123 0008 8901 2
     # qr_reference_id: "123456"          # the six digits your bank assigns you
   EUR:
     iban: DE89 3704 0044 0532 0130 00
@@ -113,7 +113,7 @@ abroad:
 ```yaml
 bank:
   CHF:
-    qr_iban: CH44 3199 9123 0008 8901 2
+    qr_iban: CH57 3000 0123 0008 8901 2
     qr_reference_id: "123456"   # quoted: YAML reads a leading zero as octal
     iban: CH93 0076 2011 6238 5295 7
 ```
@@ -134,7 +134,7 @@ uses. Prefer it although you have a QR-IBAN? Say so:
 bank:
   CHF:
     reference: scor
-    qr_iban: CH44 3199 9123 0008 8901 2
+    qr_iban: CH57 3000 0123 0008 8901 2
     iban: CH93 0076 2011 6238 5295 7
 ```
 
@@ -142,7 +142,7 @@ The same invoice under each scheme — the payment part is what the customer
 scans or retypes. With a QR-IBAN and the bank's identification, a QR
 reference whose tail is the invoice's own digits:
 
-![Payment part paid by QR reference: account CH44 3199 9123 0008 8901 2 (a QR-IBAN), reference 12 34561 00841 17000 00202 60143](../assets/payment-part-qrr.png)
+![Payment part paid by QR reference: account CH57 3000 0123 0008 8901 2 (a QR-IBAN), reference 12 34561 00841 17000 00202 60143](../assets/payment-part-qrr.png)
 
 With the regular IBAN, a creditor reference that spells the invoice number out:
 

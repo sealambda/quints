@@ -73,6 +73,10 @@ never import each other or `quints`.
 ## Pull requests
 
 - Branch off `main`; keep `make check` green.
+- `packages/quints/examples/` depends on the *released* `quints`, like any
+  scaffolded project: `uv run quints …` inside it, or a `quints` installed with
+  `uv tool`/`pipx`, does not exercise your checkout. From inside `examples/`
+  use `uv run --project ../.. quints …`; from the repo root, `uv run quints …`.
 - If you document a command, run it against `packages/quints/examples/` first —
   the docs test (`test_docs.py`) executes the README's commands, so they can't
   silently rot.

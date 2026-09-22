@@ -426,7 +426,11 @@ _SAMPLE_VAT_ID = "CHE-267.359.056 MWST"
 # Implementation Guidelines example for the QR-IBAN), so they pass every check
 # quints makes while belonging to nobody. Each BIC matches its IBAN's
 # institution — the sample has to model the thing it teaches.
-_SAMPLE_QR_IBAN = "CH44 3199 9123 0008 8901 2"  # QR-IID 31999 — the SIX IG example
+# QR-IID 30000 is PostFinance's, like the regular sample IBAN below. The SIX
+# Guidelines' own sample (CH44 3199 9123 0008 8901 2) sits on 31999, which no
+# bank owns — validators that check the bank master (UBS's QR-bill portal, for
+# one) reject it, so it cannot be used to try the QR-reference scenario out.
+_SAMPLE_QR_IBAN = "CH57 3000 0123 0008 8901 2"
 _SAMPLE_CHF_IBAN = "CH93 0076 2011 6238 5295 7"  # the documentation IBAN for CH
 _SAMPLE_CHF_BIC = "POFICHBEXXX"  # PostFinance — IID 00762, as above
 _SAMPLE_CHF_BANK = "PostFinance AG, Bern"
@@ -466,19 +470,28 @@ def _issuer_yaml(_answers: Answers) -> str:
             "# belonging to nobody. Replace all of them with your own.",
             "bank:",
             "  CHF:",
-            "    # The account every CHF invoice is paid into. With only a regular IBAN the",
-            "    # QR-bill carries a SCOR reference (RF…) spelling out the invoice number —",
-            "    # readable on a bank statement and in a reminder email.",
+            "    # Every CHF QR-bill is paid into this account with ONE of two reference",
+            "    # schemes — the account decides which. When to use which:",
+            "    # https://sealambda.github.io/quints/guides/payment-references/",
+            "    #",
+            "    # A) Swiss QR reference (QRR) — the default as soon as a QR-IBAN is present.",
+            "    #    The payer's bank refuses any payment to a QR-IBAN without a valid",
+            "    #    reference, so every payment arrives matchable. Needs the QR-IBAN (a",
+            "    #    second account number your bank issues; this sample carries",
+            "    #    PostFinance's QR-IID 30000) and the six-digit identification the bank",
+            "    #    assigns you (UBS: BESR-ID). Uncomment both lines to switch:",
+            f"    # qr_iban: {_SAMPLE_QR_IBAN}",
+            '    # qr_reference_id: "123456"',
+            "    #",
+            "    # B) Creditor reference (SCOR, RF…) — what the regular IBAN alone gives you:",
+            "    #    it spells out the invoice number and is valid in CHF and EUR and in",
+            "    #    SEPA. To keep it after adding a QR-IBAN, uncomment:",
+            "    # reference: scor",
+            "    #",
+            "    # The regular IBAN stays either way — CHF paid from abroad needs it.",
             f"    iban: {_SAMPLE_CHF_IBAN}",
             f"    bic: {_SAMPLE_CHF_BIC}",
             f"    bank_name: {_SAMPLE_CHF_BANK}",
-            "    # Have a QR-IBAN? Add it and CHF QR-bills switch to the Swiss QR reference",
-            "    # (QRR), paid into it: the payer's bank then refuses any payment without a",
-            "    # valid reference. Your bank also assigns a six-digit identification (UBS:",
-            "    # BESR-ID) that must lead every reference — quote it. Keep `iban` for CHF",
-            "    # from abroad; set `reference: scor` to stay on RF references regardless.",
-            f"    # qr_iban: {_SAMPLE_QR_IBAN}",
-            '    # qr_reference_id: "123456"',
             "  EUR:",
             "    # Regular IBAN — foreign transfers can't use the QR-bill scheme.",
             f"    iban: {_SAMPLE_EUR_IBAN}",

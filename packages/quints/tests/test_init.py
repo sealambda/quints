@@ -232,6 +232,86 @@ def test_sample_invoices_render_and_reconcile(tmp_path: Path):
     assert cc.found and cc.ok and cc.date_ok
 
 
+def _enable_qr_iban(issuer_yaml: Path) -> None:
+    """Exactly the edit the scaffold's own comments (and media/generate.sh) ask for."""
+    text = issuer_yaml.read_text()
+    edited = text.replace("    # qr_iban:", "    qr_iban:").replace(
+        "    # qr_reference_id:", "    qr_reference_id:"
+    )
+    assert edited != text
+    issuer_yaml.write_text(edited)
+
+
+def test_sample_issuer_pays_by_scor_until_the_qr_iban_lines_are_enabled(tmp_path: Path):
+    """Both reference schemes, through the scaffold a user actually gets.
+
+    As shipped, the CHF account has only the regular IBAN: the QR-bill carries
+    an RF creditor reference paid into it. Uncommenting the two QR-IBAN lines —
+    the edit the file's own comments describe — switches it to a QR reference
+    paid into the QR-IBAN, bank identification first, invoice digits last. The
+    sample QR-IBAN carries a QR-IID a real bank owns (PostFinance, 30000): the
+    Guidelines' own 31999 sample belongs to nobody, and validators that check
+    the bank master — UBS's QR-bill portal, for one — reject it."""
+    from stdnum.ch import esr
+
+    from quints.invoice import bank, qr
+    from quints.invoice import model as im
+    from quints.invoice.reference import decode_qrr, format_reference, make_qrr, make_scor
+
+    init.write(tmp_path, init.plan(init.Answers(entity_name="Smoke GmbH", include_samples=True)))
+    registry = im.load_customers(tmp_path / "invoicing/customers.yaml")
+    inv_file = tmp_path / "invoicing/acme-2026-07.yaml"
+    inv = im.load_invoice(inv_file, registry)
+    issuer_yaml = tmp_path / "invoicing/issuer.yaml"
+
+    def payload(issuer: im.Issuer) -> tuple[str, str, str]:
+        # Swiss QR Code layout: the account is line 3; reference type and
+        # reference sit right before the unstructured message and the trailer.
+        lines = qr.payload(qr.build_bill(inv, issuer, issuer.account("CHF"), im.compute(inv)))
+        rows = lines.splitlines()
+        end = rows.index("EPD")
+        return rows[3], rows[end - 3], rows[end - 2]
+
+    def cli_reference_type(issuer: Path) -> str:
+        res = runner.invoke(
+            app,
+            [
+                "invoice",
+                str(inv_file),
+                "--issuer",
+                str(issuer),
+                "--customers",
+                str(tmp_path / "invoicing/customers.yaml"),
+                "--out",
+                str(tmp_path / "out.pdf"),
+                "--no-verify",
+                "--json",
+            ],
+        )
+        assert res.exit_code == 0, res.output
+        return json.loads(res.output)["reference_type"]
+
+    # Scenario B, as scaffolded: regular IBAN, creditor reference.
+    issuer = im.load_issuer(issuer_yaml)
+    account, ref_type, ref = payload(issuer)
+    assert (account, ref_type, ref) == ("CH9300762011623852957", "SCOR", make_scor("INV2026014"))
+    assert ref == "RF47INV2026014"
+    assert cli_reference_type(issuer_yaml) == "SCOR"
+
+    # Scenario A: uncomment the two lines → QR-IBAN, QR reference.
+    _enable_qr_iban(issuer_yaml)
+    issuer = im.load_issuer(issuer_yaml)
+    account, ref_type, ref = payload(issuer)
+    assert account == "CH5730000123000889012"
+    assert bank.iid(account) == "30000"  # a QR-IID a real bank owns (PostFinance)
+    assert bank.check(account, "POFICHBEXXX").ok  # what `quints iban` would report
+    assert ref_type == "QRR" and ref == make_qrr("INV2026014", "123456")
+    assert esr.is_valid(ref) and decode_qrr(ref) == "INV2026014"
+    assert ref.startswith("123456") and ref[-8:-1] == "2026014"  # bank id first, digits last
+    assert format_reference("QRR", ref) == "12 34561 00841 17000 00202 60143"  # as in the docs
+    assert cli_reference_type(issuer_yaml) == "QRR"
+
+
 def test_cli_scaffold_to_invoice_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # The exact steps a new user types, through the CLI: `quints init …
     # --samples`, then `quints invoice` on each sample invoice inside the

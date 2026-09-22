@@ -14,19 +14,28 @@ phone: "+41 76 297 79 35"
 # belonging to nobody. Replace all of them with your own.
 bank:
   CHF:
-    # The account every CHF invoice is paid into. With only a regular IBAN the
-    # QR-bill carries a SCOR reference (RF…) spelling out the invoice number —
-    # readable on a bank statement and in a reminder email.
+    # Every CHF QR-bill is paid into this account with ONE of two reference
+    # schemes — the account decides which. When to use which:
+    # https://sealambda.github.io/quints/guides/payment-references/
+    #
+    # A) Swiss QR reference (QRR) — the default as soon as a QR-IBAN is present.
+    #    The payer's bank refuses any payment to a QR-IBAN without a valid
+    #    reference, so every payment arrives matchable. Needs the QR-IBAN (a
+    #    second account number your bank issues; this sample carries
+    #    PostFinance's QR-IID 30000) and the six-digit identification the bank
+    #    assigns you (UBS: BESR-ID). Uncomment both lines to switch:
+    # qr_iban: CH57 3000 0123 0008 8901 2
+    # qr_reference_id: "123456"
+    #
+    # B) Creditor reference (SCOR, RF…) — what the regular IBAN alone gives you:
+    #    it spells out the invoice number and is valid in CHF and EUR and in
+    #    SEPA. To keep it after adding a QR-IBAN, uncomment:
+    # reference: scor
+    #
+    # The regular IBAN stays either way — CHF paid from abroad needs it.
     iban: CH93 0076 2011 6238 5295 7
     bic: POFICHBEXXX
     bank_name: PostFinance AG, Bern
-    # Have a QR-IBAN? Add it and CHF QR-bills switch to the Swiss QR reference
-    # (QRR), paid into it: the payer's bank then refuses any payment without a
-    # valid reference. Your bank also assigns a six-digit identification (UBS:
-    # BESR-ID) that must lead every reference — quote it. Keep `iban` for CHF
-    # from abroad; set `reference: scor` to stay on RF references regardless.
-    # qr_iban: CH44 3199 9123 0008 8901 2
-    # qr_reference_id: "123456"
   EUR:
     # Regular IBAN — foreign transfers can't use the QR-bill scheme.
     iban: DE89 3704 0044 0532 0130 00
