@@ -11,6 +11,17 @@
   kmu: "1170"  ; Input VAT
 2026-01-01 open Liabilities:CH:GmbH:Payable:Trade
   kmu: "2000"  ; Trade payables
+; Fixed assets: `quints close depreciation --year <year>` prints the
+; year's write-down from the metadata below, and `quints close check`
+; verifies it was booked. Rates are the ESTV Merkblatt A/1995 maxima
+; (percent of book value; halve them for linear depreciation). Laptops
+; and other IT go under kmu: "1520" with category "it-equipment" (40%).
+2026-01-01 open Assets:CH:GmbH:FixedAssets:Equipment CHF
+  kmu: "1510"  ; Furniture and equipment
+  depreciation: "declining"  ; or "linear" — cost / useful_life_years
+  depreciation_rate: "25"  ; percent; Merkblatt A/1995 max for this category
+  depreciation_category: "furniture"  ; Geschäftsmobiliar und Einrichtungen
+  residual: "1"  ; the pro-memoria franc this never depreciates below
 2026-01-01 open Liabilities:CH:GmbH:Tax:OutputVAT CHF
   kmu: "2200"  ; VAT due
 2026-01-01 open Liabilities:CH:GmbH:Tax:Bezugsteuer CHF
@@ -25,6 +36,8 @@
   kmu: "3400"  ; Revenue from services
 2026-01-01 open Expenses:CH:GmbH:IT:Hosting
   kmu: "6570"  ; IT expenses
+2026-01-01 open Expenses:CH:GmbH:Depreciation CHF
+  kmu: "6800"  ; Depreciation
 2026-01-01 open Expenses:CH:GmbH:FX:CurrencyLoss CHF
   kmu: "6900"  ; Financial expenses
 2026-01-01 open Income:CH:GmbH:Rounding CHF

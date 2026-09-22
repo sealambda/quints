@@ -41,3 +41,6 @@ the path.
 ![The Bilanz page of the generated statements PDF, grouped by KMU code](../assets/statements.png){ width="480" }
 
 All report commands take `--lang` and `--json`.
+
+Before the statements are final, run the year-end checklist —
+[Close the year](year-end.md).

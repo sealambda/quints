@@ -42,13 +42,41 @@ from . import config, ledger, ui
 
 # ── static structure tables ──────────────────────────────────────────────────
 # KMU code → name, per language. Only codes in use (or expected) are listed;
-# an unknown code renders as the code itself, never an error.
+# an unknown code renders as the code itself, never an error. The 15xx block
+# (mobile Sachanlagen and their Wertberichtigungen) follows the official
+# Schulversion of the veb.ch Schweizer Kontenrahmen KMU: an x9 code is the
+# contra account of the asset code before it, which is how indirect
+# depreciation (`quints close depreciation`) stays inside one Bilanz row.
 KMU_NAMES: dict[str, dict[str, str]] = {
     "1020": {"en": "Bank deposits", "de": "Bankguthaben"},
     "1100": {"en": "Trade receivables", "de": "Forderungen aus Lieferungen und Leistungen"},
     "1140": {"en": "Receivables from shareholders", "de": "Forderungen gegenüber Beteiligten"},
     "1170": {"en": "Input VAT", "de": "Vorsteuer"},
+    "1500": {"en": "Machinery and apparatus", "de": "Maschinen und Apparate"},
+    "1509": {
+        "en": "Valuation allowance, machinery and apparatus",
+        "de": "Wertberichtigungen Maschinen und Apparate",
+    },
     "1510": {"en": "Furniture and equipment", "de": "Mobiliar und Einrichtungen"},
+    "1519": {
+        "en": "Valuation allowance, furniture and equipment",
+        "de": "Wertberichtigungen Mobiliar und Einrichtungen",
+    },
+    "1520": {
+        "en": "Office machines, IT, communications",
+        "de": "Büromaschinen, Informatik, Kommunikationstechnologie",
+    },
+    "1529": {
+        "en": "Valuation allowance, office machines and IT",
+        "de": "Wertberichtigungen Büromaschinen, Informatik, Kommunikationstechnologie",
+    },
+    "1530": {"en": "Vehicles", "de": "Fahrzeuge"},
+    "1539": {"en": "Valuation allowance, vehicles", "de": "Wertberichtigungen Fahrzeuge"},
+    "1540": {"en": "Tools and equipment", "de": "Werkzeuge und Geräte"},
+    "1549": {
+        "en": "Valuation allowance, tools and equipment",
+        "de": "Wertberichtigungen Werkzeuge und Geräte",
+    },
     "2000": {"en": "Trade payables", "de": "Verbindlichkeiten aus Lieferungen und Leistungen"},
     "2200": {"en": "VAT due", "de": "Geschuldete Mehrwertsteuer"},
     "2270": {"en": "Social security payable", "de": "Geschuldete Sozialversicherungsbeiträge"},

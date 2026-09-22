@@ -43,6 +43,15 @@ rounding_income = "Income:CH:GmbH:Rounding"
 [report]
 language = "en"                     # or "de"; --lang overrides
 
+# Year-end close (`quints close check` / `quints close depreciation`).
+# Depreciation rates and methods live on the fixed-asset accounts in
+# accounts.bean; this is only what they default to.
+[close]
+depreciation_account = "Expenses:CH:GmbH:Depreciation"   # KMU 6800
+method = "direct"                   # or "indirect": credit a Wertberichtigung (15x9)
+prorata = "full"                    # or "months" in the year of acquisition
+receivable_review_days = 90         # open longer at year end → Delkredere review
+
 # MT940 statements → staging/. '*' = booked as drafted, '!' = still
 # needs a VAT decision + linked document before it reaches your books.
 [import.ubs]

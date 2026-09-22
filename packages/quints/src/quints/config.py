@@ -185,6 +185,11 @@ class Config:
     saldo: tuple[SaldoRate, ...] = ()  # the granted Saldosteuersätze
     # [report]
     report_language: str = "en"
+    # [close] — year-end close (`quints close check` / `close depreciation`)
+    depreciation_account: str = "Expenses:CH:GmbH:Depreciation"  # KMU 6800
+    depreciation_method: str = "direct"  # or "indirect": credit a Wertberichtigung account
+    depreciation_prorata: str = "full"  # or "months" in the year of acquisition
+    receivable_review_days: int = 90  # open longer at the year end → Delkredere review
     # [import.*] — statement importers (plan 2); None = not configured
     import_ubs: UbsImport | None = None
     import_yapeal: YapealImport | None = None
@@ -327,6 +332,11 @@ def _from_mapping(raw: dict[str, object]) -> Config:
     take(vat, "period", "vat_period")
     if "saldo" in vat:
         updates["saldo"] = _saldo_rates(vat["saldo"])
+    close = section("close")
+    take(close, "depreciation_account", "depreciation_account")
+    take(close, "method", "depreciation_method")
+    take(close, "prorata", "depreciation_prorata")
+    take(close, "receivable_review_days", "receivable_review_days")
     updates.update(_import_sections(raw))
     return replace(cfg, **updates)
 

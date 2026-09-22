@@ -19,6 +19,9 @@ if TYPE_CHECKING:
     from _typeshed import DataclassInstance
 
 from . import (
+    closing as closing_mod,
+)
+from . import (
     config as config_mod,
 )
 from . import (
@@ -1285,6 +1288,82 @@ def statements(
     out = out or Path(f"statements-{year}-{lang}.pdf")
     path = report_pdf.render_pdf(bilanz_report, erfolg_report, lang, out)
     typer.secho(f"Wrote {path}", fg="green")
+
+
+close_app = typer.Typer(
+    no_args_is_help=True,
+    help="Year-end close: the readiness checklist and the depreciation entry.",
+)
+app.add_typer(close_app, name="close", rich_help_panel=PANEL_REPORTS)
+
+
+@close_app.command("check")
+def close_check(
+    year: int = typer.Option(..., "--year", help="Fiscal year to close."),
+    strict: bool = typer.Option(
+        False, "--strict", help="Exit 1 while an item fails (the CI / agent gate)."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    file: Path = _file_option(),
+):
+    """Is the fiscal year ready to close? One line per item, pass/warn/fail.
+
+    Reports by default and exits 0 — the list is a to-do list, and a year
+    mid-close is the normal case. `--strict` turns a failing item into exit 1.
+    """
+    import dataclasses
+
+    _require_ledger(file)
+    checklist = closing_mod.check(file, year)
+    if as_json:
+        _json_out(
+            {
+                "year": checklist.year,
+                "at": checklist.at,
+                "ok": checklist.ok,
+                "failed": checklist.failed,
+                "warned": checklist.warned,
+                "items": [dataclasses.asdict(i) for i in checklist.items],
+            }
+        )
+    else:
+        closing_mod.render_check(checklist)
+    if strict and not checklist.ok:
+        raise typer.Exit(1)
+
+
+@close_app.command("depreciation")
+def close_depreciation(
+    year: int = typer.Option(..., "--year", help="Fiscal year to depreciate."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    file: Path = _file_option(),
+):
+    """Print the year's depreciation entry to paste (Art. 960a OR).
+
+    Rates and methods come from the `depreciation*:` metadata on the
+    fixed-asset `open` directives; maxima from the ESTV Merkblatt A/1995.
+    Never writes the ledger — and re-running after booking prints a zero delta.
+    """
+    import dataclasses
+
+    _require_ledger(file)
+    plan = closing_mod.compute_depreciation(file, year)
+    if as_json:
+        _json_out(
+            {
+                "year": plan.year,
+                "at": plan.at,
+                "total": plan.total,
+                "warnings": plan.warnings,
+                "assets": [
+                    {**dataclasses.asdict(a), "delta": a.delta, "book_after": a.book_after}
+                    for a in plan.assets
+                ],
+                "text": closing_mod.depreciation_text(plan),
+            }
+        )
+        return
+    closing_mod.render_depreciation(plan)
 
 
 # ── rates & FX ────────────────────────────────────────────────────────────────
