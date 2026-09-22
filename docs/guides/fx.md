@@ -92,5 +92,8 @@ differences on non-CHF balances, booked against the configured
 Like everything in quints, it's printed for review — never written into your
 books directly.
 
+It is one step of the year-end sequence — `quints close check` says whether
+it is still outstanding; see [Close the year](year-end.md).
+
 For VAT amounts on foreign invoices, use [`quints vat convert`](vat.md#foreign-currency-vat)
 instead of manual conversion.

@@ -72,6 +72,7 @@ account with no valid `kmu:` code.
    Bezugsteuer / none), link the source document, flip `!` to `*`, and move
    it into `books/2026.bean`. `quints match` scores staging drafts and
    inbox documents against invoices, bookings and open supplier bills.
+
 3. A **supplier bill** is booked when it arrives, not when it is paid:
    against `Liabilities:CH:GmbH:Payable:Trade`, with the supplier's own
    invoice number in `bill:` and the payment term in `due:`.
@@ -107,6 +108,29 @@ never invent one, ask the account holder's bank. `quints iban` checks the
 IBAN/BIC pairs already configured (`quints iban <IBAN> --bic <BIC>` checks a
 new one) and exits non-zero if anything is off.
 
+## The loop — year-end (closing 2026)
+
+Run `quints prices sync` first (it needs network), then work the checklist:
+
+```bash
+quints close check --year 2026
+quints fx revalue --at 2026-12-31
+quints close depreciation --year 2026
+```
+
+`close check` lists what still stands between these books and a closed year —
+VAT periods settled and paid, no `!` drafts, a bank balance assertion dated
+1 January 2027 or later, FX revaluation and depreciation booked — and
+names the command that fixes each one. It reports and exits 0; `--strict`
+makes a failing item exit 1, which is the flag to gate on. The other two
+print entries to review and paste into `books/2026.bean`; run them again
+afterwards and the delta is zero. Finish with
+`quints report statements --year 2026` for the Treuhänder's PDF.
+
+Depreciation is driven by metadata on the fixed-asset `open` directives in
+`accounts.bean` (`depreciation:`, `depreciation_rate:`, `residual:`), never by
+a number you invent — the maxima are the ESTV Merkblatt A/1995 Normalsätze.
+
 ## Machine-readable surfaces (prefer these over scraping text)
 
 Every reporting command takes `--json` — stable keys, ISO dates, decimal
@@ -116,6 +140,7 @@ strings:
 quints check --json
 quints vat report -q 2026-Q3 --json
 quints vat status --json
+quints close check --year 2026 --json
 quints report bilanz --at 2026-12-31 --json
 quints receivables --json
 quints payables --json

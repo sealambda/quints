@@ -78,6 +78,48 @@ def test_backbone_opens_yapeal_account(tmp_path: Path):
     assert not errors, errors
 
 
+def test_backbone_opens_the_year_end_accounts(tmp_path: Path):
+    # `quints close depreciation` needs somewhere to book from and to: a
+    # fixed asset carrying the depreciation vocabulary, and KMU 6800.
+    answers = init.Answers(legal_form="einzelfirma")
+    chart = _files(answers)["accounts.bean"]
+    assert "Assets:CH:Einzelfirma:FixedAssets:Equipment" in chart
+    assert 'kmu: "1510"' in chart and 'kmu: "6800"' in chart
+    assert "Expenses:CH:Einzelfirma:Depreciation" in chart
+    for key in ("depreciation", "depreciation_rate", "depreciation_category", "residual"):
+        assert f"{key}: " in chart
+    assert "Merkblatt A/1995" in chart  # where the rate ceiling comes from
+    init.write(tmp_path, init.plan(answers))
+    _entries, errors = ledger.load_entries(tmp_path / "main.bean")
+    assert not errors, errors
+
+
+def test_generated_close_section_drives_the_depreciation_helper(tmp_path: Path):
+    from quints import closing
+
+    answers = init.Answers(entity_name="Klara AG", legal_form="ag")
+    init.write(tmp_path, init.plan(answers))
+    cfg = config.load(tmp_path / "quints.toml")
+    assert cfg.depreciation_account == "Expenses:CH:AG:Depreciation"
+    assert cfg.depreciation_method == "direct" and cfg.depreciation_prorata == "full"
+    assert cfg.receivable_review_days == 90
+    # The scaffolded asset is understood by the close helper (nothing bought
+    # yet, so nothing to write down — but the metadata parses).
+    plan = closing.compute_depreciation(tmp_path / "main.bean", 2026, cfg)
+    assert [a.account for a in plan.assets] == ["Assets:CH:AG:FixedAssets:Equipment"]
+    assert plan.assets[0].max_rate == Decimal("25")  # Merkblatt: Geschäftsmobiliar
+    assert not plan.warnings and plan.total == Decimal("0")
+
+
+def test_agent_payload_covers_the_year_end():
+    agents = _files(init.Answers(include_samples=True, importers=("ubs",)))["AGENTS.md"]
+    assert "quints close check --year 2026" in agents
+    assert "quints close depreciation --year 2026" in agents
+    assert "quints fx revalue --at 2026-12-31" in agents
+    assert "1 January 2027 or later" in agents  # the assertion date that counts
+    assert "Merkblatt A/1995" in agents
+
+
 def test_agent_payload_reminds_to_replace_yapeal_iban():
     agents = _files(init.Answers(include_samples=True, importers=("yapeal",)))["AGENTS.md"]
     assert "the placeholder IBAN under `[import.yapeal]`" in agents

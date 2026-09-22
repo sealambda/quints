@@ -120,6 +120,19 @@ metadata on the bill transaction, or its date plus these terms.
 language = "en"    # or "de"; --lang overrides per command
 ```
 
+## `[close]`
+
+```toml
+[close]
+depreciation_account = "Expenses:CH:GmbH:Depreciation"   # KMU 6800
+method = "direct"                   # or "indirect": credit a Wertberichtigung (15x9)
+prorata = "full"                    # or "months" in the year of acquisition
+receivable_review_days = 90         # open longer at year end → Delkredere review
+```
+
+Defaults for the year-end close. Per-asset rates and methods live on the
+fixed-asset `open` directives, not here — see [Close the year](../guides/year-end.md).
+
 ## `[import.*]`
 
 One section per importer. Rules are `[payee regex, counter account, flag]`

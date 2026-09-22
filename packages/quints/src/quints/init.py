@@ -56,6 +56,25 @@ _IT_HOSTING = "Expenses:CH:GmbH:IT:Hosting"
 _BOOKKEEPING = "Expenses:CH:GmbH:Admin:Bookkeeping"
 _PRIMARY_BANK = "Assets:CH:GmbH:Current:UBS:CHF"
 _WISE_EUR = "Assets:CH:GmbH:Current:Wise:EUR"
+_FIXED_ASSETS = "Assets:CH:GmbH:FixedAssets:Equipment"
+
+# What `quints close depreciation` reads off a fixed-asset open directive.
+# 25% is the Normalsatz for Geschäftsmobiliar in the ESTV's Merkblatt A/1995
+# (declining balance); the pro-memoria franc is the Swiss convention for
+# keeping a written-off asset visible in the books.
+_DEPRECIATION_NOTE = (
+    "Fixed assets: `quints close depreciation --year <year>` prints the",
+    "year's write-down from the metadata below, and `quints close check`",
+    "verifies it was booked. Rates are the ESTV Merkblatt A/1995 maxima",
+    "(percent of book value; halve them for linear depreciation). Laptops",
+    'and other IT go under kmu: "1520" with category "it-equipment" (40%).',
+)
+_DEPRECIATION_META = (
+    ("depreciation", "declining", 'or "linear" — cost / useful_life_years'),
+    ("depreciation_rate", "25", "percent; Merkblatt A/1995 max for this category"),
+    ("depreciation_category", "furniture", "Geschäftsmobiliar und Einrichtungen"),
+    ("residual", "1", "the pro-memoria franc this never depreciates below"),
+)
 
 _KNOWN_IMPORTERS = ("ubs", "yapeal", "wise", "stripe")
 
@@ -121,6 +140,8 @@ class _Account:
     name: str
     code: str  # four-digit KMU Kontenrahmen code
     currencies: tuple[str, ...] = ()  # () = no constraint (multi-currency)
+    meta: tuple[tuple[str, str, str], ...] = ()  # extra (key, value, comment) metadata
+    note: tuple[str, ...] = ()  # comment lines above the open directive
 
 
 class InitError(ValueError):
@@ -171,6 +192,7 @@ def _cfg(answers: Answers) -> config.Config:
         saldo_difference=_sub(base.saldo_difference, c),
         bezugsteuer_expense=_sub(base.bezugsteuer_expense, c),
         saldo=tuple(config.SaldoRate(Decimal(spec) / 100) for spec in sorted(answers.saldo_rates)),
+        depreciation_account=_sub(base.depreciation_account, c),
     )
 
 
@@ -207,6 +229,13 @@ def _backbone(answers: Answers) -> list[_Account]:
         _Account(cfg.receivable, "1100"),
         _Account(cfg.input_vat, "1170", (oc,)),
         _Account(cfg.payable, "2000"),
+        _Account(
+            _sub(_FIXED_ASSETS, c),
+            "1510",
+            (oc,),
+            meta=_DEPRECIATION_META,
+            note=_DEPRECIATION_NOTE,
+        ),
         _Account(cfg.output_vat, "2200", (oc,)),
         _Account(cfg.bezugsteuer, "2200", (oc,)),
         _Account(cfg.payable_vat, "2200", (oc,)),
@@ -214,6 +243,7 @@ def _backbone(answers: Answers) -> list[_Account]:
         _Account(cfg.income_domestic, "3400"),
         _Account(cfg.income_export, "3400"),
         _Account(_sub(_IT_HOSTING, c), "6570"),
+        _Account(cfg.depreciation_account, "6800", (oc,)),
         _Account(cfg.fx_loss, "6900", (oc,)),
         _Account(cfg.rounding_income, "6950", (oc,)),
         _Account(cfg.fx_gain, "6950", (oc,)),
@@ -260,7 +290,14 @@ def _backbone(answers: Answers) -> list[_Account]:
 def _open_directive(open_date: Date, account: _Account, form: str) -> str:
     constraint = f" {','.join(account.currencies)}" if account.currencies else ""
     name = kmu.kmu_name(account.code, "en", form)
-    return f'{open_date} open {account.name}{constraint}\n  kmu: "{account.code}"  ; {name}\n'
+    lines = [f"; {line}" if line else ";" for line in account.note]
+    lines.append(f"{open_date} open {account.name}{constraint}")
+    lines.append(f'  kmu: "{account.code}"  ; {name}')
+    lines += [
+        f'  {key}: "{value}"' + (f"  ; {comment}" if comment else "")
+        for key, value, comment in account.meta
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def _main_bean(answers: Answers) -> str:
@@ -731,6 +768,15 @@ def _quints_toml(answers: Answers) -> str:
         "",
         "[report]",
         f'language = "{answers.report_language}"                     # or "de"; --lang overrides',
+        "",
+        "# Year-end close (`quints close check` / `quints close depreciation`).",
+        "# Depreciation rates and methods live on the fixed-asset accounts in",
+        "# accounts.bean; this is only what they default to.",
+        "[close]",
+        f'depreciation_account = "{cfg.depreciation_account}"   # KMU 6800',
+        'method = "direct"                   # or "indirect": credit a Wertberichtigung (15x9)',
+        'prorata = "full"                    # or "months" in the year of acquisition',
+        "receivable_review_days = 90         # open longer at year end → Delkredere review",
     ]
     for importer in answers.importers:
         lines.append("")
@@ -1030,7 +1076,7 @@ account with no valid `kmu:` code.
 
 {_agents_vat_step(answers)}
    it into `books/{year}.bean`. `quints match` scores staging drafts and
-   inbox documents against invoices and bookings.{_agents_vat_note(answers)}
+   inbox documents against invoices, bookings and open supplier bills.{_agents_vat_note(answers)}
 
 3. A **supplier bill** is booked when it arrives, not when it is paid:
    against `{cfg.payable}`, with the supplier's own
@@ -1066,6 +1112,29 @@ never invent one, ask the account holder's bank. `quints iban` checks the
 IBAN/BIC pairs already configured (`quints iban <IBAN> --bic <BIC>` checks a
 new one) and exits non-zero if anything is off.
 
+## The loop — year-end (closing {year})
+
+Run `quints prices sync` first (it needs network), then work the checklist:
+
+```bash
+quints close check --year {year}
+quints fx revalue --at {year}-12-31
+quints close depreciation --year {year}
+```
+
+`close check` lists what still stands between these books and a closed year —
+VAT periods settled and paid, no `!` drafts, a bank balance assertion dated
+1 January {year + 1} or later, FX revaluation and depreciation booked — and
+names the command that fixes each one. It reports and exits 0; `--strict`
+makes a failing item exit 1, which is the flag to gate on. The other two
+print entries to review and paste into `books/{year}.bean`; run them again
+afterwards and the delta is zero. Finish with
+`quints report statements --year {year}` for the Treuhänder's PDF.
+
+Depreciation is driven by metadata on the fixed-asset `open` directives in
+`accounts.bean` (`depreciation:`, `depreciation_rate:`, `residual:`), never by
+a number you invent — the maxima are the ESTV Merkblatt A/1995 Normalsätze.
+
 ## Machine-readable surfaces (prefer these over scraping text)
 
 Every reporting command takes `--json` — stable keys, ISO dates, decimal
@@ -1075,6 +1144,7 @@ strings:
 quints check --json
 quints vat report -q {year}-Q3 --json
 quints vat status --json
+quints close check --year {year} --json
 quints report bilanz --at {year}-12-31 --json
 quints receivables --json
 quints payables --json

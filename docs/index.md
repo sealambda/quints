@@ -55,6 +55,7 @@ setup — including the legal-form choice.
 | Pick QRR or SCOR for your QR-bills | `issuer.yaml` → `bank.<CCY>` | [Payment references](guides/payment-references.md) |
 | Book bank/PSP activity | `quints import ubs <statement.mt940>` | [Import statements](guides/importing.md) |
 | Year-end statements | `quints report statements --year 2026` | [Statutory reports](guides/reports.md) |
+| Close the year | `quints close check --year 2026` | [Close the year](guides/year-end.md) |
 | Keep FX rates right | `quints prices sync` | [FX rates](guides/fx.md) |
 
 Every command in these docs is executed by the test suite against the shipped

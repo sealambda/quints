@@ -14,7 +14,7 @@ nav = [
     { "quints" = "index.md" },
     { "Getting started" = "getting-started.md" },
     { "Legal forms" = "legal-forms.md" },
-    { "Guides" = [{ "Quarterly VAT (MWST)" = "guides/vat.md" }, { "Import statements" = "guides/importing.md" }, { "Invoicing" = "guides/invoicing.md" }, { "Payment references" = "guides/payment-references.md" }, { "Statutory reports" = "guides/reports.md" }, { "FX rates" = "guides/fx.md" }] },
+    { "Guides" = [{ "Quarterly VAT (MWST)" = "guides/vat.md" }, { "Import statements" = "guides/importing.md" }, { "Invoicing" = "guides/invoicing.md" }, { "Payment references" = "guides/payment-references.md" }, { "Statutory reports" = "guides/reports.md" }, { "Close the year" = "guides/year-end.md" }, { "FX rates" = "guides/fx.md" }] },
     { "Reference" = [{ "quints.toml" = "reference/configuration.md" }, { "Working with AI agents" = "reference/ai-agents.md" }] },
 ]
 
