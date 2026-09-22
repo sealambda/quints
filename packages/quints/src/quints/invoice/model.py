@@ -338,10 +338,11 @@ class BankAccount(BaseModel):
         default=None,
         description=(
             "Which payment reference invoices paid into this account carry. "
-            "`scor` is the readable ISO 11649 creditor reference (RF…) and needs "
-            "the regular `iban`; `qrr` is the numeric Swiss QR reference and "
-            "needs `qr_iban` plus the bank's `qr_reference_id`. Unset follows the "
-            "one IBAN configured; an account with both must set it."
+            "`qrr` is the Swiss QR reference, numeric, paid into `qr_iban` (CHF "
+            "only; needs the bank's `qr_reference_id`); `scor` is the readable "
+            "ISO 11649 creditor reference (RF…) paid into the regular `iban`. "
+            "Unset: `qrr` when the account has a `qr_iban` and the invoice is in "
+            "CHF, otherwise `scor`."
         ),
     )
     qr_reference_id: str | None = Field(

@@ -37,6 +37,18 @@ Imports are idempotent — each transaction carries its source id
 (`mt940_ref:`, `wise_id:`, `stripe_id:`), so re-importing a statement never
 duplicates a booking.
 
+## Payments that quote an invoice
+
+An incoming payment is matched to an open invoice by the reference it carries
+— the QR reference or RF creditor reference from the QR-bill, or the plain
+invoice number — read out of the payee, narration and metadata, verified by its
+check digits, and matched **exactly**, never by substring. A match turns the
+draft's counter leg into the receivable clearing, adds `invoice:` metadata and
+the `^number` link, and flags it `*`. A reference that fits more than one open
+invoice matches nothing: the draft stays `!` and `quints match` says why. How
+the references are built, and which one your QR-bills use, is in
+[Payment references](payment-references.md).
+
 ### Stripe customer invoices
 
 <!-- no-test: needs API credentials and network -->

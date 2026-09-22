@@ -14,15 +14,21 @@ account:
   digits (UBS calls it the BESR-ID); it is configured as
   ``BankAccount.qr_reference_id``.
 
-The QRR body is therefore ``<6-digit bank id><20-digit encoded number>``. The
-encoding is bijective base 36 over the upper-cased alphanumeric invoice
-number: each character contributes its base-36 value **plus one**, so unlike
-plain base-36 it never loses a leading ``0`` and different numbers can never
-produce the same reference (``INV01`` ≠ ``INV1``). Twelve characters fit in 20
-digits; a longer number is refused instead of silently truncated, because a
-truncated reference is a payment credited to the wrong invoice.
-``decode_qrr`` inverts it without knowing the issuer's six-digit id, which is
-what lets the matcher recognise a reference it never generated.
+The QRR body is therefore ``<6-digit bank id><20-digit encoded number>``, and
+the encoding keeps the number as legible as twenty digits allow. A number of
+the usual shape — up to four letters, then digits (``INV2026014``,
+``ACAD202608``, ``20260001``) — is written as ``1``, a 7-digit block holding
+the letters (bijective base 26) and the digit count, then the digits
+themselves, right-aligned: ``INV2026014`` → ``1 0084117 000002026014``, so
+the payment part and the bank statement end in ``…2026014``. Any other shape
+(``ACAD202608B``) is written as ``2`` + 19 digits of bijective base 36. Both
+are injective — ``INV0042`` ≠ ``INV42`` — and twelve characters is the most
+either carries; a longer number is refused instead of silently truncated,
+because a truncated reference is a payment credited to the wrong invoice.
+``decode_qrr`` inverts both without knowing the issuer's six-digit id, which
+is what lets the matcher recognise a reference it never generated. (The
+Guidelines also forbid a reference of nothing but zeros; the leading variant
+digit rules that out.)
 
 Both schemes carry only the number's ASCII letters and digits, upper-cased:
 two numbers that differ in case or punctuation alone (``INV-014`` / ``INV014``)
@@ -57,10 +63,16 @@ Kind = Literal["QRR", "SCOR"]
 """The reference scheme actually used, spelled the way the QR payload spells it."""
 
 _ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 QRR_LENGTH = 27  # 26 body + 1 check digit
 QRR_ID_DIGITS = 6  # the bank-assigned identification, first
 _QRR_NUMBER_DIGITS = 20  # what is left for the encoded invoice number
-QRR_MAX_CHARS = 12  # alphanumeric characters that fit in _QRR_NUMBER_DIGITS
+QRR_MAX_CHARS = 12  # alphanumeric characters either encoding carries
+# The legible form: up to four letters, then the digits. Its 7-digit head packs
+# the letters' bijective-base-26 value beside the digit count (modulus 13
+# covers counts 1–12), so leading zeros in the digit part survive the trip.
+_LEGIBLE = re.compile(r"([A-Z]{0,4})([0-9]{1,12})")
+_COUNT_MODULUS = 13
 SCOR_MAX_CHARS = 21  # ISO 11649: RF + 2 check digits + 21
 
 
@@ -123,21 +135,48 @@ def make_scor(number: str) -> str:
 # ── QRR (Swiss QR reference) ──────────────────────────────────────────────────
 
 
-def _encode(number: str) -> int:
-    """Bijective base 36 — injective over strings, leading zeros included."""
+def _bijective(text: str, alphabet: str) -> int:
+    """Bijective numeration — injective over strings, leading zeros included."""
     value = 0
-    for ch in number:
-        value = value * 36 + _ALPHABET.index(ch) + 1
+    for ch in text:
+        value = value * len(alphabet) + alphabet.index(ch) + 1
     return value
 
 
-def _decode(value: int) -> str:
+def _unbijective(value: int, alphabet: str) -> str:
     out: list[str] = []
     while value > 0:
         value -= 1
-        out.append(_ALPHABET[value % 36])
-        value //= 36
+        out.append(alphabet[value % len(alphabet)])
+        value //= len(alphabet)
     return "".join(reversed(out))
+
+
+def _encode_number(ref: str) -> str:
+    """The 20-digit body for a compact invoice number (≤ QRR_MAX_CHARS)."""
+    m = _LEGIBLE.fullmatch(ref)
+    if m:
+        letters, digits = m.group(1), m.group(2)
+        head = _bijective(letters, _LETTERS) * _COUNT_MODULUS + len(digits)
+        return "1" + str(head).zfill(7) + digits.zfill(12)
+    return "2" + str(_bijective(ref, _ALPHABET)).zfill(19)
+
+
+def _decode_number(body: str) -> str | None:
+    """Invert `_encode_number`; None unless `body` is a canonical encoding."""
+    variant, rest = body[0], body[1:]
+    if variant == "1":
+        letters_value, count = divmod(int(rest[:7]), _COUNT_MODULUS)
+        if not 1 <= count <= 12:
+            return None
+        number = _unbijective(letters_value, _LETTERS) + rest[7:][-count:]
+    elif variant == "2":
+        number = _unbijective(int(rest), _ALPHABET)
+    else:
+        return None
+    # Round-trip: a legacy or foreign reference that happens to parse must not
+    # come out as a plausible invoice number.
+    return number if number and _encode_number(number) == body else None
 
 
 def check_qr_reference_id(value: str) -> str:
@@ -175,7 +214,7 @@ def make_qrr(number: str, identification: str | None = None) -> str:
             f"{SCOR_MAX_CHARS} characters as text"
         )
     prefix = check_qr_reference_id(identification) if identification else "0" * QRR_ID_DIGITS
-    body = prefix + str(_encode(ref)).zfill(_QRR_NUMBER_DIGITS)
+    body = prefix + _encode_number(ref)
     return body + esr.calc_check_digit(body)
 
 
@@ -203,8 +242,7 @@ def decode_qrr(reference: str) -> str | None:
     digits = digits.zfill(QRR_LENGTH)
     if esr.calc_check_digit(digits[:-1]) != digits[-1]:
         return None
-    value = int(digits[QRR_ID_DIGITS : QRR_LENGTH - 1])
-    return _decode(value) or None
+    return _decode_number(digits[QRR_ID_DIGITS : QRR_LENGTH - 1])
 
 
 # ── classification, formatting, resolution ────────────────────────────────────
@@ -246,25 +284,21 @@ def parse_reference(raw: str) -> PaymentReference:
     )
 
 
-def scheme_for(account: BankAccount, currency: str = "") -> Scheme:
-    """Which scheme this account pays by: what it says, else what it can do.
+def scheme_for(account: BankAccount, currency: str) -> Scheme:
+    """Which scheme this account pays by: what it says, else what it has.
 
-    A regular IBAN alone can only carry SCOR, a QR-IBAN alone only QRR. An
-    account with both has to say which: the choice decides which account the
-    money lands in, and re-rendering an invoice must reproduce the reference
-    the customer already holds — so quints refuses to guess."""
+    A QR-IBAN is the Swiss-native instrument — the payer's bank refuses any
+    payment to it that lacks a valid QR reference — so an account that has one
+    pays CHF invoices by QRR, whether or not a regular IBAN sits beside it.
+    `reference: scor` is the explicit way to keep the QR-IBAN on file and still
+    issue readable RF references into the IBAN. The QR scheme is CHF-only
+    (Guidelines 2.10 and 2.12.1), so in any other currency an unset account
+    falls back to SCOR."""
     if account.reference is not None:
         return account.reference
-    if account.qr_iban and account.iban:
-        where = f" for {currency}" if currency else ""
-        raise ValueError(
-            f"the bank account{where} has both `iban` and `qr_iban` but no "
-            f"`reference:` — say which one its QR-bills use: `reference: scor` "
-            f"(RF… creditor reference spelling out the invoice number, paid into "
-            f"`iban`) or `reference: qrr` (numeric QR reference, paid into "
-            f"`qr_iban`, needs the bank's `qr_reference_id`)"
-        )
-    return "qrr" if account.qr_iban else "scor"
+    if account.qr_iban and currency.upper() == "CHF":
+        return "qrr"
+    return "scor"
 
 
 def creditor_iban(account: BankAccount, kind: Kind, currency: str = "") -> str:
@@ -279,10 +313,15 @@ def creditor_iban(account: BankAccount, kind: Kind, currency: str = "") -> str:
             )
         return account.qr_iban
     if not account.iban:
+        way_out = (
+            f" — a QR-IBAN cannot take {currency}: the QR scheme is CHF-only"
+            if currency and currency.upper() != "CHF"
+            else ", or set `reference: qrr` (with the bank's `qr_reference_id`) to be "
+            "paid into the QR-IBAN"
+        )
         raise ValueError(
             f"a SCOR creditor reference is only valid with a regular IBAN, but the "
-            f"bank account{where} has none — add `iban:`, or set `reference: qrr` "
-            f"(with the bank's `qr_reference_id`) to be paid into the QR-IBAN"
+            f"bank account{where} has none — add `iban:`{way_out}"
         )
     return account.iban
 
@@ -298,6 +337,20 @@ def payment_reference(inv: Invoice, account: BankAccount) -> PaymentReference:
         if inv.kind == "export"
         else ("QRR" if scheme_for(account, inv.currency) == "qrr" else "SCOR")
     )
+    # Reached only through an explicit `reference: qrr`: a QR-bill in EUR can
+    # only be IBAN + SCOR (Guidelines 2.10, 2.12.1: QR-IBAN and QR reference
+    # "can only be used for invoicing in CHF"). Refused rather than quietly
+    # downgraded — the two schemes are paid into different accounts, so
+    # switching would move the money without saying so.
+    if wanted == "QRR" and inv.currency != "CHF":
+        raise ValueError(
+            f"invoice {inv.number} is in {inv.currency}, but its bank account is set "
+            f"to `reference: qrr` — the Swiss Implementation Guidelines allow the QR "
+            f"reference and the QR-IBAN for CHF only. A QR-bill in {inv.currency} is "
+            f"paid into the regular `iban` with a SCOR reference: set "
+            f"`reference: scor` on bank.{inv.currency}, or drop `reference:` and let "
+            f"quints pick it"
+        )
     if inv.reference:
         ref = parse_reference(inv.reference)
         if ref.kind != wanted:

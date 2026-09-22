@@ -51,6 +51,7 @@ setup — including the legal-form choice.
 | See who owes you | `quints receivables` | [Invoicing](guides/invoicing.md) |
 | Send a QR-bill invoice | `quints invoice <invoice.yaml>` | [Invoicing](guides/invoicing.md) |
 | Check an IBAN and its BIC | `quints iban` | [Invoicing](guides/invoicing.md) |
+| Pick QRR or SCOR for your QR-bills | `issuer.yaml` → `bank.<CCY>` | [Payment references](guides/payment-references.md) |
 | Book bank/PSP activity | `quints import ubs <statement.mt940>` | [Import statements](guides/importing.md) |
 | Year-end statements | `quints report statements --year 2026` | [Statutory reports](guides/reports.md) |
 | Keep FX rates right | `quints prices sync` | [FX rates](guides/fx.md) |
