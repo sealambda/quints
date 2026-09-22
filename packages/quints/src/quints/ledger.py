@@ -14,22 +14,50 @@ DEFAULT_LEDGER = Path("main.bean")
 DEFAULT_PRICES = Path("prices.bean")
 
 # Entity-specific account names live in quints.toml (see quints.config).
-# Swiss standard VAT rate by validity start (Art. 25 MWSTG), newest first.
-# Rates are law, not configuration: changes are announced years ahead and must
-# not silently corrupt historical reports — always look up by date.
+# Swiss VAT rates by validity start (Art. 25 MWSTG), newest first. Rates are
+# law, not configuration: changes are announced years ahead and must not
+# silently corrupt historical reports — always look up by date.
+#
+#   VAT_RATES          Normalsatz            (Art. 25 Abs. 1)
+#   VAT_RATES_REDUCED  reduzierter Satz      (Art. 25 Abs. 2)
+#   VAT_RATES_LODGING  Sondersatz Beherbergung (Art. 25 Abs. 4)
+#
+# The 2024 step is the AHV-financing increase (8.1 / 2.6 / 3.8 %); 2018 lowered
+# the standard and lodging rates when the IV supplement lapsed, leaving the
+# reduced rate untouched.
 VAT_RATES = (
     (Date(2024, 1, 1), Decimal("0.081")),
     (Date(2018, 1, 1), Decimal("0.077")),
     (Date(2011, 1, 1), Decimal("0.080")),
 )
+VAT_RATES_REDUCED = (
+    (Date(2024, 1, 1), Decimal("0.026")),
+    (Date(2011, 1, 1), Decimal("0.025")),
+)
+VAT_RATES_LODGING = (
+    (Date(2024, 1, 1), Decimal("0.038")),
+    (Date(2018, 1, 1), Decimal("0.037")),
+    (Date(2011, 1, 1), Decimal("0.038")),
+)
+
+# Rate class → its date-ranged table. The keys are the vocabulary the MWST
+# report and the ``mwst:`` metadata share.
+VAT_RATE_CLASSES: dict[str, tuple[tuple[Date, Decimal], ...]] = {
+    "standard": VAT_RATES,
+    "reduced": VAT_RATES_REDUCED,
+    "lodging": VAT_RATES_LODGING,
+}
 
 
-def vat_rate(on: Date) -> Decimal:
-    """Swiss standard VAT rate in force on ``on`` (Art. 25 MWSTG)."""
-    for start, r in VAT_RATES:
+def vat_rate(on: Date, rate_class: str = "standard") -> Decimal:
+    """Swiss VAT rate of ``rate_class`` in force on ``on`` (Art. 25 MWSTG)."""
+    table = VAT_RATE_CLASSES.get(rate_class)
+    if table is None:
+        raise ValueError(f"unknown VAT rate class {rate_class!r}")
+    for start, r in table:
         if on >= start:
             return r
-    raise ValueError(f"no Swiss VAT rate known for {on}")
+    raise ValueError(f"no Swiss {rate_class} VAT rate known for {on}")
 
 
 def rappen(value: Decimal) -> Decimal:

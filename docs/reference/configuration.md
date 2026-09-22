@@ -42,7 +42,12 @@ bezugsteuer = "Liabilities:CH:Einzelfirma:Tax:Bezugsteuer"
 payable_vat = "Liabilities:CH:Einzelfirma:Tax:PayableVAT"
 receivable = "Assets:CH:Einzelfirma:Receivable:Trade"
 income_prefix = "Income:CH:Einzelfirma"
-export_marker = ":Export"           # income sub-account marker → Ziffer 221
+export_marker = ":Export"             # Ziffer 221 (Ort der Leistung im Ausland)
+export_goods_marker = ":ExportGoods"  # Ziffer 220 (Exporte, Art. 23)
+exempt_marker = ":Exempt"             # Ziffer 230 (ausgenommen, Art. 21)
+optioned_marker = ":Optioned"         # Ziffer 205 (Option nach Art. 22)
+reduced_marker = ":Reduced"           # 2.6 % rate class → Ziffer 313
+lodging_marker = ":Lodging"           # 3.8 % Beherbergung → Ziffer 343
 income_domestic = "Income:CH:Einzelfirma:Consulting:External:Domestic"
 income_export = "Income:CH:Einzelfirma:Consulting:External:Export"
 fx_gain = "Income:CH:Einzelfirma:FX:CurrencyGain"
@@ -50,8 +55,13 @@ fx_loss = "Expenses:CH:Einzelfirma:FX:CurrencyLoss"
 rounding_income = "Income:CH:Einzelfirma:Rounding"
 ```
 
-Income accounts containing `export_marker` count as supply abroad
-(Ziffer 221); everything else under `income_prefix` is domestic turnover.
+The markers are matched as substrings of the account name, most specific
+first, and route income to a Form-310 Ziffer or an Art. 25 rate class;
+everything unmarked under `income_prefix` is domestic turnover at the
+standard rate. Set a marker to `""` to disable it. A `mwst:` metadata tag on
+a transaction or posting overrides them, and the account's `kmu:` code
+supplies the rest (Erlösminderungen → Ziffer 235, the 400/405 split) — see
+the [VAT guide](../guides/vat.md).
 
 ## `[report]`
 

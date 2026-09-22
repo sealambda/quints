@@ -100,6 +100,8 @@ def test_load_toml(tmp_path: Path) -> None:
     assert cfg.report_language == "de"
     # unset keys keep their defaults
     assert cfg.export_marker == ":Export"
+    assert cfg.export_goods_marker == ":ExportGoods"
+    assert cfg.reduced_marker == ":Reduced"
     assert cfg.operating_currency == "CHF"
     assert cfg.prices_source == "beanprice_bazg"
     assert cfg.prices_currencies == ("USD", "EUR")
@@ -157,3 +159,62 @@ def test_vat_registered_since_clamps_period(tmp_path: Path) -> None:
     assert unclamped.z303_tax == Decimal("81.00")
     assert clamped.z303_tax == Decimal("0")  # March invoice predates liability
     assert clamped.z221 == Decimal("500.00")  # April export still in
+
+
+_MARKERS_TOML = """
+[accounts]
+income_prefix = "Income:CH:GmbH"
+export_marker = ":Abroad"
+export_goods_marker = ":Ausfuhr"
+exempt_marker = ":Ausgenommen"
+optioned_marker = ":Optiert"
+reduced_marker = ":Reduziert"
+lodging_marker = ":Hotel"
+"""
+
+_MARKED_LEDGER = """
+2026-01-01 open Assets:CH:GmbH:Current:UBS:CHF CHF
+2026-01-01 open Liabilities:CH:GmbH:Tax:OutputVAT CHF
+2026-01-01 open Income:CH:GmbH:Services:Abroad CHF
+2026-01-01 open Income:CH:GmbH:Goods:Ausfuhr CHF
+2026-01-01 open Income:CH:GmbH:Kurse:Ausgenommen CHF
+2026-01-01 open Income:CH:GmbH:Buecher:Reduziert CHF
+
+2026-07-02 * "Abroad" "Service abroad"
+    Assets:CH:GmbH:Current:UBS:CHF          100.00 CHF
+    Income:CH:GmbH:Services:Abroad         -100.00 CHF
+
+2026-07-03 * "Overseas" "Goods exported"
+    Assets:CH:GmbH:Current:UBS:CHF          200.00 CHF
+    Income:CH:GmbH:Goods:Ausfuhr           -200.00 CHF
+
+2026-07-04 * "Schule" "Ausgenommene Leistung"
+    Assets:CH:GmbH:Current:UBS:CHF          300.00 CHF
+    Income:CH:GmbH:Kurse:Ausgenommen       -300.00 CHF
+
+2026-07-05 * "Buchhandlung" "Buecher"
+    Assets:CH:GmbH:Current:UBS:CHF          410.40 CHF
+    Income:CH:GmbH:Buecher:Reduziert       -400.00 CHF
+    Liabilities:CH:GmbH:Tax:OutputVAT       -10.40 CHF
+"""
+
+
+def test_marker_keys_are_configurable(tmp_path: Path) -> None:
+    """The Ziffer markers are entity config, like every other account name."""
+    path = tmp_path / "quints.toml"
+    path.write_text(_MARKERS_TOML)
+    cfg = config.load(path)
+    assert cfg.export_marker == ":Abroad"
+    assert cfg.export_goods_marker == ":Ausfuhr"
+    assert cfg.exempt_marker == ":Ausgenommen"
+    assert cfg.optioned_marker == ":Optiert"
+    assert (cfg.reduced_marker, cfg.lodging_marker) == (":Reduziert", ":Hotel")
+
+    ledger_file = tmp_path / "books.bean"
+    ledger_file.write_text(_MARKED_LEDGER)
+    report = mwst.compute(ledger_file, "2026-07-01", "2026-09-30", cfg=cfg)
+    assert report.z221 == Decimal("100.00")
+    assert report.z220 == Decimal("200.00")
+    assert report.z230 == Decimal("300.00")
+    assert report.z313_net == Decimal("400.00") and report.z313_tax == Decimal("10.40")
+    assert report.violations == []

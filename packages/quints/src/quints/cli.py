@@ -436,7 +436,7 @@ def check(
 vat_app = typer.Typer(
     no_args_is_help=True,
     help="VAT, end to end: report a period, settle it, track what's owed, "
-    "convert foreign amounts. Swiss MWST (Form 310) today.",
+    "convert foreign amounts. Swiss MWST (Form 310, effective method) today.",
 )
 app.add_typer(vat_app, name="vat", rich_help_panel=PANEL_VAT)
 
@@ -451,7 +451,14 @@ def vat_report(
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
 ):
-    """The period's VAT return (Swiss MWST Form 310, by Ziffer)."""
+    """The period's VAT return (Swiss MWST Form 310, by Ziffer).
+
+    Covers the whole form under the effective method: turnover and its
+    deductions (200-299), every rate row of both vintages (302/303 Normalsatz,
+    312/313 reduziert, 342/343 Beherbergung, 382/383 Bezugsteuer), input VAT
+    split into 400/405 with the 410/415/420 corrections, and 500/510. Bookings
+    whose VAT does not match net x rate are listed rather than filed.
+    """
     date_from, date_to, _label = _vat_period(quarter, from_, to)
     _require_ledger(file)
     report = mwst_mod.compute(file, date_from, date_to)
@@ -528,7 +535,13 @@ def vat_convert(
         ..., metavar="YYYY-MM-DD", help="Invoice date (picks the BAZG rate)."
     ),
     net: bool = typer.Option(
-        False, "--net", help="Treat amount as the net price; VAT = 8.1% first."
+        False, "--net", help="Treat amount as the net price; apply the rate first."
+    ),
+    rate: str = typer.Option(
+        "standard",
+        "--rate",
+        help="Rate class for --net/--bezugsteuer: standard | reduced | lodging "
+        "(Art. 25 MWSTG). A non-standard class is tagged on the emitted posting.",
     ),
     bezugsteuer: bool = typer.Option(
         False,
@@ -554,7 +567,10 @@ def vat_convert(
     if errors:
         typer.secho(f"WARNING: {len(errors)} loader error(s) in {file.name}", fg="yellow", err=True)
     try:
-        posting = vat_mod.convert(amt, currency, on, price_map, net=net)
+        posting = vat_mod.convert(amt, currency, on, price_map, net=net, rate_class=rate)
+    except ValueError as e:
+        typer.secho(f"ERROR: {e}", fg="red", err=True)
+        raise typer.Exit(1) from None
     except vat_mod.RateUnavailable as e:
         typer.secho(
             f"ERROR: no {e.ccy}→CHF rate on or before {e.on} in {file.name}.\n"

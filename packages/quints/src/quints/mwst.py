@@ -1,29 +1,83 @@
-"""Swiss MWST (VAT) report — effective method, 8.1% standard rate.
+"""Swiss MWST (VAT) report — Form 310, effective method (effektive Methode).
 
-Structure mirrors ESTV Formular 310 (validated against a filed Q1/2026 return):
+Ziffern, labels and arithmetic follow the official ESTV form **MWST-4470,
+"Abrechnung nach der effektiven Methode", gültig ab 01.01.2024**
+(<https://www.estv2.admin.ch/mwst/formulare/mwst-form-abr-muster-2024-4470-eff-de.pdf>;
+the annual reconciliation ``DM_0550_03 / 01.24`` prints the same Ziffern):
 
-    200  Total weltweiter Umsatz (net)          = Inland + Ausland
-    221  Leistungen im Ausland (zero-rated exports, Income:CH:GmbH:*:Export)
-    289  Total Abzüge                           = 221 (+ any other deductions)
-    299  Steuerbarer Gesamtumsatz               = 200 − 289  (= domestic net)
-    303  Leistungen zum Normalsatz 8.1%         net + Steuer
-    382  Bezugsteuer (Art. 45 ff. MWSTG)        net + Steuer (reverse charge)
-    399  Total geschuldete Steuer               = output VAT + Bezugsteuer
-    400  Vorsteuer auf Material/DL              = input VAT (incl. Bezugsteuer deduction)
-    479  Total Vorsteuer                        = 400
-    500  Zu bezahlender Betrag                  = 399 − 479
+    I. UMSATZ
+    200  Total der vereinbarten bzw. vereinnahmten Entgelte (weltweiter Umsatz)
+    205  davon optierte Leistungen (Art. 21, Option nach Art. 22) — a memo line
+    220  Von der Steuer befreite Leistungen (u.a. Exporte, Art. 23)
+    221  Leistungen im Ausland (Ort der Leistung im Ausland)
+    225  Übertragung im Meldeverfahren (Art. 38)
+    230  Von der Steuer ausgenommene Inlandleistungen (Art. 21, ohne Option)
+    235  Entgeltsminderungen (Skonti, Rabatte, Debitorenverluste)
+    280  Diverses
+    289  Total Abzüge            = 220 + 221 + 225 + 230 + 235 + 280
+    299  Steuerbarer Gesamtumsatz = 200 − 289
 
-VAT is computed on an **accrual** basis directly from ledger entries: output VAT
-from credits to OutputVAT (sales), input VAT from debits to InputVAT (purchases),
-Bezugsteuer from credits to the Bezugsteuer liability (reverse-charge purchases —
-the matching InputVAT debit lands in Ziffer 400 on its own, so the pair is
-cash-neutral). The quarterly settlement (which debits OutputVAT/Bezugsteuer and
-credits InputVAT into PayableVAT) and the one-off pre-liability reversal
-therefore fall out automatically — they move VAT in the opposite direction and
-are not accruals.
+    II. STEUERBERECHNUNG        ab 01.01.2024      bis 31.12.2023
+    Normalsatz                  303   8.1 %        302   7.7 %
+    Reduzierter Satz            313   2.6 %        312   2.5 %
+    Beherbergung                343   3.8 %        342   3.7 %
+    Bezugsteuer (Art. 45 ff.)   383                382
+    399  Total geschuldete Steuer = Steuer 302…383
+    400  Vorsteuer auf Material- und Dienstleistungsaufwand
+    405  Vorsteuer auf Investitionen und übrigem Betriebsaufwand
+    410  Einlageentsteuerung (Art. 32)                                    +
+    415  Vorsteuerkorrekturen: gemischte Verwendung, Eigenverbrauch (30/31) −
+    420  Vorsteuerkürzungen: Nicht-Entgelte (Art. 33 Abs. 2)              −
+    479  Total Vorsteuer          = 400 + 405 + 410 − 415 − 420
+    500  Zu bezahlender Betrag    = 399 − 479, when positive
+    510  Guthaben der steuerpflichtigen Person = 479 − 399, when positive
+
+    III. ANDERE MITTELFLÜSSE (Art. 18 Abs. 2)
+    900  Subventionen, Tourismusabgaben, Entsorgungs-/Wasserwerkbeiträge
+    910  Spenden, Dividenden, Schadenersatz usw.
+
+Rates are law and live date-ranged in :data:`quints.ledger.VAT_RATE_CLASSES`
+(Art. 25 MWSTG). The form carries two vintages side by side, so a supply made
+before 2024 and declared later still files under 302/312/342/382: quints takes
+the vintage from the transaction date, or from an explicit ``mwst: "old_rate"``.
+
+**Where a booking lands** — deterministic, in this order:
+
+1. ``mwst:`` metadata on the posting, else on the transaction: a
+   space-separated list of tokens from :data:`VOCABULARY`. An unknown token is
+   reported as a violation, never ignored.
+2. the account's ``kmu:`` code (:func:`quints.kmu.kmu_map`): Erlösminderungen
+   3800–3899 are Ziffer 235; an income account outside 3000–3899 (FX gains,
+   rounding, Bestandesänderungen) is not Entgelt and stays out entirely; an
+   input-VAT counter-leg in Kontenklasse 4 is Ziffer 400, anything else
+   (investments 1400–1799, übriger Betriebsaufwand 5/6/7) Ziffer 405.
+3. the income-account markers from ``quints.toml`` (``export_goods_marker``
+   → 220, ``export_marker`` → 221, ``exempt_marker`` → 230,
+   ``optioned_marker`` → 205, ``reduced_marker``/``lodging_marker`` → rate
+   class).
+4. otherwise: domestic turnover at the standard rate.
+
+VAT is computed on an **accrual** basis directly from ledger entries: output
+VAT from OutputVAT movements (credits accrue, a credit note's debit reverses),
+input VAT from debits to InputVAT, Bezugsteuer from credits to the Bezugsteuer
+liability (Art. 45 ff.; the matching InputVAT debit is deducted on its own, so
+the pair is cash-neutral). A settlement transaction — one touching
+``payable_vat``, or carrying a ``^VAT-*`` link — is skipped wholesale, so the
+quarterly flush never re-enters the return. InputVAT *credits* count only when
+tagged 415/420, which leaves the one-off pre-liability reversal ignored as
+before.
+
+Every transaction with turnover is checked: the output VAT it posts must equal
+net × rate within :func:`_tolerance`. Mismatches are listed as
+:class:`Violation` (text and ``--json``) rather than silently mis-filed.
 
 Computation (`compute`) is separated from presentation (`render`) so a future
 web/TUI front-end can consume the :class:`MwstReport` dataclass directly.
+
+JSON contract: every ``zNNN`` field is a Form-310 Ziffer. ``z500`` is the
+*signed* net — the figure the settlement posts, negative when the ESTV owes
+you; the form splits it into 500 (owed) and 510 (credit), and ``z510`` carries
+the credit as a positive magnitude.
 """
 
 from __future__ import annotations
@@ -31,6 +85,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import date as Date
+from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -42,7 +97,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from . import config, ledger, ui
+from . import config, kmu, ledger, ui
 
 _QUARTER_MONTHS = {
     1: ("01-01", "03-31"),
@@ -50,6 +105,59 @@ _QUARTER_MONTHS = {
     3: ("07-01", "09-30"),
     4: ("10-01", "12-31"),
 }
+
+# The date the form's two rate vintages meet (AHV-Zusatzfinanzierung).
+RATE_CHANGE = Date(2024, 1, 1)
+_BEFORE_CHANGE = RATE_CHANGE - timedelta(days=1)
+
+# Metadata key carrying the VAT vocabulary, on a posting or a transaction.
+META_KEY = "mwst"
+
+# rate class → (Ziffer ab 01.01.2024, Ziffer bis 31.12.2023, label, short label)
+RATE_ZIFFERN: dict[str, tuple[str, str, str, str]] = {
+    "standard": ("303", "302", "Leistungen zum Normalsatz", "Normalsatz"),
+    "reduced": ("313", "312", "Leistungen zum reduzierten Satz", "Reduzierter Satz"),
+    "lodging": ("343", "342", "Beherbergungsleistungen", "Beherbergung"),
+}
+BEZUGSTEUER_ZIFFERN = ("383", "382")  # (ab 01.01.2024, bis 31.12.2023)
+
+# Turnover buckets → the Ziffer they are deducted under. "taxable" is the
+# residual: it feeds the rate rows and, through them, Ziffer 299.
+TURNOVER_ZIFFERN: dict[str, str] = {
+    "export_goods": "220",
+    "export": "221",
+    "meldeverfahren": "225",
+    "exempt": "230",
+    "reduction": "235",
+    "diverses": "280",
+}
+# Buckets outside Ziffer 200 entirely (Nicht-Entgelte, Art. 18 Abs. 2).
+FLOW_ZIFFERN: dict[str, str] = {"subvention": "900", "donation": "910"}
+
+# Input-VAT tokens → Ziffer, corrections first (they win over 400/405).
+INPUT_ZIFFERN: dict[str, str] = {
+    "einlageentsteuerung": "410",
+    "vorsteuerkorrektur": "415",
+    "vorsteuerkuerzung": "420",
+    "material": "400",
+    "investment": "405",
+}
+MINUS_ZIFFERN = ("415", "420")  # the form subtracts these from Ziffer 479
+
+VOCABULARY = frozenset(
+    {"taxable", "standard", "reduced", "lodging", "optioned", "old_rate"}
+    | set(TURNOVER_ZIFFERN)
+    | set(FLOW_ZIFFERN)
+    | set(INPUT_ZIFFERN)
+)
+
+# KMU Kontenrahmen (veb.ch) code ranges the classification relies on.
+REDUCTION_CODES = ("3800", "3899")  # Erlösminderungen, Verluste Forderungen
+# Betrieblicher Ertrag aus Lieferungen und Leistungen, up to the
+# Erlösminderungen block. 39xx Bestandesänderungen are a valuation adjustment,
+# not Entgelt, and stay out of the return like any non-Klasse-3 income.
+TURNOVER_CODES = ("3000", "3899")
+INPUT_COUNTER_CODES = (("1400", "1799"), ("4000", "7999"))  # Anlagen, Aufwand
 
 
 def quarter_range(quarter: str) -> tuple[str, str]:
@@ -73,7 +181,8 @@ class VatLine:
     original: Decimal
     currency: str
     rate: Decimal  # CHF per unit of `currency`
-    chf: Decimal
+    chf: Decimal  # signed contribution to its Ziffer
+    ziffer: str = "400"
 
 
 @dataclass
@@ -83,6 +192,32 @@ class RevenueLine:
     original: Decimal
     currency: str
     chf: Decimal
+    ziffer: str = "299"
+    rate_class: str = "standard"
+
+
+@dataclass
+class RateRow:
+    """One "Leistungen / Steuer" line of section II."""
+
+    ziffer: str
+    rate_class: str
+    rate: Decimal
+    net: Decimal
+    tax: Decimal
+    current: bool  # the ab-01.01.2024 vintage
+
+
+@dataclass
+class Violation:
+    """A booking the form cannot represent — listed, never silently filed."""
+
+    date: str
+    payee: str
+    narration: str
+    message: str
+    expected: Decimal = Decimal("0")
+    posted: Decimal = Decimal("0")
 
 
 @dataclass
@@ -101,10 +236,42 @@ class MwstReport:
     z500: Decimal
     z382_net: Decimal = Decimal("0")
     z382_tax: Decimal = Decimal("0")
+    # Section I — the remaining deductions and the Art. 22 memo.
+    z205: Decimal = Decimal("0")
+    z220: Decimal = Decimal("0")
+    z225: Decimal = Decimal("0")
+    z230: Decimal = Decimal("0")
+    z235: Decimal = Decimal("0")
+    z280: Decimal = Decimal("0")
+    # Section II — the remaining rate rows (see RATE_ZIFFERN).
+    z302_net: Decimal = Decimal("0")
+    z302_tax: Decimal = Decimal("0")
+    z312_net: Decimal = Decimal("0")
+    z312_tax: Decimal = Decimal("0")
+    z313_net: Decimal = Decimal("0")
+    z313_tax: Decimal = Decimal("0")
+    z342_net: Decimal = Decimal("0")
+    z342_tax: Decimal = Decimal("0")
+    z343_net: Decimal = Decimal("0")
+    z343_tax: Decimal = Decimal("0")
+    z383_net: Decimal = Decimal("0")
+    z383_tax: Decimal = Decimal("0")
+    # Section II — input VAT.
+    z405: Decimal = Decimal("0")
+    z410: Decimal = Decimal("0")
+    z415: Decimal = Decimal("0")  # positive magnitude; the form subtracts it
+    z420: Decimal = Decimal("0")  # positive magnitude; the form subtracts it
+    z510: Decimal = Decimal("0")  # credit, positive; 0 when z500 is owed
+    # Section III — Nicht-Entgelte.
+    z900: Decimal = Decimal("0")
+    z910: Decimal = Decimal("0")
+    rate_rows: list[RateRow] = field(default_factory=list)
+    violations: list[Violation] = field(default_factory=list)
     vat_lines: list[VatLine] = field(default_factory=list)
     bezugsteuer_lines: list[VatLine] = field(default_factory=list)
     domestic: list[RevenueLine] = field(default_factory=list)
     export: list[RevenueLine] = field(default_factory=list)
+    other_revenue: list[RevenueLine] = field(default_factory=list)
 
     @property
     def domestic_total(self) -> Decimal:
@@ -113,6 +280,11 @@ class MwstReport:
     @property
     def export_total(self) -> Decimal:
         return sum((r.chf for r in self.export), Decimal("0"))
+
+    @property
+    def bezugsteuer_tax(self) -> Decimal:
+        """Bezugsteuer across both vintages (Ziffern 382 + 383)."""
+        return self.z382_tax + self.z383_tax
 
 
 # ── compute ───────────────────────────────────────────────────────────────────
@@ -130,6 +302,207 @@ def _to_chf(units: Amount, date: Date, price_map: bc_prices.PriceMap) -> Decimal
     return Decimal("0")
 
 
+def _weight_chf(p: data.Posting, on: Date, price_map: bc_prices.PriceMap) -> Decimal:
+    """CHF weight of a posting — its own @/@@ rate wins, then the price map."""
+    weight = bc_convert.get_weight(p)
+    if weight.number is None:  # incomplete posting — cannot occur in a loaded ledger
+        return Decimal("0")
+    if weight.currency == "CHF":
+        return weight.number
+    conv = bc_convert.convert_amount(weight, "CHF", price_map, date=on)
+    if conv.currency == "CHF" and conv.number is not None:
+        return conv.number
+    return Decimal("0")
+
+
+def _parse_tokens(raw: object) -> frozenset[str]:
+    if not isinstance(raw, str):
+        return frozenset()
+    return frozenset(raw.replace(",", " ").split())
+
+
+def _txn_tokens(e: data.Transaction) -> frozenset[str]:
+    """The ``mwst:`` vocabulary on a transaction."""
+    return _parse_tokens((e.meta or {}).get(META_KEY))
+
+
+def _tokens(p: data.Posting, e: data.Transaction) -> frozenset[str]:
+    """The ``mwst:`` vocabulary on a posting, falling back to its transaction."""
+    raw = (p.meta or {}).get(META_KEY)
+    return _parse_tokens(raw) if raw is not None else _txn_tokens(e)
+
+
+def _in(code: str | None, lo: str, hi: str) -> bool:
+    return code is not None and lo <= code <= hi
+
+
+def _acc(into: dict[str, Decimal], key: str, value: Decimal) -> None:
+    into[key] = into.get(key, Decimal("0")) + value
+
+
+def _rate_class(account: str, tokens: frozenset[str], cfg: config.Config) -> str:
+    """Art. 25 rate class: metadata, then account marker, then standard."""
+    for name in ("reduced", "lodging", "standard"):
+        if name in tokens:
+            return name
+    if cfg.reduced_marker and cfg.reduced_marker in account:
+        return "reduced"
+    if cfg.lodging_marker and cfg.lodging_marker in account:
+        return "lodging"
+    return "standard"
+
+
+def _turnover_bucket(
+    account: str, code: str | None, tokens: frozenset[str], cfg: config.Config
+) -> str | None:
+    """Which section-I line an income posting belongs to (None = not turnover)."""
+    for name in FLOW_ZIFFERN:
+        if name in tokens:
+            return name
+    for name in TURNOVER_ZIFFERN:
+        if name in tokens:
+            return name
+    if "taxable" in tokens or "optioned" in tokens:
+        return "taxable"
+    if _in(code, *REDUCTION_CODES):
+        return "reduction"
+    if code is not None and not _in(code, *TURNOVER_CODES):
+        return None  # booked as income, but not Entgelt (FX gain, rounding)
+    if cfg.export_goods_marker and cfg.export_goods_marker in account:
+        return "export_goods"
+    if cfg.export_marker and cfg.export_marker in account:
+        return "export"
+    if cfg.exempt_marker and cfg.exempt_marker in account:
+        return "exempt"
+    return "taxable"
+
+
+def _input_ziffer(
+    e: data.Transaction,
+    p: data.Posting,
+    tokens: frozenset[str],
+    codes: dict[str, str],
+    price_map: bc_prices.PriceMap,
+) -> str:
+    """400 (Material/DL) vs 405 (Investitionen, übriger Betriebsaufwand).
+
+    The KMU code of the dominant counter-leg decides: Kontenklasse 4 is the
+    form's "Material- und Dienstleistungsaufwand", everything else (1400–1799
+    investments, 5/6/7 operating expenses) is 405. Dominant = the largest CHF
+    weight, ties to the lowest code; an uncoded, untagged purchase is 405.
+    """
+    for name, ziffer in INPUT_ZIFFERN.items():
+        if name in tokens:
+            return ziffer
+    best: tuple[Decimal, str] | None = None
+    for q in e.postings:
+        if q is p:
+            continue
+        code = codes.get(q.account)
+        if code is None or not any(_in(code, lo, hi) for lo, hi in INPUT_COUNTER_CODES):
+            continue
+        weight = abs(_weight_chf(q, e.date, price_map))
+        if best is None or weight > best[0] or (weight == best[0] and code < best[1]):
+            best = (weight, code)
+    return "400" if best is not None and best[1].startswith("4") else "405"
+
+
+def _tolerance(net: Decimal) -> Decimal:
+    """How far posted VAT may sit from net × rate: rounding, plus FX drift.
+
+    Per-line Rappen rounding costs a few centimes; a foreign-currency supply
+    valued at the day rate drifts a little more. 0.1 % of the net still
+    separates 8.1 % from 7.7 % on any invoice worth checking.
+    """
+    return max(Decimal("0.05"), abs(net) * Decimal("0.001"))
+
+
+def _rate_on(current: bool, rate_class: str) -> Decimal:
+    return ledger.vat_rate(RATE_CHANGE if current else _BEFORE_CHANGE, rate_class)
+
+
+def _vintage_ziffer(rate_class: str, current: bool) -> str:
+    new, old = RATE_ZIFFERN[rate_class][:2]
+    return new if current else old
+
+
+def _rate_rows(
+    nets: dict[tuple[str, bool], Decimal],
+    taxes: dict[tuple[str, bool], Decimal],
+    d0: Date,
+    d1: Date,
+) -> list[RateRow]:
+    """The section-II rate lines: those in force in the period, plus any used."""
+    rows: list[RateRow] = []
+    for current in (True, False):
+        in_force = (d1 >= RATE_CHANGE) if current else (d0 < RATE_CHANGE)
+        for rate_class in RATE_ZIFFERN:
+            key = (rate_class, current)
+            net, tax = nets.get(key, Decimal("0")), taxes.get(key, Decimal("0"))
+            if not in_force and not net and not tax:
+                continue
+            rows.append(
+                RateRow(
+                    ziffer=_vintage_ziffer(rate_class, current),
+                    rate_class=rate_class,
+                    rate=_rate_on(current, rate_class),
+                    net=net,
+                    tax=tax,
+                    current=current,
+                )
+            )
+    return rows
+
+
+def _is_settlement(e: data.Transaction, cfg: config.Config) -> bool:
+    """A period flush, not an accrual: it moves VAT into or out of PayableVAT.
+
+    Touching ``payable_vat`` is the whole test — every block
+    :func:`quints.settlement.settlement_text` emits posts to it, and so does
+    the payment that clears it. Matching on the ``^VAT-*`` link instead would
+    drop any business transaction that happens to carry such a link, silently.
+    """
+    return any(p.account == cfg.payable_vat for p in e.postings)
+
+
+@dataclass
+class _Totals:
+    """Accumulators for one :func:`compute` pass."""
+
+    turnover: dict[str, Decimal] = field(default_factory=dict)  # Ziffer → amount
+    flows: dict[str, Decimal] = field(default_factory=dict)  # 900 / 910
+    inputs: dict[str, Decimal] = field(default_factory=dict)  # 400…420
+    nets: dict[tuple[str, bool], Decimal] = field(default_factory=dict)
+    taxes: dict[tuple[str, bool], Decimal] = field(default_factory=dict)
+    bezug_tax: dict[bool, Decimal] = field(default_factory=dict)
+    bezug_net: dict[bool, Decimal] = field(default_factory=dict)
+    gross: Decimal = Decimal("0")  # Ziffer 200
+
+
+@dataclass
+class _Detail:
+    """The per-posting tables the text report shows beneath the Ziffern."""
+
+    violations: list[Violation] = field(default_factory=list)
+    vat_lines: list[VatLine] = field(default_factory=list)
+    bezugsteuer_lines: list[VatLine] = field(default_factory=list)
+    domestic: list[RevenueLine] = field(default_factory=list)
+    export: list[RevenueLine] = field(default_factory=list)
+    other_revenue: list[RevenueLine] = field(default_factory=list)
+
+
+@dataclass
+class _TxnState:
+    """What one transaction contributed, for the rate-consistency check."""
+
+    current: bool
+    expected_tax: Decimal = Decimal("0")
+    posted_tax: Decimal = Decimal("0")
+    rate_class: str = "standard"
+    weight: Decimal = Decimal("-1")  # of the dominant taxable leg
+    has_turnover: bool = False
+
+
 def compute(
     ledger_path: Path, date_from: str, date_to: str, cfg: config.Config | None = None
 ) -> MwstReport:
@@ -142,102 +515,326 @@ def compute(
         d0 = cfg.vat_registered_since
     entries, _errors = ledger.load_entries(ledger_path)
     price_map = bc_prices.build_price_map(entries)
+    codes = kmu.kmu_map(entries, cfg.entity_marker)
 
-    output_vat = Decimal("0")
-    input_vat = Decimal("0")
-    bezugsteuer = Decimal("0")
-    vat_lines: list[VatLine] = []
-    bezugsteuer_lines: list[VatLine] = []
-    domestic: list[RevenueLine] = []
-    export: list[RevenueLine] = []
-
+    t, detail = _Totals(), _Detail()
     for e in entries:
         if not isinstance(e, data.Transaction) or not (d0 <= e.date <= d1):
             continue
-        for p in e.postings:
-            if p.units is None or p.units.number is None:
-                continue  # incomplete posting — cannot occur in a loaded ledger
-            n = p.units.number
-            acct = p.account
+        if _is_settlement(e, cfg):
+            continue
+        _transaction(e, cfg, codes, price_map, t, detail)
+    return _assemble(date_from, date_to, d0, d1, t, detail)
 
-            # Output VAT: credits to OutputVAT are sales accruals (settlement is a debit).
-            if acct == cfg.output_vat and n < 0:
-                output_vat += -n
 
-            # Bezugsteuer: credits are reverse-charge accruals on foreign
-            # purchases (Art. 45 ff. MWSTG); the settlement debit is excluded.
-            elif acct == cfg.bezugsteuer and n < 0:
-                tax = -n
-                bezugsteuer += tax
-                if (  # e.g. "-7.52 CHF @@ 8.10 EUR" → original in EUR
-                    p.price is not None and p.price.number is not None
-                ):
-                    original = (tax * p.price.number).quantize(Decimal("0.01"))
-                    currency = p.price.currency
-                    rate = (tax / original) if original else Decimal("0")
-                else:
-                    original, currency, rate = tax, p.units.currency, Decimal("1")
-                bezugsteuer_lines.append(
-                    VatLine(
-                        str(e.date), e.payee or "", e.narration or "", original, currency, rate, tax
-                    )
-                )
+def _transaction(
+    e: data.Transaction,
+    cfg: config.Config,
+    codes: dict[str, str],
+    price_map: bc_prices.PriceMap,
+    t: _Totals,
+    detail: _Detail,
+) -> None:
+    """Route one transaction's postings into the Ziffern, then check its VAT."""
+    txn_tokens = _txn_tokens(e)
+    # The rate vintage is a property of the whole transaction: one "old_rate"
+    # anywhere in it (transaction or posting) files it under 302/312/342/382.
+    old_rate = "old_rate" in txn_tokens or any("old_rate" in _tokens(p, e) for p in e.postings)
+    state = _TxnState(current=e.date >= RATE_CHANGE and not old_rate)
+    unknown: set[str] = set(txn_tokens - VOCABULARY)
 
-            # Input VAT: debits to InputVAT are purchase accruals
-            # (settlement + pre-liability reversal are credits → excluded).
-            elif acct == cfg.input_vat and n > 0:
-                input_vat += n
-                if (  # e.g. "6.39 CHF @@ 8.10 USD" → original in USD
-                    p.price is not None and p.price.number is not None
-                ):
-                    original = (n * p.price.number).quantize(Decimal("0.01"))
-                    currency = p.price.currency
-                    rate = (n / original) if original else Decimal("0")
-                else:
-                    original, currency, rate = n, p.units.currency, Decimal("1")
-                vat_lines.append(
-                    VatLine(
-                        str(e.date), e.payee or "", e.narration or "", original, currency, rate, n
-                    )
-                )
+    for p in e.postings:
+        if p.units is None or p.units.number is None:
+            continue  # incomplete posting — cannot occur in a loaded ledger
+        n = p.units.number
+        acct = p.account
+        tokens = _tokens(p, e)
+        unknown |= tokens - VOCABULARY
 
-            # Revenue: credits to CH GmbH income (converted to CHF at the txn date).
-            elif acct.startswith(cfg.income_prefix) and n < 0:
-                gross = Amount(-n, p.units.currency)
-                chf = _to_chf(gross, e.date, price_map)
-                line = RevenueLine(str(e.date), e.payee or "", -n, p.units.currency, chf)
-                (export if cfg.export_marker in acct else domestic).append(line)
+        if acct == cfg.output_vat:
+            state.posted_tax += -n  # credits accrue, a credit note's debit reverses
+        elif acct == cfg.bezugsteuer and n < 0:
+            _bezugsteuer(e, p, -n, tokens, cfg, state.current, t, detail)
+        elif acct == cfg.input_vat:
+            _input_vat(e, p, n, tokens, codes, price_map, t, detail)
+        elif acct.startswith(cfg.income_prefix):
+            _turnover(e, p, n, tokens, codes, price_map, cfg, state, t, detail)
 
-    domestic_total = sum((r.chf for r in domestic), Decimal("0"))
-    export_total = sum((r.chf for r in export), Decimal("0"))
+    _check(e, state, t, detail)
+    for token in sorted(unknown):
+        detail.violations.append(
+            Violation(
+                str(e.date),
+                e.payee or "",
+                e.narration or "",
+                f'unknown mwst: token "{token}" — see the VAT guide',
+            )
+        )
 
-    z221 = z289 = export_total
-    z299 = domestic_total
-    z200 = domestic_total + export_total
 
+def _bezugsteuer(
+    e: data.Transaction,
+    p: data.Posting,
+    tax: Decimal,
+    tokens: frozenset[str],
+    cfg: config.Config,
+    current: bool,
+    t: _Totals,
+    detail: _Detail,
+) -> None:
+    """Reverse charge on a foreign supply (Art. 45 ff. MWSTG) — Ziffer 383/382."""
+    rate_class = _rate_class(p.account, tokens, cfg)
+    net = ledger.rappen(tax / ledger.vat_rate(e.date, rate_class))
+    t.bezug_tax[current] = t.bezug_tax.get(current, Decimal("0")) + tax
+    t.bezug_net[current] = t.bezug_net.get(current, Decimal("0")) + net
+    original, currency, rate = _original(p, tax)
+    detail.bezugsteuer_lines.append(
+        VatLine(
+            str(e.date),
+            e.payee or "",
+            e.narration or "",
+            original,
+            currency,
+            rate,
+            tax,
+            BEZUGSTEUER_ZIFFERN[0 if current else 1],
+        )
+    )
+
+
+def _input_vat(
+    e: data.Transaction,
+    p: data.Posting,
+    n: Decimal,
+    tokens: frozenset[str],
+    codes: dict[str, str],
+    price_map: bc_prices.PriceMap,
+    t: _Totals,
+    detail: _Detail,
+) -> None:
+    """Deductible input VAT — Ziffern 400/405, or a tagged 410/415/420."""
+    ziffer = _input_ziffer(e, p, tokens, codes, price_map)
+    if ziffer in MINUS_ZIFFERN:
+        _acc(t.inputs, ziffer, -n)  # a credit becomes a positive magnitude
+    elif n <= 0:
+        return  # settlement flush or the one-off pre-liability reversal
+    else:
+        _acc(t.inputs, ziffer, n)
+    original, currency, rate = _original(p, abs(n))
+    detail.vat_lines.append(
+        VatLine(str(e.date), e.payee or "", e.narration or "", original, currency, rate, n, ziffer)
+    )
+
+
+def _turnover(
+    e: data.Transaction,
+    p: data.Posting,
+    n: Decimal,
+    tokens: frozenset[str],
+    codes: dict[str, str],
+    price_map: bc_prices.PriceMap,
+    cfg: config.Config,
+    state: _TxnState,
+    t: _Totals,
+    detail: _Detail,
+) -> None:
+    """One income posting → its section-I line, and its share of Ziffer 299."""
+    acct = p.account
+    bucket = _turnover_bucket(acct, codes.get(acct), tokens, cfg)
+    if bucket is None:
+        return  # income, but not Entgelt — outside the return
+    currency = p.units.currency if p.units is not None else "CHF"
+    chf = _to_chf(Amount(-n, currency), e.date, price_map)
+    line = RevenueLine(str(e.date), e.payee or "", -n, currency, chf)
+
+    if bucket in FLOW_ZIFFERN:  # Nicht-Entgelte: section III, not Ziffer 200
+        _acc(t.flows, FLOW_ZIFFERN[bucket], chf)
+        line.ziffer = FLOW_ZIFFERN[bucket]
+        detail.other_revenue.append(line)
+        return
+
+    if "optioned" in tokens or (cfg.optioned_marker and cfg.optioned_marker in acct):
+        _acc(t.turnover, "205", chf)  # memo only — an opted supply stays taxable
+        bucket = "taxable"
+
+    state.has_turnover = True
+    if bucket == "reduction":
+        # Gross turnover was declared when the sale was booked; the reduction
+        # is a deduction (positive on the form) that also shrinks its rate row.
+        _acc(t.turnover, "235", -chf)
+    else:
+        t.gross += chf
+        if bucket != "taxable":
+            _acc(t.turnover, TURNOVER_ZIFFERN[bucket], chf)
+
+    if bucket not in ("taxable", "reduction"):
+        line.ziffer = TURNOVER_ZIFFERN[bucket]
+        (detail.export if bucket == "export" else detail.other_revenue).append(line)
+        return
+
+    rate_class = _rate_class(acct, tokens, cfg)
+    key = (rate_class, state.current)
+    t.nets[key] = t.nets.get(key, Decimal("0")) + chf
+    state.expected_tax += chf * _rate_on(state.current, rate_class)
+    if abs(chf) > state.weight:
+        state.weight, state.rate_class = abs(chf), rate_class
+    line.rate_class = rate_class
+    if bucket == "reduction":
+        line.ziffer = "235"
+        detail.other_revenue.append(line)
+    else:
+        line.ziffer = _vintage_ziffer(rate_class, state.current)
+        detail.domestic.append(line)
+
+
+def _check(e: data.Transaction, state: _TxnState, t: _Totals, detail: _Detail) -> None:
+    """File the transaction's output VAT, and flag it if net × rate disagrees."""
+    if not state.posted_tax and not state.expected_tax:
+        return
+    key = (state.rate_class, state.current)
+    t.taxes[key] = t.taxes.get(key, Decimal("0")) + state.posted_tax
+    if not state.has_turnover:
+        # VAT with no income leg at all (a fixed-asset sale, a manual
+        # correction): declare it at the standard rate, but there is nothing to
+        # check it against — stay quiet rather than cry wolf.
+        return
+    if abs(state.posted_tax - state.expected_tax) > _tolerance(state.expected_tax):
+        rate = _rate_on(state.current, state.rate_class) * 100
+        detail.violations.append(
+            Violation(
+                str(e.date),
+                e.payee or "",
+                e.narration or "",
+                f"output VAT does not match net × {rate:.1f} %",
+                ledger.rappen(state.expected_tax),
+                state.posted_tax,
+            )
+        )
+
+
+def _original(p: data.Posting, chf: Decimal) -> tuple[Decimal, str, Decimal]:
+    """(amount, currency, CHF rate) — e.g. "7.52 CHF @@ 8.10 EUR" → 8.10 EUR."""
+    if p.price is not None and p.price.number is not None:
+        original = (chf * p.price.number).quantize(Decimal("0.01"))
+        rate = (chf / original) if original else Decimal("0")
+        return original, p.price.currency, rate
+    currency = p.units.currency if p.units is not None else "CHF"
+    return chf, currency, Decimal("1")
+
+
+def _assemble(
+    date_from: str,
+    date_to: str,
+    d0: Date,
+    d1: Date,
+    t: _Totals,
+    detail: _Detail,
+) -> MwstReport:
+    """Totals, cross-checks, and the flat Ziffer fields the JSON contract pins."""
+
+    def z(key: str) -> Decimal:
+        return t.turnover.get(key, Decimal("0"))
+
+    rows = _rate_rows(t.nets, t.taxes, d0, d1)
+    by_ziffer = {r.ziffer: r for r in rows}
+
+    def row(ziffer: str, index: int) -> Decimal:
+        r = by_ziffer.get(ziffer)
+        return (r.net if index == 0 else r.tax) if r else Decimal("0")
+
+    z289 = sum((z(k) for k in ("220", "221", "225", "230", "235", "280")), Decimal("0"))
+    z299 = t.gross - z289
+    rate_net_total = sum((r.net for r in rows), Decimal("0"))
+    if rate_net_total != z299:
+        detail.violations.append(
+            Violation(
+                date_to,
+                "",
+                "",
+                "Ziffer 299 ≠ the rate rows' net — turnover landed nowhere",
+                z299,
+                rate_net_total,
+            )
+        )
+    z383_tax = t.bezug_tax.get(True, Decimal("0"))
+    z382_tax = t.bezug_tax.get(False, Decimal("0"))
+    z399 = sum((r.tax for r in rows), Decimal("0")) + z383_tax + z382_tax
+    z400 = t.inputs.get("400", Decimal("0"))
+    z405 = t.inputs.get("405", Decimal("0"))
+    z410 = t.inputs.get("410", Decimal("0"))
+    z415 = t.inputs.get("415", Decimal("0"))
+    z420 = t.inputs.get("420", Decimal("0"))
+    z479 = z400 + z405 + z410 - z415 - z420
+    z500 = z399 - z479
     return MwstReport(
         date_from=date_from,
         date_to=date_to,
-        z200=z200,
-        z221=z221,
+        z200=t.gross,
+        z205=z("205"),
+        z220=z("220"),
+        z221=z("221"),
+        z225=z("225"),
+        z230=z("230"),
+        z235=z("235"),
+        z280=z("280"),
         z289=z289,
         z299=z299,
-        z303_net=domestic_total,
-        z303_tax=output_vat,
-        z382_net=ledger.rappen(bezugsteuer / ledger.vat_rate(d1)) if bezugsteuer else Decimal("0"),
-        z382_tax=bezugsteuer,
-        z399=output_vat + bezugsteuer,
-        z400=input_vat,
-        z479=input_vat,
-        z500=output_vat + bezugsteuer - input_vat,
-        vat_lines=vat_lines,
-        bezugsteuer_lines=bezugsteuer_lines,
-        domestic=domestic,
-        export=export,
+        z302_net=row("302", 0),
+        z302_tax=row("302", 1),
+        z303_net=row("303", 0),
+        z303_tax=row("303", 1),
+        z312_net=row("312", 0),
+        z312_tax=row("312", 1),
+        z313_net=row("313", 0),
+        z313_tax=row("313", 1),
+        z342_net=row("342", 0),
+        z342_tax=row("342", 1),
+        z343_net=row("343", 0),
+        z343_tax=row("343", 1),
+        z382_net=t.bezug_net.get(False, Decimal("0")),
+        z382_tax=z382_tax,
+        z383_net=t.bezug_net.get(True, Decimal("0")),
+        z383_tax=z383_tax,
+        z399=z399,
+        z400=z400,
+        z405=z405,
+        z410=z410,
+        z415=z415,
+        z420=z420,
+        z479=z479,
+        z500=z500,
+        z510=-z500 if z500 < 0 else Decimal("0"),
+        z900=t.flows.get("900", Decimal("0")),
+        z910=t.flows.get("910", Decimal("0")),
+        rate_rows=rows,
+        violations=detail.violations,
+        vat_lines=detail.vat_lines,
+        bezugsteuer_lines=detail.bezugsteuer_lines,
+        domestic=detail.domestic,
+        export=detail.export,
+        other_revenue=detail.other_revenue,
     )
 
 
 # ── render ────────────────────────────────────────────────────────────────────
+
+_SECTION_I: tuple[tuple[str, str, bool], ...] = (
+    ("205", "davon optierte Leistungen (Art. 22)", False),
+    ("220", "Von der Steuer befreite Leistungen (Art. 23)", False),
+    ("221", "Leistungen im Ausland (Ort der Leistung im Ausland)", True),
+    ("225", "Übertragung im Meldeverfahren (Art. 38)", False),
+    ("230", "Von der Steuer ausgenommene Inlandleistungen (Art. 21)", False),
+    ("235", "Entgeltsminderungen (Skonti, Rabatte, Verluste)", False),
+    ("280", "Diverses", False),
+)
+
+_INPUT_ROWS: tuple[tuple[str, str, bool], ...] = (
+    ("400", "Vorsteuer auf Material- und Dienstleistungsaufwand", True),
+    ("405", "Vorsteuer auf Investitionen und übrigem Betriebsaufwand", True),
+    ("410", "Einlageentsteuerung (Art. 32)", False),
+    ("415", "Vorsteuerkorrekturen (Art. 30/31)", False),
+    ("420", "Vorsteuerkürzungen (Art. 33 Abs. 2)", False),
+)
 
 
 def render(
@@ -247,15 +844,40 @@ def render(
     console = console or ui.console
     console.print()
     console.rule(f"[bold]MWST-Abrechnung[/]   {report.date_from} – {report.date_to}")
+    method = "Effektive Abrechnungsmethode" if cfg.vat_method == "effective" else cfg.vat_method
     console.print(
-        f"{cfg.entity_name} · "
-        f"{'Effektive Abrechnungsmethode' if cfg.vat_method == 'effective' else cfg.vat_method} · "
-        f"{ledger.vat_rate(Date.fromisoformat(report.date_to)) * 100:.1f} %",
+        f"{cfg.entity_name} · {method} · Formular 310",
         style="muted",
         justify="center",
     )
     console.print()
+    console.print(_main_table(report))
 
+    if report.violations:
+        console.print()
+        console.print(_violations_table(report.violations))
+    if report.vat_lines:
+        console.print()
+        console.print(
+            _vat_table(report.vat_lines, report.z479, "Vorsteuer (Input VAT) — Ziffern 400–420")
+        )
+    if report.bezugsteuer_lines:
+        console.print()
+        console.print(
+            _vat_table(
+                report.bezugsteuer_lines,
+                report.bezugsteuer_tax,
+                "Bezugsteuer (reverse charge) — Ziffern 383/382",
+            )
+        )
+    if report.domestic or report.export or report.other_revenue:
+        console.print()
+        console.print(_revenue_table(report))
+    console.print()
+
+
+def _main_table(report: MwstReport) -> Table:
+    """The Form-310 Ziffern, in the order the ESTV portal asks for them."""
     main = Table(box=box.SIMPLE_HEAVY, pad_edge=False, expand=False)
     main.add_column("Ziffer", justify="right", style="ziffer", no_wrap=True)
     main.add_column("Position")
@@ -275,46 +897,91 @@ def render(
             label, u, s = (f"[{style}]{x}[/]" if x else x for x in (label, u, s))
         main.add_row(z, label, u, s)
 
-    row("200", "Total weltweiter Umsatz (netto)", report.z200)
-    row("221", "Leistungen im Ausland (Export)", report.z221)
+    values: dict[str, Decimal] = {
+        "205": report.z205,
+        "220": report.z220,
+        "221": report.z221,
+        "225": report.z225,
+        "230": report.z230,
+        "235": report.z235,
+        "280": report.z280,
+        "400": report.z400,
+        "405": report.z405,
+        "410": report.z410,
+        "415": report.z415,
+        "420": report.z420,
+    }
+    row("200", "Total der vereinbarten Entgelte (weltweit)", report.z200)
+    for ziffer, label, always in _SECTION_I:
+        if always or values[ziffer]:
+            row(ziffer, label, values[ziffer])
     row("289", "Total Abzüge", report.z289)
     row("299", "Steuerbarer Gesamtumsatz", report.z299)
     main.add_section()
-    row("303", "Leistungen zum Normalsatz 8.1 %", report.z303_net, report.z303_tax)
-    row("382", "Bezugsteuer (Art. 45 ff. MWSTG)", report.z382_net, report.z382_tax)
+    for r in report.rate_rows:
+        _new, _old, label, short = RATE_ZIFFERN[r.rate_class]
+        vintage = "" if r.current else " (bis 31.12.2023)"
+        row(
+            r.ziffer, f"{label if r.current else short} {r.rate * 100:.1f} %{vintage}", r.net, r.tax
+        )
+    d0 = Date.fromisoformat(report.date_from)
+    d1 = Date.fromisoformat(report.date_to)
+    for current in (True, False):
+        tax = report.z383_tax if current else report.z382_tax
+        in_force = (d1 >= RATE_CHANGE) if current else (d0 < RATE_CHANGE)
+        if not tax and not in_force:
+            continue
+        net = report.z383_net if current else report.z382_net
+        label = "Bezugsteuer (Art. 45 ff. MWSTG)" if current else "Bezugsteuer (bis 31.12.2023)"
+        row(BEZUGSTEUER_ZIFFERN[0 if current else 1], label, net, tax)
     row("399", "Total geschuldete Steuer", None, report.z399)
     main.add_section()
-    row("400", "Vorsteuer Material / DL", None, report.z400)
+    for ziffer, label, always in _INPUT_ROWS:
+        if always or values[ziffer]:
+            shown = -values[ziffer] if ziffer in MINUS_ZIFFERN else values[ziffer]
+            row(ziffer, label, None, shown)
     row("479", "Total Vorsteuer", None, report.z479)
     main.add_section()
     owed = report.z500 >= 0
     row(
-        "500",
-        "Zu bezahlender Betrag" if owed else "Guthaben",
+        "500" if owed else "510",
+        "Zu bezahlender Betrag" if owed else "Guthaben der steuerpflichtigen Person",
         None,
-        report.z500,
+        report.z500 if owed else report.z510,
         style="owe" if owed else "refund",
     )
-    console.print(main)
+    if report.z900 or report.z910:
+        main.add_section()
+        if report.z900:
+            row("900", "Subventionen, Tourismusabgaben u.a. (Art. 18 II a–c)", report.z900)
+        if report.z910:
+            row("910", "Spenden, Dividenden, Schadenersatz (Art. 18 II d–l)", report.z910)
+    return main
 
-    if report.vat_lines:
-        console.print()
-        console.print(
-            _vat_table(report.vat_lines, report.z400, "Vorsteuer (Input VAT) — Ziffer 400")
+
+def _violations_table(violations: list[Violation]) -> Table:
+    t = Table(
+        box=box.SIMPLE,
+        title="Prüfung — Buchungen, die so nicht ins Formular passen",
+        title_justify="left",
+        title_style="warn",
+    )
+    t.add_column("Datum", style="muted", no_wrap=True)
+    t.add_column("Payee")
+    t.add_column("Narration")
+    t.add_column("Problem")
+    t.add_column("Erwartet", justify="right", no_wrap=True)
+    t.add_column("Gebucht", justify="right", no_wrap=True)
+    for v in violations:
+        t.add_row(
+            v.date,
+            v.payee,
+            v.narration,
+            f"[warn]{v.message}[/]",
+            ui.money(v.expected),
+            ui.money(v.posted),
         )
-    if report.bezugsteuer_lines:
-        console.print()
-        console.print(
-            _vat_table(
-                report.bezugsteuer_lines,
-                report.z382_tax,
-                "Bezugsteuer (reverse charge) — Ziffer 382",
-            )
-        )
-    if report.domestic or report.export:
-        console.print()
-        console.print(_revenue_table(report))
-    console.print()
+    return t
 
 
 def _vat_table(lines: list[VatLine], total: Decimal, title: str) -> Table:
@@ -327,6 +994,7 @@ def _vat_table(lines: list[VatLine], total: Decimal, title: str) -> Table:
     t.add_column("Datum", style="muted", no_wrap=True)
     t.add_column("Payee")
     t.add_column("Narration")
+    t.add_column("Ziffer", style="ziffer", justify="right", no_wrap=True)
     t.add_column("Original", justify="right", no_wrap=True)
     t.add_column("Kurs CHF", justify="right", no_wrap=True)
     t.add_column("CHF", justify="right", no_wrap=True)
@@ -335,13 +1003,27 @@ def _vat_table(lines: list[VatLine], total: Decimal, title: str) -> Table:
             r.date,
             r.payee,
             r.narration,
+            r.ziffer,
             f"{r.original:,.2f} {r.currency}",
             f"{r.rate:.5f}" if r.currency != "CHF" else "—",
             ui.money(r.chf),
         )
     t.add_section()
-    t.add_row("", "", "[bold]Total[/]", "", "", f"[bold]{ui.money(total)}[/]")
+    t.add_row("", "", "[bold]Total[/]", "", "", "", f"[bold]{ui.money(total)}[/]")
     return t
+
+
+# Group titles stay short: they sit in the (no-wrap) date column, so a long
+# one would squeeze the payee out of an 80-column terminal.
+_REVENUE_GROUPS: tuple[tuple[str, str], ...] = (
+    ("220", "Exporte (Art. 23)"),
+    ("225", "Meldeverfahren (Art. 38)"),
+    ("230", "Ausgenommen (Art. 21)"),
+    ("235", "Entgeltsminderungen"),
+    ("280", "Diverses"),
+    ("900", "Subventionen u.a."),
+    ("910", "Spenden, Dividenden u.a."),
+)
 
 
 def _revenue_table(report: MwstReport) -> Table:
@@ -366,4 +1048,19 @@ def _revenue_table(report: MwstReport) -> Table:
     if report.export:
         t.add_section()
         group("Ausland (Export, zero-rated)", report.export, report.z221, "221")
+    totals: dict[str, Decimal] = {
+        "220": report.z220,
+        "225": report.z225,
+        "230": report.z230,
+        "235": report.z235,
+        "280": report.z280,
+        "900": report.z900,
+        "910": report.z910,
+    }
+    for ziffer, title in _REVENUE_GROUPS:
+        rows = [r for r in report.other_revenue if r.ziffer == ziffer]
+        if not rows:
+            continue
+        t.add_section()
+        group(title, rows, totals[ziffer], ziffer)
     return t

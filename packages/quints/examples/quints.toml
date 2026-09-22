@@ -24,7 +24,15 @@ bezugsteuer = "Liabilities:CH:GmbH:Tax:Bezugsteuer"
 payable_vat = "Liabilities:CH:GmbH:Tax:PayableVAT"
 receivable = "Assets:CH:GmbH:Receivable:Trade"
 income_prefix = "Income:CH:GmbH"
-export_marker = ":Export"           # income sub-account marker → Ziffer 221
+# Income sub-account markers route turnover to a Form-310 Ziffer, and
+# the rate markers pick the Art. 25 rate class. A `mwst:` metadata tag
+# on a transaction or posting overrides them — see the VAT guide.
+export_marker = ":Export"             # Ziffer 221 (Ort der Leistung im Ausland)
+export_goods_marker = ":ExportGoods"  # Ziffer 220 (Exporte, Art. 23)
+exempt_marker = ":Exempt"             # Ziffer 230 (ausgenommen, Art. 21)
+optioned_marker = ":Optioned"         # Ziffer 205 (Option nach Art. 22)
+reduced_marker = ":Reduced"           # 2.6 % rate class → Ziffer 313
+lodging_marker = ":Lodging"           # 3.8 % Beherbergung → Ziffer 343
 income_domestic = "Income:CH:GmbH:Consulting:External:Domestic"
 income_export = "Income:CH:GmbH:Consulting:External:Export"
 fx_gain = "Income:CH:GmbH:FX:CurrencyGain"
