@@ -120,6 +120,20 @@ RATE_ZIFFERN: dict[str, tuple[str, str, str, str]] = {
     "lodging": ("343", "342", "Beherbergungsleistungen", "Beherbergung"),
 }
 BEZUGSTEUER_ZIFFERN = ("383", "382")  # (ab 01.01.2024, bis 31.12.2023)
+# The Saldosteuersatz form has one turnover line per vintage; the granted rates
+# are split across it on the "Beiblatt zu den Ziffern 322 und 323".
+SALDO_ZIFFERN = ("323", "322")  # (ab 01.01.2024, bis 31.12.2023)
+SSS_PREFIX = "sss="  # mwst: "sss=6.2" pins a posting to a granted rate
+
+METHOD_NAMES = {
+    "effective": "Effektive Abrechnungsmethode",
+    "saldo": "Saldosteuersatzmethode (Art. 37 MWSTG)",
+}
+
+FORMS = {
+    "effective": "Formular 310 (MWST-4470, ab 01.01.2024)",
+    "saldo": "Abrechnung SSS (MWST-Info 12, ab 01.01.2025)",
+}
 
 # Turnover buckets → the Ziffer they are deducted under. "taxable" is the
 # residual: it feeds the rate rows and, through them, Ziffer 299.
@@ -160,14 +174,43 @@ TURNOVER_CODES = ("3000", "3899")
 INPUT_COUNTER_CODES = (("1400", "1799"), ("4000", "7999"))  # Anlagen, Aufwand
 
 
-def quarter_range(quarter: str) -> tuple[str, str]:
-    """'2026-Q2' (or '2026Q2') → ('2026-04-01', '2026-06-30')."""
-    m = re.match(r"^(\d{4})-?Q([1-4])$", quarter.upper().replace(" ", ""))
+_HALF_MONTHS = {1: ("01-01", "06-30"), 2: ("07-01", "12-31")}
+_PERIOD_SPEC = re.compile(r"^(\d{4})(?:-?([QH])([1-4]))?$")
+
+
+def period_range(period: str) -> tuple[str, str]:
+    """'2026-Q2' → ('2026-04-01', '2026-06-30'); also '2026-H1' and '2026'.
+
+    Quarters are the effective method's Abrechnungsperioden, half-years the
+    Saldosteuersatz method's (Art. 35 MWSTG); a bare year is the annual
+    settlement (Art. 35a MWSTG, on request since 2025).
+    """
+    m = _PERIOD_SPEC.match(period.upper().replace(" ", ""))
     if not m:
-        raise ValueError(f"bad quarter {quarter!r}, expected e.g. 2026-Q2")
-    year, qn = int(m.group(1)), int(m.group(2))
-    start, end = _QUARTER_MONTHS[qn]
+        raise ValueError(f"bad period {period!r}, expected e.g. 2026-Q2, 2026-H1 or 2026")
+    year, kind, n = int(m.group(1)), m.group(2), m.group(3)
+    if kind is None:
+        return f"{year}-01-01", f"{year}-12-31"
+    index = int(n)
+    months = _QUARTER_MONTHS if kind == "Q" else _HALF_MONTHS
+    if index not in months:
+        raise ValueError(f"bad period {period!r}: there is no {kind}{index}")
+    start, end = months[index]
     return f"{year}-{start}", f"{year}-{end}"
+
+
+def period_label(period: str) -> str:
+    """Normalise a period spec for the ``^VAT-<label>`` link: '2026q3' → '2026-Q3'."""
+    m = _PERIOD_SPEC.match(period.upper().replace(" ", ""))
+    if not m:
+        raise ValueError(f"bad period {period!r}, expected e.g. 2026-Q2, 2026-H1 or 2026")
+    year, kind, n = m.group(1), m.group(2), m.group(3)
+    return year if kind is None else f"{year}-{kind}{n}"
+
+
+def quarter_range(quarter: str) -> tuple[str, str]:
+    """Back-compatible alias for :func:`period_range`."""
+    return period_range(quarter)
 
 
 # ── data ─────────────────────────────────────────────────────────────────────
@@ -201,11 +244,12 @@ class RateRow:
     """One "Leistungen / Steuer" line of section II."""
 
     ziffer: str
-    rate_class: str
+    rate_class: str  # "standard"/"reduced"/"lodging", or "saldo"
     rate: Decimal
-    net: Decimal
+    net: Decimal  # the form's "Leistungen" column — gross incl. MWST under SSS
     tax: Decimal
     current: bool  # the ab-01.01.2024 vintage
+    label: str = ""  # the granted Saldosteuersatz this row is for, e.g. "6.2"
 
 
 @dataclass
@@ -262,9 +306,19 @@ class MwstReport:
     z415: Decimal = Decimal("0")  # positive magnitude; the form subtracts it
     z420: Decimal = Decimal("0")  # positive magnitude; the form subtracts it
     z510: Decimal = Decimal("0")  # credit, positive; 0 when z500 is owed
+    # Saldosteuersatz method — the turnover lines of its own form.
+    z322_net: Decimal = Decimal("0")
+    z322_tax: Decimal = Decimal("0")
+    z323_net: Decimal = Decimal("0")
+    z323_tax: Decimal = Decimal("0")
     # Section III — Nicht-Entgelte.
     z900: Decimal = Decimal("0")
     z910: Decimal = Decimal("0")
+    vat_method: str = "effective"
+    form: str = ""
+    # The period's OutputVAT account movement — what the settlement flushes.
+    # Under SSS this is the statutory VAT invoiced, not the SSS owed.
+    output_vat: Decimal = Decimal("0")
     rate_rows: list[RateRow] = field(default_factory=list)
     violations: list[Violation] = field(default_factory=list)
     vat_lines: list[VatLine] = field(default_factory=list)
@@ -332,6 +386,38 @@ def _tokens(p: data.Posting, e: data.Transaction) -> frozenset[str]:
     return _parse_tokens(raw) if raw is not None else _txn_tokens(e)
 
 
+def _unknown_tokens(tokens: frozenset[str], cfg: config.Config) -> set[str]:
+    """Tokens the vocabulary does not contain — including an unknown ``sss=``."""
+    bad: set[str] = set()
+    for token in tokens:
+        if token.startswith(SSS_PREFIX):
+            if not any(g.name == token[len(SSS_PREFIX) :] for g in cfg.saldo):
+                bad.add(token)
+        elif token not in VOCABULARY:
+            bad.add(token)
+    return bad
+
+
+def _saldo_for(account: str, tokens: frozenset[str], cfg: config.Config) -> config.SaldoRate | None:
+    """Which granted Saldosteuersatz a supply falls under.
+
+    ``mwst: "sss=6.2"`` pins it; otherwise the first granted rate whose marker
+    the income account carries; otherwise the default rate. An ``sss=`` naming
+    a rate that was never granted falls through to the default and is reported
+    by :func:`_unknown_tokens`.
+    """
+    for token in tokens:
+        if token.startswith(SSS_PREFIX):
+            name = token[len(SSS_PREFIX) :]
+            for granted in cfg.saldo:
+                if granted.name == name:
+                    return granted
+    for granted in cfg.saldo:
+        if granted.marker and granted.marker in account:
+            return granted
+    return cfg.saldo_default
+
+
 def _in(code: str | None, lo: str, hi: str) -> bool:
     return code is not None and lo <= code <= hi
 
@@ -356,6 +442,12 @@ def _turnover_bucket(
     account: str, code: str | None, tokens: frozenset[str], cfg: config.Config
 ) -> str | None:
     """Which section-I line an income posting belongs to (None = not turnover)."""
+    if account == cfg.saldo_difference:
+        # The SSS settlement books the gap between the statutory VAT invoiced
+        # and the SSS owed here. The gross Entgelt was already declared when
+        # the sale was booked, so this is never turnover — by identity, so it
+        # cannot be forgotten on a hand-written settlement.
+        return None
     for name in FLOW_ZIFFERN:
         if name in tokens:
             return name
@@ -383,6 +475,7 @@ def _input_ziffer(
     tokens: frozenset[str],
     codes: dict[str, str],
     price_map: bc_prices.PriceMap,
+    cfg: config.Config,
 ) -> str:
     """400 (Material/DL) vs 405 (Investitionen, übriger Betriebsaufwand).
 
@@ -396,8 +489,8 @@ def _input_ziffer(
             return ziffer
     best: tuple[Decimal, str] | None = None
     for q in e.postings:
-        if q is p:
-            continue
+        if q is p or q.account == cfg.bezugsteuer_expense:
+            continue  # the SSS Bezugsteuer cost is a tax, not a supply
         code = codes.get(q.account)
         if code is None or not any(_in(code, lo, hi) for lo, hi in INPUT_COUNTER_CODES):
             continue
@@ -476,7 +569,10 @@ class _Totals:
     taxes: dict[tuple[str, bool], Decimal] = field(default_factory=dict)
     bezug_tax: dict[bool, Decimal] = field(default_factory=dict)
     bezug_net: dict[bool, Decimal] = field(default_factory=dict)
+    # Saldosteuersatz: (granted rate's name, vintage) → Entgelt incl. MWST.
+    sss_nets: dict[tuple[str, bool], Decimal] = field(default_factory=dict)
     gross: Decimal = Decimal("0")  # Ziffer 200
+    output_vat: Decimal = Decimal("0")  # the OutputVAT account movement
 
 
 @dataclass
@@ -501,6 +597,10 @@ class _TxnState:
     rate_class: str = "standard"
     weight: Decimal = Decimal("-1")  # of the dominant taxable leg
     has_turnover: bool = False
+    # Saldosteuersatz: the dominant leg's bucket and granted rate, which the
+    # transaction's output VAT follows into Ziffer 299 or Ziffer 235.
+    bucket: str = "taxable"
+    sss: str = ""
 
 
 def compute(
@@ -524,7 +624,7 @@ def compute(
         if _is_settlement(e, cfg):
             continue
         _transaction(e, cfg, codes, price_map, t, detail)
-    return _assemble(date_from, date_to, d0, d1, t, detail)
+    return _assemble(date_from, date_to, d0, d1, t, detail, cfg)
 
 
 def _transaction(
@@ -541,7 +641,7 @@ def _transaction(
     # anywhere in it (transaction or posting) files it under 302/312/342/382.
     old_rate = "old_rate" in txn_tokens or any("old_rate" in _tokens(p, e) for p in e.postings)
     state = _TxnState(current=e.date >= RATE_CHANGE and not old_rate)
-    unknown: set[str] = set(txn_tokens - VOCABULARY)
+    unknown: set[str] = _unknown_tokens(txn_tokens, cfg)
 
     for p in e.postings:
         if p.units is None or p.units.number is None:
@@ -549,17 +649,19 @@ def _transaction(
         n = p.units.number
         acct = p.account
         tokens = _tokens(p, e)
-        unknown |= tokens - VOCABULARY
+        unknown |= _unknown_tokens(tokens, cfg)
 
         if acct == cfg.output_vat:
             state.posted_tax += -n  # credits accrue, a credit note's debit reverses
         elif acct == cfg.bezugsteuer and n < 0:
             _bezugsteuer(e, p, -n, tokens, cfg, state.current, t, detail)
         elif acct == cfg.input_vat:
-            _input_vat(e, p, n, tokens, codes, price_map, t, detail)
+            _input_vat(e, p, n, tokens, codes, price_map, cfg, t, detail)
         elif acct.startswith(cfg.income_prefix):
             _turnover(e, p, n, tokens, codes, price_map, cfg, state, t, detail)
 
+    if cfg.vat_method == "saldo":
+        _saldo_gross(e, state, t, detail)
     _check(e, state, t, detail)
     for token in sorted(unknown):
         detail.violations.append(
@@ -609,11 +711,26 @@ def _input_vat(
     tokens: frozenset[str],
     codes: dict[str, str],
     price_map: bc_prices.PriceMap,
+    cfg: config.Config,
     t: _Totals,
     detail: _Detail,
 ) -> None:
     """Deductible input VAT — Ziffern 400/405, or a tagged 410/415/420."""
-    ziffer = _input_ziffer(e, p, tokens, codes, price_map)
+    if cfg.vat_method == "saldo":
+        # The SSS already compensates the input tax (Art. 37 MWSTG): purchases
+        # are booked gross and the form has no 400-479 block at all.
+        detail.violations.append(
+            Violation(
+                str(e.date),
+                e.payee or "",
+                e.narration or "",
+                "input VAT is not deductible under the Saldosteuersatz method — book gross",
+                Decimal("0"),
+                n,
+            )
+        )
+        return
+    ziffer = _input_ziffer(e, p, tokens, codes, price_map, cfg)
     if ziffer in MINUS_ZIFFERN:
         _acc(t.inputs, ziffer, -n)  # a credit becomes a positive magnitude
     elif n <= 0:
@@ -676,8 +793,13 @@ def _turnover(
     key = (rate_class, state.current)
     t.nets[key] = t.nets.get(key, Decimal("0")) + chf
     state.expected_tax += chf * _rate_on(state.current, rate_class)
+    granted = _saldo_for(acct, tokens, cfg) if cfg.vat_method == "saldo" else None
+    if granted is not None:
+        sss_key = (granted.name, state.current)
+        t.sss_nets[sss_key] = t.sss_nets.get(sss_key, Decimal("0")) + chf
     if abs(chf) > state.weight:
-        state.weight, state.rate_class = abs(chf), rate_class
+        state.weight, state.rate_class, state.bucket = abs(chf), rate_class, bucket
+        state.sss = granted.name if granted is not None else ""
     line.rate_class = rate_class
     if bucket == "reduction":
         line.ziffer = "235"
@@ -687,10 +809,43 @@ def _turnover(
         detail.domestic.append(line)
 
 
+def _saldo_gross(e: data.Transaction, state: _TxnState, t: _Totals, detail: _Detail) -> None:
+    """Fold the transaction's output VAT into its gross Entgelt (SSS only).
+
+    Under the Saldosteuersatz method the declared values are *inclusive* of
+    MWST (MWST-Info 12, Ziff. 18.1.1), so the statutory VAT a sale charged is
+    part of Ziffer 200 — and the VAT a credit note reversed is part of the
+    Ziffer 235 deduction. Both follow the transaction's dominant income leg,
+    which is the single place that decides taxable vs. reduction.
+    """
+    if not state.posted_tax:
+        return
+    if not state.has_turnover:
+        detail.violations.append(
+            Violation(
+                str(e.date),
+                e.payee or "",
+                e.narration or "",
+                "output VAT without turnover — the SSS form taxes the gross Entgelt, "
+                "so it must be booked to an income account",
+                Decimal("0"),
+                state.posted_tax,
+            )
+        )
+        return
+    key = (state.sss, state.current)
+    t.sss_nets[key] = t.sss_nets.get(key, Decimal("0")) + state.posted_tax
+    if state.bucket == "reduction":
+        _acc(t.turnover, "235", -state.posted_tax)
+    else:
+        t.gross += state.posted_tax
+
+
 def _check(e: data.Transaction, state: _TxnState, t: _Totals, detail: _Detail) -> None:
     """File the transaction's output VAT, and flag it if net × rate disagrees."""
     if not state.posted_tax and not state.expected_tax:
         return
+    t.output_vat += state.posted_tax
     key = (state.rate_class, state.current)
     t.taxes[key] = t.taxes.get(key, Decimal("0")) + state.posted_tax
     if not state.has_turnover:
@@ -722,6 +877,35 @@ def _original(p: data.Posting, chf: Decimal) -> tuple[Decimal, str, Decimal]:
     return chf, currency, Decimal("1")
 
 
+def _saldo_rows(t: _Totals, d0: Date, d1: Date, cfg: config.Config) -> list[RateRow]:
+    """The Saldosteuersatz turnover lines — Ziffern 323 (and 322 for 2023).
+
+    One row per granted rate and vintage. The base is the Entgelt **incl.
+    MWST**; the tax is base x SSS, the multiplication the form does for you
+    (MWST-Info 12, Ziff. 18.1.4).
+    """
+    rows: list[RateRow] = []
+    for current in (True, False):
+        in_force = (d1 >= RATE_CHANGE) if current else (d0 < RATE_CHANGE)
+        for granted in cfg.saldo:
+            key = (granted.name, current)
+            base = t.sss_nets.get(key, Decimal("0"))
+            if not in_force and not base:
+                continue
+            rows.append(
+                RateRow(
+                    ziffer=SALDO_ZIFFERN[0 if current else 1],
+                    rate_class="saldo",
+                    rate=granted.rate,
+                    net=base,
+                    tax=ledger.rappen(base * granted.rate),
+                    current=current,
+                    label=granted.name,
+                )
+            )
+    return rows
+
+
 def _assemble(
     date_from: str,
     date_to: str,
@@ -729,18 +913,22 @@ def _assemble(
     d1: Date,
     t: _Totals,
     detail: _Detail,
+    cfg: config.Config,
 ) -> MwstReport:
     """Totals, cross-checks, and the flat Ziffer fields the JSON contract pins."""
+    saldo = cfg.vat_method == "saldo"
 
     def z(key: str) -> Decimal:
         return t.turnover.get(key, Decimal("0"))
 
-    rows = _rate_rows(t.nets, t.taxes, d0, d1)
-    by_ziffer = {r.ziffer: r for r in rows}
+    rows = _saldo_rows(t, d0, d1, cfg) if saldo else _rate_rows(t.nets, t.taxes, d0, d1)
 
     def row(ziffer: str, index: int) -> Decimal:
-        r = by_ziffer.get(ziffer)
-        return (r.net if index == 0 else r.tax) if r else Decimal("0")
+        total = Decimal("0")
+        for r in rows:
+            if r.ziffer == ziffer:
+                total += r.net if index == 0 else r.tax
+        return total
 
     z289 = sum((z(k) for k in ("220", "221", "225", "230", "235", "280")), Decimal("0"))
     z299 = t.gross - z289
@@ -751,7 +939,7 @@ def _assemble(
                 date_to,
                 "",
                 "",
-                "Ziffer 299 ≠ the rate rows' net — turnover landed nowhere",
+                "Ziffer 299 ≠ the turnover rows' total — turnover landed nowhere",
                 z299,
                 rate_net_total,
             )
@@ -804,8 +992,15 @@ def _assemble(
         z479=z479,
         z500=z500,
         z510=-z500 if z500 < 0 else Decimal("0"),
+        z322_net=row("322", 0),
+        z322_tax=row("322", 1),
+        z323_net=row("323", 0),
+        z323_tax=row("323", 1),
         z900=t.flows.get("900", Decimal("0")),
         z910=t.flows.get("910", Decimal("0")),
+        vat_method=cfg.vat_method,
+        form=FORMS.get(cfg.vat_method, ""),
+        output_vat=t.output_vat,
         rate_rows=rows,
         violations=detail.violations,
         vat_lines=detail.vat_lines,
@@ -844,9 +1039,9 @@ def render(
     console = console or ui.console
     console.print()
     console.rule(f"[bold]MWST-Abrechnung[/]   {report.date_from} – {report.date_to}")
-    method = "Effektive Abrechnungsmethode" if cfg.vat_method == "effective" else cfg.vat_method
+    method = METHOD_NAMES.get(report.vat_method, report.vat_method).split(" (")[0]
     console.print(
-        f"{cfg.entity_name} · {method} · Formular 310",
+        f"{cfg.entity_name} · {method} · {report.form}",
         style="muted",
         justify="center",
     )
@@ -860,6 +1055,12 @@ def render(
         console.print()
         console.print(
             _vat_table(report.vat_lines, report.z479, "Vorsteuer (Input VAT) — Ziffern 400–420")
+        )
+    if report.vat_method == "saldo" and report.bezugsteuer_tax:
+        console.print()
+        console.print(
+            "[muted]Bezugsteuer is owed at the statutory rate and is not deductible under "
+            "the SSS method — it is a cost.[/]"
         )
     if report.bezugsteuer_lines:
         console.print()
@@ -919,11 +1120,13 @@ def _main_table(report: MwstReport) -> Table:
     row("299", "Steuerbarer Gesamtumsatz", report.z299)
     main.add_section()
     for r in report.rate_rows:
-        _new, _old, label, short = RATE_ZIFFERN[r.rate_class]
         vintage = "" if r.current else " (bis 31.12.2023)"
-        row(
-            r.ziffer, f"{label if r.current else short} {r.rate * 100:.1f} %{vintage}", r.net, r.tax
-        )
+        if r.rate_class == "saldo":
+            name = f"Leistungen zum Saldosteuersatz {r.label} %"
+        else:
+            _new, _old, long_label, short = RATE_ZIFFERN[r.rate_class]
+            name = f"{long_label if r.current else short} {r.rate * 100:.1f} %"
+        row(r.ziffer, f"{name}{vintage}", r.net, r.tax)
     d0 = Date.fromisoformat(report.date_from)
     d1 = Date.fromisoformat(report.date_to)
     for current in (True, False):
@@ -934,13 +1137,17 @@ def _main_table(report: MwstReport) -> Table:
         net = report.z383_net if current else report.z382_net
         label = "Bezugsteuer (Art. 45 ff. MWSTG)" if current else "Bezugsteuer (bis 31.12.2023)"
         row(BEZUGSTEUER_ZIFFERN[0 if current else 1], label, net, tax)
-    row("399", "Total geschuldete Steuer", None, report.z399)
-    main.add_section()
-    for ziffer, label, always in _INPUT_ROWS:
-        if always or values[ziffer]:
-            shown = -values[ziffer] if ziffer in MINUS_ZIFFERN else values[ziffer]
-            row(ziffer, label, None, shown)
-    row("479", "Total Vorsteuer", None, report.z479)
+    # The Saldosteuersatz form has no total-tax line and no input-VAT block:
+    # part II goes straight from the turnover rows and the Bezugsteuer to the
+    # Steuerforderung (MWST-Info 12, Ziff. 18.1.1 and 18.1.4).
+    if report.vat_method != "saldo":
+        row("399", "Total geschuldete Steuer", None, report.z399)
+        main.add_section()
+        for ziffer, label, always in _INPUT_ROWS:
+            if always or values[ziffer]:
+                shown = -values[ziffer] if ziffer in MINUS_ZIFFERN else values[ziffer]
+                row(ziffer, label, None, shown)
+        row("479", "Total Vorsteuer", None, report.z479)
     main.add_section()
     owed = report.z500 >= 0
     row(
@@ -1044,7 +1251,19 @@ def _revenue_table(report: MwstReport) -> Table:
             t.add_row(r.date, r.payee, f"{r.original:,.2f} {r.currency}", ui.money(r.chf))
         t.add_row("", "", f"[muted]Ziffer {ziffer}[/]", f"[bold]{ui.money(subtotal)}[/]")
 
-    group("Inland (steuerbar)", report.domestic, report.z299, "299")
+    def group_saldo() -> None:
+        t.add_row("[bold]Inland (steuerbar, brutto)[/]", "", "", "")
+        for r in report.domestic:
+            t.add_row(r.date, r.payee, f"{r.original:,.2f} {r.currency}", ui.money(r.chf))
+        t.add_row("", "", "[muted]+ MWST (gesetzl. Satz)[/]", ui.money(report.output_vat))
+        t.add_row("", "", "[muted]Ziffer 299[/]", f"[bold]{ui.money(report.z299)}[/]")
+
+    if report.vat_method == "saldo":
+        # Under SSS the declared Entgelt includes the statutory MWST, so show
+        # it as its own line or the group would not add up to Ziffer 299.
+        group_saldo()
+    else:
+        group("Inland (steuerbar)", report.domestic, report.z299, "299")
     if report.export:
         t.add_section()
         group("Ausland (Export, zero-rated)", report.export, report.z221, "221")

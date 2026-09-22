@@ -92,9 +92,10 @@ def test_write_refuses_overwrite_without_force(tmp_path: Path):
     assert forced.written and not forced.skipped
 
 
-def test_rejects_saldo_method():
-    with pytest.raises(init.InitError):
-        init.plan(init.Answers(vat_method="saldo"))
+def test_rejects_an_unknown_vat_method():
+    # `saldo` is supported now — see test_saldo.py for the acceptance tests.
+    with pytest.raises(init.InitError, match="unknown vat_method"):
+        init.plan(init.Answers(vat_method="pauschal"))
 
 
 def test_rejects_unknown_legal_form():
@@ -332,6 +333,8 @@ def test_cli_scaffold_to_invoice_end_to_end(tmp_path: Path, monkeypatch: pytest.
             "einzelfirma",
             "--lang",
             "en",
+            "--vat-method",
+            "effective",
             "--samples",
         ],
     )

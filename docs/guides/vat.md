@@ -16,7 +16,16 @@ Ziffer: turnover and its deductions (200–299), the rate rows of section II
 (500) or are owed (510). Copy the numbers into the ESTV portal; nothing is
 filed automatically.
 
-Arbitrary periods work too: `--from 2026-01-01 --to 2026-06-30`.
+`-p/--period` takes a quarter (`2026-Q3`), a half-year (`2026-H1`, `2026-H2`)
+or a bare year (`2026`):
+
+```bash
+quints vat report -p 2026-H2
+quints vat report -p 2026
+```
+
+`-q/--quarter` is an alias, and arbitrary periods work too:
+`--from 2026-01-01 --to 2026-06-30`.
 
 ![The full MWST report on the sample quarter — Form-310 Ziffern plus the Vorsteuer, Bezugsteuer, and revenue detail tables](../assets/mwst.gif)
 
@@ -152,6 +161,116 @@ Every transaction with turnover is verified: the output VAT it posts must
 equal net × rate, within a few Rappen. A mismatch — the old rate applied by
 habit, a missing VAT leg, VAT on an exempt supply — is listed in the report
 and in `--json` under `violations`, rather than silently mis-filed.
+
+## The Saldosteuersatz method
+
+Most micro-companies file with a **Saldosteuersatz** (SSS, Art. 37 MWSTG)
+instead of the effective method: you may use it with up to CHF 5.024 m of
+turnover and no more than CHF 108'000 of tax a year. Instead of computing
+output VAT minus input VAT, you multiply your **gross** turnover (incl. MWST)
+by the flat rate the ESTV granted you. Input tax is never deducted — the rate
+already accounts for it.
+
+What changes:
+
+- You **file half-yearly**, not quarterly: the tax period splits into two
+  Abrechnungsperioden (Art. 35 MWSTG). Annual filing is available on request
+  since 2025 (Art. 35a MWSTG).
+- **Your invoices are unchanged**: customers are still charged the statutory
+  8.1 % / 2.6 % / 3.8 %. The SSS is between you and the ESTV.
+- **Purchases are booked gross.** There is no InputVAT posting, and the form
+  has no 400–479 block at all. `quints vat report` lists any input VAT it
+  finds as a violation.
+- **Bezugsteuer is still owed** at the statutory rate under Ziffer 383, but it
+  is a cost rather than a deduction.
+- The gap between the VAT your invoices collected and the SSS you owe is what
+  the method pays you for not deducting input tax. `quints vat settle` books
+  it to the `saldo_difference` income account.
+
+### The permitted rates
+
+The rate is the ESTV's decision — which one you get depends on your branch —
+but the *list* is law, so it lives in quints, date-ranged, and a typo in
+`quints.toml` is rejected:
+
+| From 01.01.2024 | 0.1 | 0.6 | 1.3 | 2.1 | 3.0 | 3.7 | 4.5 | 5.3 | 6.2 | 6.8 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **Until 31.12.2023** | 0.1 | 0.6 | 1.2 | 2.0 | 2.8 | 3.5 | 4.3 | 5.1 | 5.9 | 6.5 |
+
+Since 2025 there is no limit on how many rates one business may hold: the ESTV
+grants one for every activity worth more than 10 % of taxable turnover.
+
+### Setting it up
+
+```bash
+quints init jane-books --name "Jane Doe" --legal-form einzelfirma --vat-method saldo --saldo-rate 6.2 --samples --yes
+cd jane-books
+quints vat report -p 2026-H2
+cd ..
+```
+
+The scaffold opens the two accounts only this method uses — the difference
+income and the Bezugsteuer cost — and writes a `[vat]` section:
+
+```toml
+[vat]
+period = "half-year"   # quarter | half-year | year
+
+[[vat.saldo]]
+rate = 6.2
+```
+
+With several rates, give each one the income marker it applies to; the first
+entry without a marker is the default, and `mwst: "sss=1.3"` pins a single
+booking:
+
+```toml
+[[vat.saldo]]
+rate = 6.2
+
+[[vat.saldo]]
+rate = 1.3
+marker = ":Handel"
+```
+
+### The return
+
+Section I is the same 200–299 as the effective method, except that every
+figure **includes MWST**. Section II is shorter:
+
+| Ziffer | Position |
+| --- | --- |
+| 323 | Leistungen ab 01.01.2024, split across the granted rates |
+| 322 | Leistungen bis 31.12.2023 |
+| 383 / 382 | Bezugsteuer, at the *statutory* rate |
+| 500 / 510 | zu bezahlender Betrag / Guthaben |
+
+There is no total-tax line and no input-VAT block — part II goes straight from
+the turnover rows and the Bezugsteuer to the Steuerforderung.
+
+### Closing a half-year
+
+`quints vat settle -p 2026-H2` prints a block that empties OutputVAT and
+Bezugsteuer, pays the ESTV the SSS on the gross turnover, and leaves the rest
+in income:
+
+```beancount
+2026-12-31 * "2026-H2 VAT Settlement" ^VAT-2026-H2
+    due: 2027-03-01
+    Liabilities:CH:Einzelfirma:Tax:PayableVAT    -74.55 CHF
+    Liabilities:CH:Einzelfirma:Tax:OutputVAT      81.00 CHF
+    Liabilities:CH:Einzelfirma:Tax:Bezugsteuer     7.53 CHF
+    Income:CH:Einzelfirma:VAT:SaldoDifference    -13.98 CHF
+```
+
+`quints vat convert --bezugsteuer` knows the difference too: under SSS it
+debits the Bezugsteuer *expense* account instead of InputVAT.
+
+!!! note "One line quints does not produce"
+    Ziffer 415 (Korrekturen bei der Übernahme im Meldeverfahren und beim
+    Wechsel der Abrechnungsmethode) only arises when you take over assets in
+    the Meldeverfahren or switch methods. quints models neither yet, so it
+    never fills that line.
 
 ## Close the quarter
 

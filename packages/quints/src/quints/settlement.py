@@ -47,6 +47,11 @@ class Settlement:
     net: Decimal
     payable_after: Decimal
     bezugsteuer: Decimal = Decimal("0")
+    method: str = "effective"
+    # Saldosteuersatz only: statutory VAT invoiced minus the SSS owed. It is
+    # the entity's compensation for not deducting input tax, so it lands in
+    # income rather than being paid over.
+    difference: Decimal = Decimal("0")
 
 
 def _payable_balance(entries: data.Directives, upto: Date, cfg: config.Config) -> Decimal:
@@ -81,13 +86,20 @@ def build_settlement(
         due=str(d1 + timedelta(days=PAYMENT_DUE_DAYS)),
         link=link,
         narration=f"{label} VAT Settlement",
-        # The OutputVAT *account* balance — every rate row, both vintages,
-        # net of the credit notes that reversed it (Ziffer 235).
-        output_vat=sum((r.tax for r in report.rate_rows), Decimal("0")),
+        # The OutputVAT *account* balance: every rate row of the effective
+        # method, net of the credit notes that reversed it (Ziffer 235) — and,
+        # under SSS, the statutory VAT invoiced rather than the SSS owed.
+        output_vat=report.output_vat,
         bezugsteuer=report.bezugsteuer_tax,
         input_vat=report.z479,
         net=report.z500,
         payable_after=payable_before - report.z500,
+        method=report.vat_method,
+        difference=(
+            report.output_vat - sum((r.tax for r in report.rate_rows), Decimal("0"))
+            if report.vat_method == "saldo"
+            else Decimal("0")
+        ),
     )
 
 
@@ -96,8 +108,15 @@ def _posting(account: str, amount: Decimal) -> str:
 
 
 def settlement_text(s: Settlement, cfg: config.Config | None = None) -> str:
-    """The ready-to-paste beancount block (transaction + balance assertions)."""
+    """The ready-to-paste beancount block (transaction + balance assertions).
+
+    Under the Saldosteuersatz method the block also empties the statutory VAT
+    the invoices charged: the ESTV gets ``net`` (the SSS on the gross Entgelt
+    plus Bezugsteuer) and what the customers paid on top stays in the books as
+    income. There is no InputVAT leg — under SSS there is nothing to deduct.
+    """
     cfg = cfg or config.get()
+    saldo = s.method == "saldo"
     lines = [
         f'{s.settle_date} * "{s.narration}" ^{s.link}',
         f"    due: {s.due}",
@@ -106,15 +125,20 @@ def settlement_text(s: Settlement, cfg: config.Config | None = None) -> str:
     ]
     if s.bezugsteuer:
         lines.append(_posting(cfg.bezugsteuer, s.bezugsteuer))
+    if saldo:
+        if s.difference:
+            lines.append(_posting(cfg.saldo_difference, -s.difference))
+    else:
+        lines.append(_posting(cfg.input_vat, -s.input_vat))
     lines += [
-        _posting(cfg.input_vat, -s.input_vat),
         "",
         f"{s.assert_date} balance {cfg.payable_vat:<38}{s.payable_after:>8.2f} CHF",
         f"{s.assert_date} balance {cfg.output_vat:<38}    0.00 CHF",
     ]
     if s.bezugsteuer:
         lines.append(f"{s.assert_date} balance {cfg.bezugsteuer:<38}    0.00 CHF")
-    lines.append(f"{s.assert_date} balance {cfg.input_vat:<38}    0.00 CHF")
+    if not saldo:
+        lines.append(f"{s.assert_date} balance {cfg.input_vat:<38}    0.00 CHF")
     return "\n".join(lines)
 
 
@@ -215,16 +239,21 @@ def render_settlement(s: Settlement, console: Console | None = None) -> None:
     console.print()
 
 
+_PERIOD_WORDS = {"quarter": "quarterly", "half-year": "half-yearly", "year": "annually"}
+
+
 def render_status(
     liabilities: list[Liability],
     unlinked: Decimal,
     total: Decimal,
     today: Date,
     console: Console | None = None,
+    period_kind: str = "",
 ) -> None:
     console = console or ui.console
     console.print()
-    console.rule(f"[bold]VAT status[/]  ·  {today}")
+    cadence = _PERIOD_WORDS.get(period_kind, "")
+    console.rule(f"[bold]VAT status[/]  ·  {today}" + (f"  ·  filed {cadence}" if cadence else ""))
     if not liabilities and unlinked == 0:
         console.print("[ok]Nothing outstanding — all filed VAT is paid.[/]")
         console.print()

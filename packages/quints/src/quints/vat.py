@@ -30,10 +30,23 @@ class VatPosting:
     note: str
     input_account: str = ""
     bezugsteuer_account: str = ""
+    expense_account: str = ""  # SSS: the non-deductible Bezugsteuer cost
     rate_class: str = "standard"
+    method: str = "effective"
 
     def render(self) -> str:
-        """The two lines you paste into the ledger (comment + posting)."""
+        """The two lines you paste into the ledger (comment + posting).
+
+        Under the Saldosteuersatz method there is nothing to paste: the input
+        tax is already compensated by the SSS (Art. 37 MWSTG), so the purchase
+        is booked gross and the CHF figure is only there to check the invoice.
+        """
+        if self.method == "saldo":
+            return (
+                f"    ; {self.note}\n"
+                "    ; Saldosteuersatz method: input VAT is not deductible — "
+                "book the gross amount as the expense."
+            )
         return f"    ; {self.note}\n    {self.input_account:<38} {self.chf:>8} CHF"
 
     def render_bezugsteuer(self) -> str:
@@ -44,6 +57,10 @@ class VatPosting:
         (declaration, Ziffer 383 — 382 for a pre-2024 supply). Both carry the
         foreign VAT as an ``@@`` price so the pair balances against the invoice
         currency.
+
+        Under the Saldosteuersatz method the Bezugsteuer is still owed at the
+        statutory rate but cannot be deducted (Art. 37 MWSTG), so the debit is
+        an expense instead: the pair costs real money rather than netting out.
         """
         price = "" if self.currency == "CHF" else f" @@ {self.foreign_vat} {self.currency}"
         # A non-standard rate has to travel with the posting, or `vat report`
@@ -51,9 +68,14 @@ class VatPosting:
         tag = "" if self.rate_class == "standard" else f'\n        mwst: "{self.rate_class}"'
         return (
             f"    ; Bezugsteuer Art. 45 MWSTG: {self.note}\n"
-            f"    {self.input_account:<38} {self.chf:>8} CHF{price}\n"
+            f"    {self.debit_account:<38} {self.chf:>8} CHF{price}\n"
             f"    {self.bezugsteuer_account:<38} {-self.chf:>8} CHF{price}{tag}"
         )
+
+    @property
+    def debit_account(self) -> str:
+        """Where the self-assessed tax lands: a deduction, or a cost under SSS."""
+        return self.expense_account if self.method == "saldo" else self.input_account
 
 
 def convert(
@@ -97,5 +119,7 @@ def convert(
         note,
         input_account=cfg.input_vat,
         bezugsteuer_account=cfg.bezugsteuer,
+        expense_account=cfg.bezugsteuer_expense,
         rate_class=rate_class,
+        method=cfg.vat_method,
     )

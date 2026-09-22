@@ -232,20 +232,29 @@ def _period(from_: str | None, to: str | None, year: int | None) -> tuple[str, s
 
 
 def _vat_period(
-    quarter: str | None, from_: str | None, to: str | None
+    period: str | None, from_: str | None, to: str | None
 ) -> tuple[str, str, str | None]:
-    """Resolve --quarter / --from/--to into (date_from, date_to, label)."""
-    if quarter:
+    """Resolve --period / --from/--to into (date_from, date_to, label).
+
+    A period is a quarter (``2026-Q2``, the effective method's Abrechnungs-
+    periode), a half-year (``2026-H1``, the Saldosteuersatz method's) or a
+    bare year (``2026``, the annual settlement).
+    """
+    if period:
         try:
-            date_from, date_to = mwst_mod.quarter_range(quarter)
+            date_from, date_to = mwst_mod.period_range(period)
+            label = mwst_mod.period_label(period)
         except ValueError as e:
             typer.secho(f"ERROR: {e}", fg="red", err=True)
             raise typer.Exit(1) from None
-        return date_from, date_to, quarter.upper().replace(" ", "")
+        return date_from, date_to, label
     if from_ and to:
         return _parse_date(from_).isoformat(), _parse_date(to).isoformat(), None
-    typer.secho("ERROR: provide --quarter, or both --from and --to.", fg="red", err=True)
+    typer.secho("ERROR: provide --period, or both --from and --to.", fg="red", err=True)
     raise typer.Exit(1)
+
+
+_PERIOD_HELP = "e.g. 2026-Q2, 2026-H1 or 2026 (instead of --from/--to)."
 
 
 # ── getting started ───────────────────────────────────────────────────────────
@@ -263,6 +272,15 @@ def init(
         help="Legal form: gmbh, ag, or einzelfirma (sole proprietorship / freelancer).",
     ),
     lang: str | None = typer.Option(None, "--lang", "-l", help="Report language: en or de."),
+    vat_method: str | None = typer.Option(
+        None, "--vat-method", help="effective (default) or saldo (Saldosteuersatz, Art. 37 MWSTG)."
+    ),
+    saldo_rates: str | None = typer.Option(
+        None,
+        "--saldo-rate",
+        help="Comma-separated Saldosteuersätze the ESTV granted, in per cent (e.g. 6.2,1.3). "
+        "Permitted values are law — Verordnung der ESTV, SR 641.202.62.",
+    ),
     importers: str | None = typer.Option(
         None, "--importers", help="Comma-separated: ubs, yapeal, wise, stripe (default: none)."
     ),
@@ -325,6 +343,31 @@ def init(
             answers,
             report_language=typer.prompt(
                 "Report language (en/de)", default=answers.report_language
+            ),
+        )
+    if vat_method is not None:
+        answers = replace(answers, vat_method=vat_method.strip().lower())
+    elif interactive:
+        answers = replace(
+            answers,
+            vat_method=typer.prompt("VAT method (effective/saldo)", default=answers.vat_method)
+            .strip()
+            .lower(),
+        )
+    if saldo_rates is not None:
+        answers = replace(
+            answers, saldo_rates=tuple(r.strip() for r in saldo_rates.split(",") if r.strip())
+        )
+    elif interactive and answers.vat_method == "saldo" and not answers.saldo_rates:
+        answers = replace(
+            answers,
+            saldo_rates=tuple(
+                r.strip()
+                for r in typer.prompt(
+                    "Saldosteuersatz/-sätze granted by the ESTV, in per cent "
+                    "(comma-separated; see SR 641.202.62)"
+                ).split(",")
+                if r.strip()
             ),
         )
     if importers is not None:
@@ -443,9 +486,8 @@ app.add_typer(vat_app, name="vat", rich_help_panel=PANEL_VAT)
 
 @vat_app.command("report")
 def vat_report(
-    quarter: str | None = typer.Option(
-        None, "--quarter", "-q", help="e.g. 2026-Q2 (instead of --from/--to)."
-    ),
+    period: str | None = typer.Option(None, "--period", "-p", help=_PERIOD_HELP),
+    quarter: str | None = typer.Option(None, "--quarter", "-q", help="Alias for --period."),
     from_: str | None = typer.Option(None, "--from", help="Period start YYYY-MM-DD."),
     to: str | None = typer.Option(None, "--to", help="Period end YYYY-MM-DD."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
@@ -459,7 +501,7 @@ def vat_report(
     split into 400/405 with the 410/415/420 corrections, and 500/510. Bookings
     whose VAT does not match net x rate are listed rather than filed.
     """
-    date_from, date_to, _label = _vat_period(quarter, from_, to)
+    date_from, date_to, _label = _vat_period(period or quarter, from_, to)
     _require_ledger(file)
     report = mwst_mod.compute(file, date_from, date_to)
     if as_json:
@@ -472,16 +514,15 @@ def vat_report(
 
 @vat_app.command("settle")
 def vat_settle(
-    quarter: str | None = typer.Option(
-        None, "--quarter", "-q", help="e.g. 2026-Q2 (instead of --from/--to)."
-    ),
+    period: str | None = typer.Option(None, "--period", "-p", help=_PERIOD_HELP),
+    quarter: str | None = typer.Option(None, "--quarter", "-q", help="Alias for --period."),
     from_: str | None = typer.Option(None, "--from", help="Period start YYYY-MM-DD."),
     to: str | None = typer.Option(None, "--to", help="Period end YYYY-MM-DD."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
 ):
     """Close the period: the VAT return plus the settlement transaction to paste."""
-    date_from, date_to, label = _vat_period(quarter, from_, to)
+    date_from, date_to, label = _vat_period(period or quarter, from_, to)
     _require_ledger(file)
     report = mwst_mod.compute(file, date_from, date_to)
     settlement = settle_mod.build_settlement(file, report, label)
@@ -509,6 +550,7 @@ def vat_status(
 ):
     """Outstanding VAT owed to the ESTV (filed but unpaid), with due dates."""
     _require_ledger(file)
+    cfg = config_mod.get()
     liabilities, unlinked, total, today = settle_mod.outstanding(file)
     if as_json:
         import dataclasses
@@ -516,13 +558,15 @@ def vat_status(
         _json_out(
             {
                 "today": str(today),
+                "vat_method": cfg.vat_method,
+                "period": cfg.period_kind,  # how often this entity files
                 "liabilities": [dataclasses.asdict(liab) for liab in liabilities],
                 "unlinked_owed": str(unlinked),
                 "total_owed": str(total),
             }
         )
         return
-    settle_mod.render_status(liabilities, unlinked, total, today)
+    settle_mod.render_status(liabilities, unlinked, total, today, period_kind=cfg.period_kind)
 
 
 @vat_app.command("convert")
