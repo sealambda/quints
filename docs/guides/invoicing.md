@@ -138,6 +138,16 @@ bank:
     iban: CH93 0076 2011 6238 5295 7
 ```
 
+The same invoice under each scheme — the payment part is what the customer
+scans or retypes. With a QR-IBAN and the bank's identification, a QR
+reference whose tail is the invoice's own digits:
+
+![Payment part paid by QR reference: account CH44 3199 9123 0008 8901 2 (a QR-IBAN), reference 12 34561 00841 17000 00202 60143](../assets/payment-part-qrr.png)
+
+With the regular IBAN, a creditor reference that spells the invoice number out:
+
+![Payment part paid by creditor reference: account CH93 0076 2011 6238 5295 7, reference RF47 INV2 0260 14](../assets/payment-part-scor.png)
+
 [**Payment references**](payment-references.md) covers the whole picture — the
 three types the standard defines, the exact pairing rules with their
 citations, what the QR reference contains, how to choose, and how a payment
