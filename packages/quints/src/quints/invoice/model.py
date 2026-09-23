@@ -8,6 +8,7 @@ one contract.
 
 from __future__ import annotations
 
+import calendar
 import json
 import re
 import sys
@@ -19,6 +20,8 @@ from typing import Annotated, Any, Literal
 import yaml
 from pydantic import (
     BaseModel,
+    BeforeValidator,
+    ConfigDict,
     Field,
     PrivateAttr,
     RootModel,
@@ -142,6 +145,121 @@ class ExtraReference(BaseModel):
     value: str = Field(min_length=1, description="The reference itself.")
 
 
+class SupplyPeriod(BaseModel):
+    """When the supply was made: its first and last day, the same day for one.
+
+    Every invoice states it. Swiss VAT law asks for the date or period of the
+    supply wherever it differs from the invoice date (Art. 26 Abs. 2 lit. c
+    MWSTG), the EU for the date the supply was made or completed (Art. 226(7)
+    VAT Directive), and the payer books input tax by it — which is why it is
+    structured rather than free text: it is printed in the invoice's locale and
+    carried in the QR-bill's billing information (Swico S1 /31/).
+
+    Written in an invoice file as a day (`2026-07-15`), a calendar month
+    (`2026-07`), or a period (`{from: 2026-07-01, to: 2026-09-30}`)."""
+
+    model_config = ConfigDict(validate_by_name=True, validate_by_alias=True, extra="forbid")
+
+    start: date = Field(validation_alias="from", description="First day of the supply.")
+    end: date = Field(validation_alias="to", description="Last day of the supply.")
+
+    @model_validator(mode="after")
+    def _ordered(self) -> SupplyPeriod:
+        if self.end < self.start:
+            raise ValueError(f"supply period ends ({self.end}) before it starts ({self.start})")
+        return self
+
+    @classmethod
+    def day(cls, d: date) -> SupplyPeriod:
+        return cls(start=d, end=d)
+
+    @classmethod
+    def month(cls, year: int, month: int) -> SupplyPeriod:
+        last = calendar.monthrange(year, month)[1]
+        return cls(start=date(year, month, 1), end=date(year, month, last))
+
+    @property
+    def is_month(self) -> bool:
+        return self == SupplyPeriod.month(self.start.year, self.start.month)
+
+    def text(self, locale: str) -> str:
+        """As printed: `Juli 2026`, `05.06.2026`, `1. Juni – 15. Juli 2026`."""
+        from babel.dates import format_date, format_interval, format_skeleton
+
+        if self.start == self.end:
+            return format_date(self.start, format="medium", locale=locale)
+        if self.is_month:
+            return format_skeleton("yMMMM", self.start, locale=locale)
+        return format_interval(self.start, self.end, "yMMMd", locale=locale)
+
+    def swico(self) -> str:
+        """Swico S1 /31/: `YYMMDD` for a day, `YYMMDDYYMMDD` for a period."""
+        first = self.start.strftime("%y%m%d")
+        return first if self.start == self.end else first + self.end.strftime("%y%m%d")
+
+
+_MONTH = re.compile(r"(\d{4})-(\d{2})")
+_LEGACY_MONTH = re.compile(r"(\w+)\.?\s+(\d{4})")
+
+
+def _month_named(word: str) -> int | None:
+    """The month a written-out name means in any invoice language, or None."""
+    from babel.dates import get_month_names
+
+    from .labels import LABELS
+
+    for lang in LABELS:
+        for width in ("wide", "abbreviated"):
+            for num, name in get_month_names(width, locale=lang).items():
+                if name.lower().rstrip(".") == word.lower():
+                    return num
+    return None
+
+
+def _parse_supply(v: object) -> object:
+    """A day, a `YYYY-MM` month, or a `{from, to}` period → `SupplyPeriod`.
+
+    YAML hands a day over as a `date`; TOML and JSON as text, so an ISO day
+    string is read too. Free text (`Juli 2026`, the pre-structured form) is
+    refused with the value to write instead."""
+    if isinstance(v, date):
+        return SupplyPeriod.day(v)
+    if not isinstance(v, str):
+        return v  # a {from, to} mapping, or a SupplyPeriod already
+    text = v.strip()
+    if m := _MONTH.fullmatch(text):
+        year, month = int(m.group(1)), int(m.group(2))
+        if not 1 <= month <= 12:
+            raise ValueError(f"supply {v!r}: there is no month {month}")
+        return SupplyPeriod.month(year, month)
+    try:
+        return SupplyPeriod.day(date.fromisoformat(text))
+    except ValueError:
+        pass
+    hint = (
+        "supply: 2026-07 (a month), supply: 2026-07-15 (a day), or "
+        "supply: {from: 2026-07-01, to: 2026-09-30}"
+    )
+    if (m := _LEGACY_MONTH.fullmatch(text)) and (month := _month_named(m.group(1))):
+        hint = f"supply: {m.group(2)}-{month:02d}"
+    raise ValueError(
+        f"supply {v!r} is free text, but the supply period is structured — it "
+        f"is printed in the invoice's language and carried in the QR-bill for "
+        f"the payer's VAT booking. Write {hint}"
+    )
+
+
+Supply = Annotated[
+    SupplyPeriod,
+    BeforeValidator(
+        _parse_supply,
+        json_schema_input_type=date
+        | Annotated[str, StringConstraints(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")]
+        | SupplyPeriod,
+    ),
+]
+
+
 class LineItem(BaseModel):
     description: str
     quantity: Decimal
@@ -164,7 +282,13 @@ class Invoice(BaseModel):
     issue_date: date
     customer: str | Party  # str → key into the customer registry
     items: list[LineItem] = Field(min_length=1)
-    supply: str = ""
+    supply: Supply = Field(
+        description=(
+            "When the supply was made — a day (2026-07-15), a calendar month "
+            "(2026-07), or a period ({from: 2026-07-01, to: 2026-09-30}). Printed "
+            "on the invoice and carried in the QR-bill (Swico S1 /31/)."
+        ),
+    )
     locale: str = "de_CH"  # CLDR locale for labels + number/date formatting
     vat: VatBlock = Field(default_factory=VatBlock)
     # The payment reference. Unset is the normal case: quints derives it from

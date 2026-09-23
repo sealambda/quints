@@ -85,7 +85,7 @@ def build_context(
         },
         "invoice": {
             "number": inv.number,
-            "supply": inv.supply,
+            "supply": inv.supply.text(inv.locale),
             "issue_date": _fmt_date(inv.issue_date, inv.locale),
         },
         # The customer's own reference, then whatever else their side demands —

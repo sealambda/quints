@@ -18,7 +18,7 @@ def build_draft(inv: Invoice, totals: Totals, cfg: config.Config | None = None) 
     customer = inv.resolved_customer
     ccy = inv.currency
     income = cfg.income_export if inv.kind == "export" else cfg.income_domestic
-    narration = f"{inv.supply} invoiced".strip() if inv.supply else f"Invoice {inv.number}"
+    narration = f"{inv.supply.text(inv.locale)} invoiced"
     doc = document_path(inv, income)  # same name the rendered PDF is filed under
 
     legs: list[tuple[str, str]] = [(income, f"{-totals.subtotal:>10.2f} {ccy}")]
