@@ -11,6 +11,12 @@ Agent SDK. The division of labour is strict:
 Numbers you file come from quints, not from the model. An agent that invents
 a VAT figure is a bug; the playbook tells it to compute instead.
 
+The same goes for rules. Every page of these docs opens with an *Applies if*
+block (legal form, VAT status, method), gives the steps, and footnotes each
+legal claim to its source: the article, the ESTV publication, the standard.
+An agent can check that a rule applies to the entity in front of it, and
+show a human where it came from.
+
 ## AGENTS.md
 
 `quints init` scaffolds an `AGENTS.md` into every project: the layout, the
@@ -20,6 +26,12 @@ machine-readable surfaces. A one-line `CLAUDE.md` (`@AGENTS.md`) sits next
 to it, so a Claude Code session loads the playbook automatically — other
 agents find `AGENTS.md` by convention. The fenced commands in the generated
 file run in CI against the example project, like every page of these docs.
+
+It opens with the entity's **VAT status**: whether the books are
+registered, under which method, how often they file, and that every change
+to that goes into `quints.toml` before the period it affects. An agent that
+books a purchase needs to know this first, because it decides whether there
+is a VAT leg at all.
 
 The statement loop the playbook describes:
 
@@ -37,7 +49,8 @@ and a wrong edit is a revert, not an archaeology dig. Always.
 Every reporting command takes `--json`:
 
 ```bash
-quints vat report -q 2026-Q3 --json
+quints vat liability --at 2026-12-31 --json
+quints vat report -p 2026-Q3 --json
 quints vat status --json
 quints report bilanz --at 2026-12-31 --json
 quints receivables --json

@@ -11,6 +11,11 @@ a QR-bill banks reject. quints picks the Swiss-native pair whenever your bank
 account can carry it, and the ISO one otherwise — and lets you say so
 explicitly when you want the other.
 
+!!! abstract "Applies if"
+    - **Legal form and VAT status:** any. References don't depend on either.
+    - **Invoices:** Swiss QR-bills in CHF or EUR, and export invoices
+      (SEPA/SWIFT). The choice is per bank account in `invoicing/issuer.yaml`.
+
 ## The three reference types
 
 The Swiss QR-bill defines three, in the `Tp` element of the QR code:[^ig]

@@ -1,7 +1,18 @@
 # Legal forms
 
-`quints init` supports the three legal-form families the official Swiss KMU
-Kontenrahmen (veb.ch) defines equity variants for:
+Pick the legal form when you scaffold the books. It decides the account
+namespace and the equity block. The rest of the chart (VAT, receivables,
+income, expenses) is the same for every form.
+
+!!! abstract "Applies if"
+    - **Legal form:** an Einzelunternehmen (sole proprietorship, freelancer),
+      a GmbH or an AG.[^forms] These are the three families the Swiss KMU
+      Kontenrahmen prints an equity variant for.[^kmu]
+    - **VAT status:** any. The legal form and the VAT registration are
+      independent: an Einzelfirma can be registered, and a GmbH can be below
+      the threshold.
+    - **Not covered:** Kollektiv- and Kommanditgesellschaft (per-partner
+      capital blocks), Genossenschaft, Verein, Stiftung.
 
 | `--legal-form` | Entity | Account namespace |
 |---|---|---|
@@ -9,8 +20,7 @@ Kontenrahmen (veb.ch) defines equity variants for:
 | `gmbh` | GmbH | `:CH:GmbH:` |
 | `ag` | AG | `:CH:AG:` |
 
-Kollektiv- and Kommanditgesellschaften (per-partner capital blocks) are not
-supported yet — `quints init` rejects them instead of mis-scaffolding.
+`quints init` rejects the other forms instead of scaffolding them wrongly.
 
 ## What changes: Klasse 28 (equity)
 
@@ -28,9 +38,10 @@ scaffolds the official variant:
       kmu: "2850"  ; Private account
     ```
 
-    No share capital, no statutory reserves. Private withdrawals go through
-    2850 — your "salary" is legally not an expense; profit is your
-    compensation.
+    No share capital and no statutory reserves. Private withdrawals go
+    through 2850. The owner is not an employee of their own business, so
+    what you take out is not a salary expense: the profit is your
+    income.[^owner]
 
 === "GmbH / AG"
 
@@ -40,8 +51,8 @@ scaffolds the official variant:
     ```
 
     2800 renders as *Stammkapital* (GmbH) or *Aktienkapital* (AG) on German
-    statements. Owner-managers are employees — their salary is a Klasse-5
-    expense, unlike an Einzelfirma.
+    statements. An owner-manager is employed by the company, so their salary
+    is a Klasse-5 personnel expense, unlike in an Einzelfirma.
 
 Everything else — VAT accounts, receivables, income and expense classes — is
 the same chart with a different namespace.
@@ -61,3 +72,7 @@ the same chart with a different namespace.
 There's no migration command. Rename the namespace in `accounts.bean`,
 `books/*.bean`, and `quints.toml` together, and swap the Klasse-28 block for
 the target form's variant. `quints check` tells you when you're done.
+
+[^forms]: GmbH: Art. 772 ff. OR; AG: Art. 620 ff. OR; Kollektiv- and Kommanditgesellschaft: Art. 552 ff. and 594 ff. OR. An Einzelunternehmen with at least CHF 100'000 turnover must be entered in the commercial register (Art. 931 Abs. 1 OR). [SR 220](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_931).
+[^kmu]: The Schweizer Kontenrahmen KMU, edition 2023, published by [SwissAccounting (formerly veb.ch)](https://swissaccounting.org/kontenrahmen). Klasse 28 is the equity class, with one variant per legal-form family.
+[^owner]: The profit of an Einzelunternehmen is the owner's income from self-employment, taxed as such: Art. 18 Abs. 1 DBG, [SR 642.11](https://www.fedlex.admin.ch/eli/cc/1991/1184_1184_1184/de#art_18).

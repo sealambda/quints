@@ -1,5 +1,21 @@
 # Invoicing
 
+Write the invoice as one YAML file, render it, and paste the booking it
+prints. quints produces the QR-bill PDF, checks it against the ledger, and
+later matches the payment to it.
+
+!!! abstract "Applies if"
+    - **Legal form:** Einzelfirma, GmbH or AG. Same steps for all three.
+    - **VAT status:** registered or not. quints reads it from `quints.toml`
+      for the invoice's issue date.
+        - *Registered:* the domestic invoice charges VAT.
+        - *Not registered:* it charges and mentions none — see
+          [below](#not-vat-registered).
+    - **Invoices:** domestic Swiss QR-bills in CHF or EUR, and export
+      invoices (SEPA/SWIFT, EU reverse charge).
+    - **Not covered:** e-invoicing formats (ZUGFeRD, Peppol), credit notes as
+      separate documents, instalment plans.
+
 ## Render a QR-bill
 
 ```bash
@@ -68,11 +84,11 @@ also goes into the billing information as Swico `/31/` (see
 tax in the right VAT period without anyone retyping it.
 
 The law asks for this date. A Swiss invoice has to state the date or period
-of the supply whenever it differs from the invoice date (Art. 26 Abs. 2 lit. c
-MWSTG). An EU invoice has to state the date the supply was made or completed,
-under the same condition (Art. 226(7) VAT Directive). An invoice that goes out
-on the day of the supply could skip it, but quints asks for it every time. A
-stated date is never wrong, and the payer's VAT booking relies on it.
+of the supply,[^supply-ch] and an EU invoice has to state the date the supply
+was made or completed if it differs from the invoice date.[^supply-eu] An
+invoice that goes out on the day of the supply could skip it, but quints asks
+for it every time. A stated date is never wrong, and the payer's VAT booking
+relies on it.
 
 Free text is refused. `supply: Juli 2026` fails at load, and the error names
 the value to write instead (`supply: 2026-07`), so older invoice files are a
@@ -224,7 +240,7 @@ as `customer_reference:` metadata, so the books can be searched by the number
 the customer quotes.
 
 On a QR-bill it additionally travels in the structured *billing information*
-element, in Swico's S1 syntax:
+element, in Swico's S1 syntax:[^s1]
 
 ```text
 //S1/10/INV2026014/11/260702/20/PO-2026-118/30/267359056/31/260701260731/32/8.1/40/0:30
@@ -263,18 +279,45 @@ installed variable font can never change how the same invoice renders
 elsewhere. The full token list (ink, subtle, rule, panel, display weight and
 stretch) is in the [issuer schema](https://sealambda.github.io/quints/schema/issuer.schema.json).
 
+## Not VAT-registered
+
+A business that isn't registered must not show VAT on its invoices. If it
+does, it owes the VAT it showed.[^art27] quints takes the status from
+`quints.toml` for the invoice's **issue date**: `vat_registered = false`, or
+a date before `vat_registered_since` or after `vat_registered_until`. For such
+an invoice, quints leaves out:
+
+- the VAT row: the total is the net amount;
+- the Swiss export note on an export invoice;
+- the VAT number (`/30/`) and rate (`/32/`) in the QR-bill's billing
+  information;
+- the OutputVAT leg in the ledger draft.
+
+The issuer's `vat_id` has to match:
+
+- **Registered:** the VAT number is required on every invoice, e.g.
+  `CHE-123.456.789 MWST`.[^vat-id]
+- **Not registered:** leave `vat_id` out, or give the bare UID without the
+  `MWST`/`TVA`/`IVA` suffix. quints refuses to render an invoice from an
+  unregistered issuer whose `vat_id` reads as a VAT number.
+
+The day registration starts, the next invoice charges VAT, with no change to
+the invoice files. Invoices dated before that day keep rendering without VAT,
+so a re-render reproduces what was sent.
+
 ## Foreign invoices
 
 ```bash
 quints invoice invoicing/globex-2026-08.yaml
 ```
 
-An export invoice (`kind: export`) renders without a QR part — it shows the
+An export invoice (`kind: export`) renders without a QR part. It shows the
 full SEPA/international payment instruction instead (beneficiary, IBAN,
-BIC/SWIFT, bank, reference) — and defaults to the EU B2B reverse-charge note,
-which requires the customer's VAT number in the registry. Set
+BIC/SWIFT, bank, reference) and the Swiss note that the place of supply is
+abroad.[^place] It defaults to the EU B2B reverse-charge note, which requires
+the customer's VAT number in the registry.[^reverse] Set
 `reverse_charge: false` for customers outside a reverse-charge regime (e.g.
-US). The currency's account needs both a regular `iban` (a QR-IBAN can't
+the US). The currency's account needs both a regular `iban` (a QR-IBAN can't
 receive an ordinary credit transfer) and a `bic`.
 
 ![The generated export invoice PDF — no QR part, SEPA IBAN and reverse-charge note instead](../assets/invoice-export.png){ width="480" }
@@ -316,3 +359,20 @@ consolidated total converts everything at the latest rate in your price file
 `quints prices sync` fixes that.
 
 ![quints receivables lists open invoices aged by due date](../assets/receivables.gif)
+
+## What quints doesn't do here
+
+- **Send the invoice.** quints writes the PDF; mailing it is yours.
+- **E-invoicing formats** (ZUGFeRD/Factur-X, Peppol, EDIFACT).
+- **Several VAT rates on one invoice.** The rate is per invoice (`vat.rate`),
+  not per line.
+- **Derive a BIC from an IBAN.** Ask the bank. A guessed BIC is worse than
+  none.
+
+[^supply-ch]: Art. 26 Abs. 2 Bst. c MWSTG, [SR 641.20](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_26).
+[^supply-eu]: Art. 226 point (7) of the VAT Directive 2006/112/EC: "the date on which the supply … was made or completed … in so far as that date can be determined and differs from the date of issue". [EUR-Lex](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02006L0112-20250414).
+[^art27]: Art. 27 Abs. 1 and 2 MWSTG: "Wer nicht im Register der steuerpflichtigen Personen eingetragen ist …, darf in Rechnungen nicht auf die Steuer hinweisen"; who shows it anyway "schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
+[^vat-id]: Art. 26 Abs. 2 Bst. a MWSTG: the invoice names the issuer "sowie die Nummer, unter der er oder sie eingetragen ist". The `MWST` suffix format is the one in [MWST-Info 16, Ziff. 2.2](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/cipherDisplay.xhtml?publicationId=1002536&componentId=1002626).
+[^place]: Art. 8 Abs. 1 MWSTG (place of supply of services: where the recipient has its seat), [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_8).
+[^reverse]: Art. 44 and 196 of the VAT Directive (place of supply and reverse charge for B2B services), Art. 226 points (4) and (11a) (the customer's VAT number and the "Reverse charge" mention). [EUR-Lex](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02006L0112-20250414).
+[^s1]: Swico, [*Syntaxdefinition der Rechnungsinformationen (S1) bei der QR-Rechnung*, Version 1.2, 23.11.2018](https://www.swico.ch/media/filer_public/20/76/2076a19a-a017-438a-bc9a-73b1a5980d00/v2_qr-bill-s1-syntax-de.pdf). SIX has taken over the definition and reproduces it in Anhang D of the [Swiss Implementation Guidelines QR-bill 2.4](https://www.six-group.com/dam/download/banking-services/standardization/qr-bill/ig-qr-bill-v2.4-de.pdf).

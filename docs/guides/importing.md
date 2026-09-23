@@ -1,8 +1,20 @@
 # Import statements
 
-Importers never write to your books. Drafts land in `staging/` (gitignored);
-you review, complete, move to `books/<year>.bean`, delete the draft. Nothing
-reaches the ledger unreviewed.
+Importers never write to your books. The loop:
+
+1. **Import:** drafts land in `staging/` (gitignored).
+2. **Review and complete** each draft.
+3. **Move** it to `books/<year>.bean`.
+4. **Delete** the draft.
+
+Nothing reaches the ledger unreviewed.
+
+!!! abstract "Applies if"
+    - **Legal form:** Einzelfirma, GmbH or AG. Same steps for all three.
+    - **Sources:** UBS (MT940), Yapeal (CSV), Wise and Stripe (API or JSON
+      export).
+    - **VAT status:** any. It only changes how a draft is completed —
+      [below](#complete-a-draft).
 
 ## UBS (MT940)
 
@@ -43,6 +55,34 @@ drafted against InputVAT.
 Imports are idempotent — each transaction carries its source id
 (`mt940_ref:`, `wise_id:`, `stripe_id:`), so re-importing a statement never
 duplicates a booking.
+
+## Complete a draft
+
+A `!` draft knows the cash leg only. Add the counter leg, link the source
+document (`document:`), flip `!` to `*`. The VAT legs depend on your status
+on the transaction date:
+
+=== "Not VAT-registered"
+
+    Book gross: no InputVAT, no OutputVAT. A foreign service is a plain
+    expense. Bezugsteuer only starts once such purchases pass CHF 10'000 in a
+    calendar year, and then you have to register for it.[^bezug]
+
+=== "Effective method"
+
+    Split a purchase with Swiss VAT into net + InputVAT, and book a sale's
+    VAT to OutputVAT. For a foreign service, book the Bezugsteuer pair.
+    `quints vat convert … --bezugsteuer` prints it in CHF at the right rate.
+
+=== "Saldosteuersatz"
+
+    Book purchases gross: no InputVAT, ever. The Saldosteuersatz already
+    accounts for input tax. Sales still carry the statutory VAT to
+    OutputVAT. A foreign service still owes Bezugsteuer, as a cost:
+    `quints vat convert … --bezugsteuer` prints the pair.
+
+`quints vat report` flags a VAT leg that doesn't fit the method in force on
+that date.
 
 ## Payments that quote an invoice
 
@@ -131,3 +171,15 @@ original currency plus a consolidated total; `--at` reports as of a date,
 Drop source PDFs into `inbox/` named `YYYY-MM-DD.payee.narrative.pdf`; once
 booked, file them under `documents/` mirroring the account path, and link
 them with `document:` metadata on the transaction.
+
+## What quints doesn't do here
+
+- **Book a draft for you.** The counter leg, the VAT decision and the
+  document are the review step. An AI agent can do it; quints then checks
+  the result ([Working with AI agents](../reference/ai-agents.md)).
+- **Fetch Stripe's own fee invoices.** Stripe has no API for them. The
+  import says which month to download by hand.
+- **OCR a PDF.** Documents are matched by filename and metadata, not by
+  reading their content.
+
+[^bezug]: Art. 45 Abs. 2 Bst. b MWSTG, [SR 641.20](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_45).

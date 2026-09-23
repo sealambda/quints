@@ -34,6 +34,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from quints import config, init
 from quints.cli import app
 
 runner = CliRunner()
@@ -46,7 +47,9 @@ DOC_PAGES = sorted(p.relative_to(REPO) for p in (REPO / "docs").rglob("*.md"))
 AGENTS_MD = EXAMPLES.relative_to(REPO) / "AGENTS.md"
 PAGES = [Path("README.md"), AGENTS_MD, *DOC_PAGES]
 
-_FENCE = re.compile(r"^```(\w*)")
+# Indented fences count: content tabs (`=== "GmbH"`) and admonitions nest
+# their code blocks four spaces deep, and those commands must run too.
+_FENCE = re.compile(r"^\s*```(\w*)")
 _NO_TEST = re.compile(r"<!--.*no-test.*-->")
 _PLACEHOLDER = re.compile(r"<[^>]+>")
 
@@ -69,7 +72,7 @@ def _commands(text: str) -> list[_Command]:
         if fence and lang is None:
             lang = fence.group(1)
             skip_block = bool(_NO_TEST.search(prev))
-        elif line.startswith("```"):
+        elif line.lstrip().startswith("```"):
             lang = None
         elif lang in ("bash", "console") and not skip_block:
             cmd = line.strip()
@@ -135,3 +138,29 @@ def test_hosted_schemas_are_in_sync() -> None:
         assert json.loads(path.read_text()) == mdl.model_json_schema(), (
             f"docs/schema/{name}.schema.json is stale — run `make docs`"
         )
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [
+        {"legal_form": "einzelfirma", "vat_registered": False},
+        {"legal_form": "ag", "vat_method": "saldo", "saldo_rates": ["6.2"]},
+    ],
+    ids=["not-registered", "saldo"],
+)
+def test_agents_md_commands_run_for_every_vat_situation(
+    answers: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The example project is one VAT situation; the playbook varies with it.
+    proj = tmp_path / "books"
+    files = init.plan(init.answers_from_mapping({**answers, "include_samples": True}))
+    init.write(proj, files)
+    monkeypatch.chdir(proj)
+    try:
+        for cmd in _commands((proj / "AGENTS.md").read_text()):
+            if cmd.argv[0] == "cd":
+                continue
+            result = runner.invoke(app, cmd.argv[1:])
+            assert result.exit_code == 0, f"AGENTS.md: `{cmd.line}`:\n{result.output}"
+    finally:
+        config.set_path(None)
