@@ -156,7 +156,7 @@ def test_unsettled_vat_periods_fail(tmp_path: Path) -> None:
     item = _item(tmp_path, _CLEAN, "vat", config.Config(vat_registered_since=Date(2026, 1, 1)))
     assert item.status == closing.FAIL
     assert item.data["unsettled"] == ["VAT-2026-Q1", "VAT-2026-Q2", "VAT-2026-Q3"]
-    assert "quints vat settle -q 2026-Q1" in item.detail
+    assert "quints vat settle -p 2026-Q1" in item.detail
 
 
 def test_filed_but_unpaid_vat_only_warns(tmp_path: Path) -> None:
@@ -169,8 +169,46 @@ def test_filed_but_unpaid_vat_only_warns(tmp_path: Path) -> None:
 
 
 def test_not_vat_registered_passes(tmp_path: Path) -> None:
+    item = _item(tmp_path, _CLEAN, "vat", config.Config(vat_registered=False))
+    assert item.status == closing.PASS and "Not VAT-registered" in item.detail
+
+
+def test_registered_without_a_start_date_owes_every_quarter(tmp_path: Path) -> None:
+    # No vat_registered_since: liable for as long as the books go back.
     item = _item(tmp_path, _CLEAN, "vat", config.Config())
-    assert item.status == closing.PASS and "Not VAT registered" in item.detail
+    assert item.data["periods"] == [f"VAT-2026-Q{q}" for q in range(1, 5)]
+
+
+def test_the_period_grid_follows_the_filing_period(tmp_path: Path) -> None:
+    saldo = (config.SaldoRate(Decimal("0.062")),)
+    half = config.Config(vat_method="saldo", saldo=saldo)
+    assert closing.vat_periods(2026, half) == ["VAT-2026-H1", "VAT-2026-H2"]
+    annual = config.Config(vat_period="year")
+    assert closing.vat_periods(2026, annual) == ["VAT-2026"]
+    # Registered in May: the first half-year is a (short) period too.
+    late = config.replace(half, vat_registered_since=Date(2026, 5, 4))
+    assert closing.vat_periods(2026, late) == ["VAT-2026-H1", "VAT-2026-H2"]
+    autumn = config.replace(half, vat_registered_since=Date(2026, 9, 1))
+    assert closing.vat_periods(2026, autumn) == ["VAT-2026-H2"]
+
+
+def test_a_switch_changes_the_grid_from_its_year(tmp_path: Path) -> None:
+    cfg = config.Config(
+        vat_registered_since=Date(2023, 1, 1),
+        vat_changes=(
+            config.VatChange(
+                Date(2026, 1, 1), method="saldo", saldo=(config.SaldoRate(Decimal("0.062")),)
+            ),
+        ),
+    )
+    assert closing.vat_periods(2025, cfg) == [f"VAT-2025-Q{q}" for q in range(1, 5)]
+    assert closing.vat_periods(2026, cfg) == ["VAT-2026-H1", "VAT-2026-H2"]
+
+
+def test_deregistration_ends_the_grid(tmp_path: Path) -> None:
+    cfg = config.Config(vat_registered_until=Date(2026, 6, 30))
+    assert closing.vat_periods(2026, cfg) == ["VAT-2026-Q1", "VAT-2026-Q2"]
+    assert closing.vat_periods(2027, cfg) == []
 
 
 def test_flagged_transactions_fail(tmp_path: Path) -> None:
@@ -485,25 +523,37 @@ def test_merkblatt_table_matches_the_estv_normalsaetze() -> None:
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 
+def _toml(tmp_path: Path) -> list[str]:
+    """`--config` for the CLI tests: registered from Q4, like `_CFG`."""
+    path = tmp_path / "quints.toml"
+    path.write_text("[entity]\nvat_registered_since = 2026-10-01\n")
+    return ["--config", str(path)]
+
+
 def test_cli_close_check_reports_and_gates(tmp_path: Path) -> None:
     main = _write(tmp_path, _CLEAN.replace(_FX, ""))
-    result = runner.invoke(app, ["close", "check", "--year", "2026", "-f", str(main)])
+    cfg = _toml(tmp_path)
+    result = runner.invoke(app, [*cfg, "close", "check", "--year", "2026", "-f", str(main)])
     assert result.exit_code == 0, result.output  # a checklist reports; it does not fail
     assert "Year-end close" in result.output and "FX revaluation booked" in result.output
 
-    strict = runner.invoke(app, ["close", "check", "--year", "2026", "--strict", "-f", str(main)])
+    strict = runner.invoke(
+        app, [*cfg, "close", "check", "--year", "2026", "--strict", "-f", str(main)]
+    )
     assert strict.exit_code == 1
 
     clean = _write(tmp_path / "ok", _CLEAN) if (tmp_path / "ok").mkdir() is None else main
     strict_ok = runner.invoke(
-        app, ["close", "check", "--year", "2026", "--strict", "-f", str(clean)]
+        app, [*cfg, "close", "check", "--year", "2026", "--strict", "-f", str(clean)]
     )
     assert strict_ok.exit_code == 0, strict_ok.output
 
 
 def test_cli_close_check_json(tmp_path: Path) -> None:
     main = _write(tmp_path, _CLEAN.replace(_DEPRECIATION, ""))
-    result = runner.invoke(app, ["close", "check", "--year", "2026", "--json", "-f", str(main)])
+    result = runner.invoke(
+        app, [*_toml(tmp_path), "close", "check", "--year", "2026", "--json", "-f", str(main)]
+    )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["year"] == 2026 and payload["at"] == "2026-12-31"

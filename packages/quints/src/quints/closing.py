@@ -548,22 +548,41 @@ def _item_ledger(errors: Sequence[object]) -> CheckItem:
     )
 
 
+_PERIODS_IN_YEAR = {"quarter": ("Q1", "Q2", "Q3", "Q4"), "half-year": ("H1", "H2"), "year": ("",)}
+
+
+def vat_periods(year: int, cfg: config.Config) -> list[str]:
+    """The ``VAT-<period>`` links a year's settlements must carry.
+
+    One per Abrechnungsperiode the entity was liable in: the grid is the
+    filing period in force that year (a change always starts on 1 January,
+    so a year has one), clipped to the registration.
+    """
+    links: list[str] = []
+    for phase in cfg.vat_phases:
+        for suffix in _PERIODS_IN_YEAR[phase.period]:
+            spec = f"{year}-{suffix}" if suffix else str(year)
+            start, end = (Date.fromisoformat(d) for d in mwst.period_range(spec))
+            if (
+                phase.covers(start)
+                or phase.covers(end)
+                or (phase.start is not None and start <= phase.start <= end)
+            ):
+                links.append(f"VAT-{mwst.period_label(spec)}")
+    return links
+
+
 def _item_vat(
     ledger_path: Path,
     entries: data.Directives,
     year: int,
     cfg: config.Config,
 ) -> CheckItem:
-    since = cfg.vat_registered_since
-    if since is None:
-        return CheckItem("vat", PASS, "Not VAT registered — nothing to settle.")
-    periods: list[str] = []
-    for quarter in range(1, 5):
-        _start, end = mwst.quarter_range(f"{year}-Q{quarter}")
-        if Date.fromisoformat(end) >= since:
-            periods.append(f"VAT-{year}-Q{quarter}")
+    periods = vat_periods(year, cfg)
+    if not cfg.vat_registered:
+        return CheckItem("vat", PASS, "Not VAT-registered — nothing to settle.")
     if not periods:
-        return CheckItem("vat", PASS, f"VAT liability starts {since} — no period in {year}.")
+        return CheckItem("vat", PASS, f"Not VAT-registered in {year} — no period to settle.")
 
     settled: set[str] = set()
     for e in entries:
@@ -587,7 +606,7 @@ def _item_vat(
             "vat",
             FAIL,
             f"{len(missing)} VAT period(s) not settled: {', '.join(missing)} — "
-            f"`quints vat settle -q {missing[0].removeprefix('VAT-')}`.",
+            f"`quints vat settle -p {missing[0].removeprefix('VAT-')}`.",
             payload,
         )
     if unpaid:

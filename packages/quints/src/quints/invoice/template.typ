@@ -60,8 +60,8 @@
     #set text(size: 7.5pt, fill: subtle)
     #set par(leading: 0.55em)
     #text(fill: ink, weight: "medium")[#d.issuer.name] \
-    #lines(d.issuer.address) \
-    #d.issuer.vat_id
+    #lines(d.issuer.address)
+    #if d.issuer.vat_id != none [ \ #d.issuer.vat_id ]
     #if d.issuer.email != none [ \ #link("mailto:" + d.issuer.email)[#d.issuer.email] ]
     #if d.issuer.phone != none [ \ #d.issuer.phone ]
   ],
@@ -136,7 +136,7 @@
   #grid(
     columns: (1fr, auto), column-gutter: 6mm, row-gutter: 7pt,
     ..row(L.subtotal, d.totals.subtotal),
-    ..(if not d.totals.export {
+    ..(if not d.totals.export and d.totals.vat_registered {
       row(L.vat + " " + d.totals.vat_rate + "%", d.totals.vat_amount)
     } else { () }),
     ..(if d.totals.show_rounding { row(L.rounding, d.totals.rounding) } else { () }),
@@ -157,15 +157,15 @@
 ])
 
 // ── Export legal notes ────────────────────────────────────────────────
-#if d.totals.export {
+#if d.totals.export and (d.totals.vat_registered or d.reverse_charge) {
   v(6mm)
   block(
     fill: panel, width: 100%,
     inset: (left: 9pt, right: 9pt, y: 8pt), stroke: (left: 1.5pt + accent),
   )[
     #set text(size: 8.5pt)
-    #L.export_note
-    #if d.reverse_charge [ \ #text(fill: subtle)[#L.reverse_charge] ]
+    #if d.totals.vat_registered [ #L.export_note ]
+    #if d.reverse_charge [ #if d.totals.vat_registered [ \ ] #text(fill: subtle)[#L.reverse_charge] ]
   ]
 }
 

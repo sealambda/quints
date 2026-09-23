@@ -17,9 +17,12 @@ fall back to :func:`get`, the process-wide config the CLI resolves once.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import date as Date
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
+from itertools import pairwise
 from pathlib import Path
 
 if sys.version_info >= (3, 11):
@@ -47,9 +50,34 @@ LEGAL_FORMS: dict[str, str] = {
 # VAT methods and their default filing period. Under the Saldosteuersatz
 # method the Steuerperiode splits into two Abrechnungsperioden (Art. 35 Abs. 1
 # Bst. b MWSTG); the effective method files quarterly. Since 2025 both may file
-# annually on request (Art. 35a MWSTG) — set ``[vat] period = "year"``.
+# annually on request (Art. 35 Abs. 1bis Bst. b and Art. 35a MWSTG) — set
+# ``[vat] period = "year"``.
 VAT_METHODS: dict[str, str] = {"effective": "quarter", "saldo": "half-year"}
 PERIOD_KINDS = ("quarter", "half-year", "year")
+# Methods that exist in law but not for the entities quints scaffolds: the
+# Pauschalsteuersatz is reserved for public bodies and associations (Art. 37
+# Abs. 5 MWSTG). Named so the error says why rather than "unknown".
+_UNSUPPORTED_METHODS = {
+    "pauschal": "the Pauschalsteuersatz method is for public bodies and "
+    "associations only (Art. 37 Abs. 5 MWSTG) — quints does not support it",
+}
+
+
+# How long a method must be kept before switching to the other (Art. 37 Abs. 4
+# MWSTG): the Saldosteuersatz "während mindestens einer Steuerperiode", the
+# effective method "frühestens nach drei Jahren" — and a switch only ever at
+# the start of a tax period, the calendar year (Art. 34 Abs. 2). An entity that
+# registered mid-year without applying for the SSS keeps the effective method
+# for three *whole* tax periods (Art. 78 Abs. 3 MWSTV), which is the same date.
+MIN_TAX_PERIODS_BEFORE_SWITCH: dict[str, int] = {"effective": 3, "saldo": 1}
+
+
+def earliest_switch(method: str, since: Date) -> Date:
+    """The first 1 January an entity using ``method`` since ``since`` may leave it."""
+    if method == "saldo":
+        return Date(since.year + 1, 1, 1)  # one tax period — the one it started in
+    kept = Date(since.year + MIN_TAX_PERIODS_BEFORE_SWITCH[method], since.month, min(since.day, 28))
+    return kept if (kept.month, kept.day) == (1, 1) else Date(kept.year + 1, 1, 1)
 
 
 class ConfigError(ValueError):
@@ -76,6 +104,45 @@ class SaldoRate:
     def name(self) -> str:
         """How ``mwst: "sss=<name>"`` spells it — per cent, as the ordinance prints it."""
         return self.label or str((self.rate * 100).quantize(Decimal("0.1")))
+
+
+@dataclass(frozen=True)
+class VatChange:
+    """One ``[[vat.change]]``: from ``start`` on, the entity files differently.
+
+    Every field but ``start`` is optional and inherits from the phase before.
+    A change of method resets the filing period to the new method's default
+    unless ``period`` says otherwise, and drops the granted Saldosteuersätze
+    unless ``saldo`` lists new ones.
+    """
+
+    start: Date
+    method: str | None = None
+    period: str | None = None
+    saldo: tuple[SaldoRate, ...] | None = None
+
+
+@dataclass(frozen=True)
+class VatPhase:
+    """A stretch of the entity's VAT life under one method and filing period.
+
+    ``start`` is None for a phase that reaches back to the beginning of the
+    books (no ``vat_registered_since``). ``end`` is the last day, or None
+    while it lasts.
+    """
+
+    start: Date | None
+    end: Date | None
+    method: str
+    period: str
+    saldo: tuple[SaldoRate, ...] = ()
+
+    def covers(self, day: Date) -> bool:
+        return (self.start is None or self.start <= day) and (self.end is None or day <= self.end)
+
+
+class NotLiable(ValueError):
+    """The entity was not VAT-registered for (any of) the period asked about."""
 
 
 @dataclass(frozen=True)
@@ -138,8 +205,14 @@ class Config:
     # [entity]
     entity_name: str = "Example GmbH"
     legal_form: str = "gmbh"  # key into LEGAL_FORMS; picks the Klasse-28 equity variant
+    # VAT registration. `vat_registered = False` is a business below the
+    # threshold (or exempt, Art. 10 MWSTG): nothing to file, no VAT on its
+    # invoices. Otherwise it is liable from `vat_registered_since` (None: from
+    # the start of the books) until `vat_registered_until` (None: still is).
+    vat_registered: bool = True
     vat_method: str = "effective"  # key into VAT_METHODS: effective | saldo
     vat_registered_since: Date | None = None
+    vat_registered_until: Date | None = None
     operating_currency: str = "CHF"
     # [ledger]
     ledger_main: Path = Path("main.bean")
@@ -183,6 +256,9 @@ class Config:
     # [vat]
     vat_period: str = ""  # "" = the method's default (see VAT_METHODS)
     saldo: tuple[SaldoRate, ...] = ()  # the granted Saldosteuersätze
+    # Later switches of method or filing period, oldest first. The fields
+    # above describe the first phase; `for_period` resolves the one in force.
+    vat_changes: tuple[VatChange, ...] = ()
     # [report]
     report_language: str = "en"
     # [close] — year-end close (`quints close check` / `close depreciation`)
@@ -208,6 +284,82 @@ class Config:
             if not granted.marker:
                 return granted
         return self.saldo[0] if self.saldo else None
+
+    @property
+    def vat_phases(self) -> tuple[VatPhase, ...]:
+        """The VAT timeline: the first phase, then one per ``[[vat.change]]``."""
+        if not self.vat_registered:
+            return ()
+        phases: list[VatPhase] = []
+        start, method = self.vat_registered_since, self.vat_method
+        period = self.vat_period or VAT_METHODS.get(method, "quarter")
+        saldo = self.saldo
+        for change in self.vat_changes:
+            phases.append(VatPhase(start, change.start - timedelta(days=1), method, period, saldo))
+            switched = change.method is not None and change.method != method
+            method = change.method or method
+            if change.period is not None:
+                period = change.period
+            elif switched:
+                period = VAT_METHODS.get(method, "quarter")
+            if change.saldo is not None:
+                saldo = change.saldo
+            elif switched:
+                saldo = ()
+            start = change.start
+        phases.append(VatPhase(start, self.vat_registered_until, method, period, saldo))
+        return tuple(phases)
+
+    def phase_at(self, day: Date) -> VatPhase | None:
+        """The phase in force on ``day``, or None when not liable that day."""
+        return next((p for p in self.vat_phases if p.covers(day)), None)
+
+    def liable_on(self, day: Date) -> bool:
+        """Whether the entity is VAT-registered on ``day``."""
+        return self.phase_at(day) is not None
+
+    def for_period(self, d0: Date, d1: Date) -> tuple[Config, Date, Date]:
+        """The config one return is computed under, and the liable stretch of it.
+
+        Clamps ``d0``/``d1`` to the registration, and resolves the method,
+        period and rates of the phase in force. A return cannot span a change
+        of method (it takes effect at the start of a tax period, Art. 37
+        Abs. 4 MWSTG), so a range that does raises :class:`ValueError`.
+        """
+        if not self.vat_registered:
+            raise NotLiable(
+                f"{self.entity_name} is not VAT-registered ([entity] vat_registered = false) "
+                "— there is no return to file. `quints vat liability` checks the threshold."
+            )
+        phases = self.vat_phases
+        first, last = phases[0], phases[-1]
+        if first.start is not None and d0 < first.start:
+            d0 = first.start
+        if last.end is not None and d1 > last.end:
+            d1 = last.end
+        if d0 > d1:
+            raise NotLiable(
+                f"not VAT-registered in this period — liability runs "
+                f"{first.start or 'from the start'} to {last.end or 'today'}"
+            )
+        inside = [p for p in phases if p.covers(d0) or p.covers(d1)]
+        if len(inside) > 1:
+            raise ValueError(
+                f"{d0}..{d1} spans a VAT change on {inside[1].start} "
+                f"({inside[0].method}/{inside[0].period} → {inside[1].method}/{inside[1].period}) "
+                "— report each side separately"
+            )
+        phase = inside[0]
+        resolved = replace(
+            self,
+            vat_method=phase.method,
+            vat_period=phase.period,
+            saldo=phase.saldo,
+            vat_changes=(),
+            vat_registered_since=d0 if first.start is not None else None,
+            vat_registered_until=last.end,
+        )
+        return resolved, d0, d1
 
 
 def _rules(section: dict[str, object]) -> tuple[tuple[str, str, str], ...]:
@@ -285,8 +437,10 @@ def _from_mapping(raw: dict[str, object]) -> Config:
 
     take(entity, "name", "entity_name")
     take(entity, "legal_form", "legal_form")
+    take(entity, "vat_registered", "vat_registered")
     take(entity, "vat_method", "vat_method")
     take(entity, "vat_registered_since", "vat_registered_since")
+    take(entity, "vat_registered_until", "vat_registered_until")
     take(entity, "operating_currency", "operating_currency")
     if "main" in ledger_:
         updates["ledger_main"] = Path(str(ledger_["main"]))
@@ -332,6 +486,8 @@ def _from_mapping(raw: dict[str, object]) -> Config:
     take(vat, "period", "vat_period")
     if "saldo" in vat:
         updates["saldo"] = _saldo_rates(vat["saldo"])
+    if "change" in vat:
+        updates["vat_changes"] = _vat_changes(vat["change"])
     close = section("close")
     take(close, "depreciation_account", "depreciation_account")
     take(close, "method", "depreciation_method")
@@ -365,6 +521,35 @@ def _saldo_rates(raw: object) -> tuple[SaldoRate, ...]:
     return tuple(rates)
 
 
+def _vat_changes(raw: object) -> tuple[VatChange, ...]:
+    """Parse ``[[vat.change]]`` — each needs a ``from`` date and something that changes."""
+    example = '[[vat.change]] from = 2029-01-01, method = "saldo", saldo = [{ rate = 6.2 }]'
+    if not isinstance(raw, list):
+        raise ConfigError(f"[vat.change] must be a list of tables, e.g. {example}")
+    changes: list[VatChange] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise ConfigError(f"each [[vat.change]] entry must be a table, e.g. {example}")
+        start = entry.get("from")
+        if not isinstance(start, Date):
+            raise ConfigError(f"a [[vat.change]] entry needs a `from` date, e.g. {example}")
+        method, period = entry.get("method"), entry.get("period")
+        saldo = _saldo_rates(entry["saldo"]) if "saldo" in entry else None
+        if method is None and period is None and saldo is None:
+            raise ConfigError(
+                f"[[vat.change]] from {start} changes nothing — set method/period/saldo"
+            )
+        changes.append(
+            VatChange(
+                start=start,
+                method=str(method) if method is not None else None,
+                period=str(period) if period is not None else None,
+                saldo=saldo,
+            )
+        )
+    return tuple(changes)
+
+
 def validate(cfg: Config) -> Config:
     """Reject a quints.toml that cannot produce a correct return.
 
@@ -376,11 +561,7 @@ def validate(cfg: Config) -> Config:
     # the statutory tables, but nothing else in config needs it.
     from . import ledger
 
-    if cfg.vat_method not in VAT_METHODS:
-        raise ConfigError(
-            f"[entity] vat_method {cfg.vat_method!r} is unknown — "
-            f"supported: {', '.join(VAT_METHODS)}"
-        )
+    _check_method(cfg.vat_method, "[entity] vat_method")
     if cfg.vat_period and cfg.vat_period not in PERIOD_KINDS:
         raise ConfigError(
             f"[vat] period {cfg.vat_period!r} is unknown — supported: {', '.join(PERIOD_KINDS)}"
@@ -392,17 +573,87 @@ def validate(cfg: Config) -> Config:
         )
     if cfg.vat_method != "saldo" and cfg.saldo:
         raise ConfigError('[vat.saldo] is set but [entity] vat_method is not "saldo"')
-    for granted in cfg.saldo:
-        if not ledger.is_saldo_rate(granted.rate):
-            permitted = ", ".join(f"{r * 100:g}" for r in ledger.SALDO_RATES[0][1])
+    _check_timeline(cfg)
+    for phase in cfg.vat_phases:
+        _check_phase(phase, ledger.is_saldo_rate, ledger.SALDO_RATES[0][1])
+    _check_switches(cfg.vat_phases)
+    return cfg
+
+
+def _check_method(method: str, where: str) -> None:
+    if method in _UNSUPPORTED_METHODS:
+        raise ConfigError(f"{where}: {_UNSUPPORTED_METHODS[method]}")
+    if method not in VAT_METHODS:
+        raise ConfigError(f"{where} {method!r} is unknown — supported: {', '.join(VAT_METHODS)}")
+
+
+def _check_timeline(cfg: Config) -> None:
+    """Registration dates in order; every change on a 1 January, oldest first."""
+    since, until = cfg.vat_registered_since, cfg.vat_registered_until
+    if since and until and until < since:
+        raise ConfigError(
+            f"[entity] vat_registered_until {until} is before vat_registered_since {since}"
+        )
+    previous = since
+    for change in cfg.vat_changes:
+        where = f"[[vat.change]] from {change.start}"
+        if change.method is not None:
+            _check_method(change.method, f"{where}: method")
+        if change.period is not None and change.period not in PERIOD_KINDS:
+            raise ConfigError(
+                f"{where}: period {change.period!r} is unknown — "
+                f"supported: {', '.join(PERIOD_KINDS)}"
+            )
+        if (change.start.month, change.start.day) != (1, 1):
+            raise ConfigError(
+                f"{where}: a change of method or period takes effect at the start of a "
+                "tax period, which is the calendar year (Art. 34 Abs. 2 MWSTG) — `from` "
+                f"must be a 1 January, e.g. {change.start.year + 1}-01-01"
+            )
+        if previous is not None and change.start <= previous:
+            raise ConfigError(f"{where} must come after {previous} — list changes oldest first")
+        if until is not None and change.start > until:
+            raise ConfigError(f"{where} is after vat_registered_until {until}")
+        previous = change.start
+
+
+def _check_phase(
+    phase: VatPhase, is_saldo_rate: Callable[[Decimal], bool], permitted: tuple[Decimal, ...]
+) -> None:
+    """One phase of the timeline: its Saldosteuersätze must fit its method."""
+    where = f"the VAT phase from {phase.start}" if phase.start else "the first VAT phase"
+    if phase.method == "saldo" and not phase.saldo:
+        raise ConfigError(
+            f'{where} uses method "saldo" but lists no Saldosteuersatz — add '
+            "saldo = [{ rate = 6.2 }] with the rate the ESTV granted you"
+        )
+    if phase.method != "saldo" and phase.saldo:
+        raise ConfigError(f'{where} lists Saldosteuersätze but its method is "{phase.method}"')
+    for granted in phase.saldo:
+        if not is_saldo_rate(granted.rate):
+            rates = ", ".join(f"{r * 100:g}" for r in permitted)
             raise ConfigError(
                 f"[[vat.saldo]] rate {granted.rate * 100:g} is not a Saldosteuersatz — "
-                f"the ESTV grants one of {permitted} (SR 641.202.62)"
+                f"the ESTV grants one of {rates} (SR 641.202.62)"
             )
-    labels = [g.name for g in cfg.saldo]
+    labels = [g.name for g in phase.saldo]
     if len(set(labels)) != len(labels):
         raise ConfigError(f"[[vat.saldo]] has duplicate rates/labels: {', '.join(labels)}")
-    return cfg
+
+
+def _check_switches(phases: tuple[VatPhase, ...]) -> None:
+    """A method must be kept for a minimum time before switching (Art. 37 Abs. 4 MWSTG)."""
+    for before, after in pairwise(phases):
+        if before.method == after.method or before.start is None or after.start is None:
+            continue  # no switch, or the books don't say when the method began
+        earliest = earliest_switch(before.method, before.start)
+        if after.start < earliest:
+            raise ConfigError(
+                f"[[vat.change]] from {after.start}: the {before.method} method, in force "
+                f"since {before.start}, must be kept for "
+                f"{MIN_TAX_PERIODS_BEFORE_SWITCH[before.method]} tax period(s) before a switch "
+                f"(Art. 37 Abs. 4 MWSTG) — the earliest is {earliest}"
+            )
 
 
 def load(path: Path | None = None) -> Config:

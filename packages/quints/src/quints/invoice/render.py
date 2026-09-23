@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import tempfile
 from collections.abc import Mapping
@@ -118,6 +119,9 @@ def build_context(
             "show_rounding": totals.rounding != 0,
             "grand_total": money(totals.grand_total, inv.locale),
             "export": inv.kind == "export",
+            # Not registered: no VAT row and no Swiss VAT note — the invoice
+            # may not mention the tax at all (Art. 27 Abs. 1 MWSTG).
+            "vat_registered": totals.vat_registered,
         },
         "payment": payment,
         "notes": list(inv.notes),
@@ -167,9 +171,40 @@ def _compile(
                 raise
 
 
-def render(inv: Invoice, issuer: Issuer, out_path: Path) -> tuple[Path, Totals, str | None]:
-    """Render to `out_path`. Returns (path, totals, qr_payload|None)."""
-    totals = compute(inv)
+# The suffix that makes a Swiss UID a VAT number (MWST / TVA / IVA, and the
+# English VAT some issuers print). Only a registered issuer may carry it.
+_VAT_SUFFIX = re.compile(r"\b(MWST|TVA|IVA|VAT)\b", re.IGNORECASE)
+
+
+def check_vat_identity(issuer: Issuer, vat_registered: bool) -> None:
+    """The issuer's VAT number must match its registration.
+
+    A registered issuer has to print it (Art. 26 Abs. 2 Bst. a MWSTG); one
+    that is not may not suggest it is — an invoice that looks like it carries
+    VAT makes the tax owed (Art. 27 MWSTG).
+    """
+    if vat_registered and not issuer.vat_id:
+        raise ValueError(
+            f"{issuer.name} is VAT-registered but issuer.vat_id is empty — a Swiss invoice "
+            "must carry the VAT number, e.g. CHE-123.456.789 MWST (Art. 26 Abs. 2 Bst. a MWSTG)"
+        )
+    if not vat_registered and issuer.vat_id and _VAT_SUFFIX.search(issuer.vat_id):
+        raise ValueError(
+            f"{issuer.name} is not VAT-registered on this date, but issuer.vat_id "
+            f"{issuer.vat_id!r} reads as a VAT number — drop the suffix (keep the bare UID) "
+            "or the vat_id; an invoice may not suggest VAT that isn't owed (Art. 27 MWSTG)"
+        )
+
+
+def render(
+    inv: Invoice, issuer: Issuer, out_path: Path, vat_registered: bool = True
+) -> tuple[Path, Totals, str | None]:
+    """Render to `out_path`. Returns (path, totals, qr_payload|None).
+
+    ``vat_registered`` is the issuer's VAT status on the issue date (from
+    quints.toml): when False, no VAT is charged or mentioned."""
+    check_vat_identity(issuer, vat_registered)
+    totals = compute(inv, vat_registered)
     account = issuer.account(inv.currency)
     customer = inv.resolved_customer
 

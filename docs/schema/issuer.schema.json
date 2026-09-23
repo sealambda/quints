@@ -209,8 +209,16 @@
       "type": "array"
     },
     "vat_id": {
-      "title": "Vat Id",
-      "type": "string"
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Vat Id"
     },
     "country": {
       "default": "CH",
@@ -254,8 +262,7 @@
   },
   "required": [
     "name",
-    "address",
-    "vat_id"
+    "address"
   ],
   "title": "Issuer",
   "type": "object"

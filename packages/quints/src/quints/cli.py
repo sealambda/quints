@@ -44,6 +44,9 @@ from . import (
     ui,
 )
 from . import (
+    liability as liability_mod,
+)
+from . import (
     match as match_mod,
 )
 from . import (
@@ -278,6 +281,13 @@ def init(
         help="Legal form: gmbh, ag, or einzelfirma (sole proprietorship / freelancer).",
     ),
     lang: str | None = typer.Option(None, "--lang", "-l", help="Report language: en or de."),
+    vat_since: str | None = typer.Option(
+        None,
+        "--vat-registered-since",
+        metavar="YYYY-MM-DD|no",
+        help="The day VAT liability started, or 'no' for a business below the "
+        "CHF 100'000 threshold (Art. 10 MWSTG) — no VAT on invoices, nothing to file.",
+    ),
     vat_method: str | None = typer.Option(
         None, "--vat-method", help="effective (default) or saldo (Saldosteuersatz, Art. 37 MWSTG)."
     ),
@@ -351,9 +361,23 @@ def init(
                 "Report language (en/de)", default=answers.report_language
             ),
         )
+    # Naming a method answers the question: a VAT method implies registration.
+    if vat_since is None and vat_method is None and interactive:
+        default = answers.vat_registered_since if answers.vat_registered else None
+        vat_since = typer.prompt(
+            "VAT-registered since (YYYY-MM-DD, or 'no' if below the CHF 100'000 threshold)",
+            default=str(default) if default else "no",
+        )
+    if vat_since is not None:
+        if vat_since.strip().lower() in ("no", "none", "false"):
+            answers = replace(answers, vat_registered=False, vat_registered_since=None)
+        else:
+            answers = replace(
+                answers, vat_registered=True, vat_registered_since=_parse_date(vat_since.strip())
+            )
     if vat_method is not None:
         answers = replace(answers, vat_method=vat_method.strip().lower())
-    elif interactive:
+    elif interactive and answers.vat_registered:
         answers = replace(
             answers,
             vat_method=typer.prompt("VAT method (effective/saldo)", default=answers.vat_method)
@@ -416,7 +440,12 @@ def init(
     if result.written and not result.skipped:
         ui.console.print(
             f"\nScaffolded [b]{answers.entity_name}[/] in {directory}. "
-            "Next: [b]uv sync[/], then [b]quints check[/] and [b]quints vat report -q 2026-Q3[/]."
+            "Next: [b]uv sync[/], then [b]quints check[/] and "
+            + (
+                "[b]quints vat report -p 2026-Q3[/]."
+                if answers.vat_registered
+                else "[b]quints vat liability[/]."
+            )
         )
 
 
@@ -484,10 +513,42 @@ def check(
 
 vat_app = typer.Typer(
     no_args_is_help=True,
-    help="VAT, end to end: report a period, settle it, track what's owed, "
-    "convert foreign amounts. Swiss MWST (Form 310, effective method) today.",
+    help="VAT, end to end: check whether you must register, report a period, settle it, "
+    "track what's owed, convert foreign amounts. Swiss MWST — effective and "
+    "Saldosteuersatz methods, with registration and method changes over time.",
 )
 app.add_typer(vat_app, name="vat", rich_help_panel=PANEL_VAT)
+
+
+@vat_app.command("liability")
+def vat_liability(
+    at: str | None = typer.Option(
+        None,
+        "--at",
+        metavar="YYYY-MM-DD",
+        help="Assess as of this day (default: today). Use YYYY-12-31 for a closed year.",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    file: Path = _file_option(),
+):
+    """Must you be VAT-registered? Turnover per year against the CHF 100'000 threshold.
+
+    Counts the turnover that counts (worldwide, net of VAT, without supplies
+    exempt under Art. 21 MWSTG), converts a partial first year to a full one,
+    and says whether registration is due and by when — or, once registered,
+    whether you may deregister.
+    """
+    from datetime import datetime, timezone
+
+    _require_ledger(file)
+    on = _parse_date(at) if at else datetime.now(timezone.utc).date()
+    result = liability_mod.compute(file, on)
+    if as_json:
+        import dataclasses
+
+        _json_out(dataclasses.asdict(result))
+        return
+    liability_mod.render(result)
 
 
 @vat_app.command("report")
@@ -558,21 +619,26 @@ def vat_status(
     _require_ledger(file)
     cfg = config_mod.get()
     liabilities, unlinked, total, today = settle_mod.outstanding(file)
+    # How the entity files *today* — a planned [[vat.change]] only counts once it
+    # is in force; "none" when not registered (yet, or any more).
+    phase = cfg.phase_at(today)
+    method = phase.method if phase else "none"
+    period_kind = phase.period if phase else ""
     if as_json:
         import dataclasses
 
         _json_out(
             {
                 "today": str(today),
-                "vat_method": cfg.vat_method,
-                "period": cfg.period_kind,  # how often this entity files
+                "vat_method": method,
+                "period": period_kind,  # how often this entity files
                 "liabilities": [dataclasses.asdict(liab) for liab in liabilities],
                 "unlinked_owed": str(unlinked),
                 "total_owed": str(total),
             }
         )
         return
-    settle_mod.render_status(liabilities, unlinked, total, today, period_kind=cfg.period_kind)
+    settle_mod.render_status(liabilities, unlinked, total, today, period_kind=period_kind)
 
 
 @vat_app.command("convert")
@@ -681,13 +747,16 @@ def invoice(
     registry = m.load_customers(customers) if customers.exists() else None
     inv = m.load_invoice(data, registry)
     iss = m.load_issuer(issuer)
+    cfg = config_mod.get()
+    # quints.toml says whether the issuer was VAT-registered on the issue date;
+    # an invoice from before registration (or after it ended) carries no VAT.
+    registered = cfg.liable_on(inv.issue_date)
     if out is None:
         # File the PDF the way beancount documents are filed: under the income
         # account's folder, date-prefixed, next to the ledger's other evidence.
-        cfg = config_mod.get()
         account = cfg.income_export if inv.kind == "export" else cfg.income_domestic
         out = m.document_path(inv, account)
-    path, totals, payload = r.render(inv, iss, out)
+    path, totals, payload = r.render(inv, iss, out, vat_registered=registered)
     ref = ref_mod.payment_reference(inv, iss.account(inv.currency))
 
     qr_ok = None
@@ -701,6 +770,10 @@ def invoice(
             f"[ok]Wrote[/] {path}  ·  {inv.kind}  ·  {inv.currency} {m.money(totals.grand_total)}"
         )
         ui.console.print(f"[muted]ref {ref.kind} {ref.formatted}[/]")
+        if not registered:
+            ui.console.print(
+                f"[muted]not VAT-registered on {inv.issue_date}: no VAT charged or shown[/]"
+            )
         if payload:
             ui.console.print(
                 f"[muted]QR-bill payload: {'SPC…EPD ✓' if qr_ok else 'CHECK!'} "

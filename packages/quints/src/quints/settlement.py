@@ -74,7 +74,10 @@ def build_settlement(
     label: str | None = None,
     cfg: config.Config | None = None,
 ) -> Settlement:
-    d1 = Date.fromisoformat(report.date_to)
+    # The period ends where liability does: a final return after deregistering
+    # mid-period is settled on its last day and due 60 days from there
+    # (Art. 71 Abs. 2 MWSTG), not from the calendar period's end.
+    d1 = Date.fromisoformat(report.liable_to or report.date_to)
     label = label or f"{report.date_from}..{report.date_to}"
     link = "VAT-" + label.replace(" ", "")
     cfg = cfg or config.get()
