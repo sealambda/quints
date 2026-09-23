@@ -544,7 +544,10 @@ class Brand(BaseModel):
 class Issuer(BaseModel):
     name: str
     address: list[str] = Field(min_length=1)
-    vat_id: str
+    # The VAT number (`CHE-123.456.789 MWST`) — required on every invoice of a
+    # VAT-registered issuer (Art. 26 Abs. 2 Bst. a MWSTG). A business that is
+    # not registered leaves it out, or gives its bare UID without the suffix.
+    vat_id: str | None = None
     country: str = "CH"
     email: str | None = None
     phone: str | None = None
@@ -568,6 +571,9 @@ class Totals(BaseModel):
     unrounded: Decimal
     rounding: Decimal
     grand_total: Decimal
+    # Whether the issuer was VAT-registered on the issue date. When not, the
+    # invoice must not mention the tax at all (Art. 27 Abs. 1 MWSTG).
+    vat_registered: bool = True
 
 
 # ── loading ───────────────────────────────────────────────────────────────────
@@ -650,9 +656,11 @@ def load_invoice(path: Path, customers: CustomerRegistry | None = None) -> Invoi
 # ── computation ───────────────────────────────────────────────────────────────
 
 
-def compute(inv: Invoice) -> Totals:
+def compute(inv: Invoice, vat_registered: bool = True) -> Totals:
+    """The invoice's figures. ``vat_registered`` is the issuer's status on the
+    issue date: a business that is not registered charges no VAT."""
     subtotal = sum((it.total for it in inv.items), Decimal("0"))
-    if inv.kind == "export":
+    if inv.kind == "export" or not vat_registered:
         rate = Decimal("0")
         vat = Decimal("0")
     else:
@@ -667,4 +675,5 @@ def compute(inv: Invoice) -> Totals:
         unrounded=unrounded,
         rounding=grand - unrounded,
         grand_total=grand,
+        vat_registered=vat_registered,
     )

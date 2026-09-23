@@ -35,6 +35,27 @@ scaffold. Work in reviewable steps: `git diff` before moving drafts into
 - `invoicing/` — issuer identity (`issuer.yaml`), customer registry
   (`customers.yaml`), one YAML per issued invoice.
 
+## VAT status — read before booking
+
+These books are VAT-registered since 2026-01-01, on the **effective method**,
+filing **quarterly**:
+
+```bash
+quints vat report -p 2026-Q3
+quints vat settle -p 2026-Q3
+```
+
+The first computes the return, the second prints the entry that closes it.
+Both list the *notices* a period carries — first or last return, a switch of
+method — with what to book for it.
+
+A company's VAT situation changes over its life. Record each change in
+`quints.toml` **before** you book the period it affects: a switch of method
+or filing period is a `[[vat.change]]` from a 1 January, deregistration is
+`vat_registered_until`. quints then computes every period under the rules in
+force for it — never adjust a past period by hand. The steps:
+https://sealambda.github.io/quints/guides/vat-registration/
+
 ## Extending the chart of accounts (the part that needs judgement)
 
 Add income/expense sub-trees for this business as `open` directives in
@@ -138,7 +159,7 @@ strings:
 
 ```bash
 quints check --json
-quints vat report -q 2026-Q3 --json
+quints vat report -p 2026-Q3 --json
 quints vat status --json
 quints close check --year 2026 --json
 quints report bilanz --at 2026-12-31 --json
@@ -151,6 +172,7 @@ https://sealambda.github.io/quints/schema/ (`quints schema` writes them
 locally to `invoicing/schema/`).
 
 Never invent VAT numbers or rates — compute them with `quints vat report`.
+Whether VAT applies at all is `quints vat liability`'s call, not a guess.
 
 ## Sample data — replace before the books are real
 

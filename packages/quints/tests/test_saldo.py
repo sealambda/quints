@@ -145,6 +145,8 @@ def test_config_wants_rates_for_saldo_and_none_otherwise() -> None:
     with pytest.raises(config.ConfigError, match="not"):
         config.validate(config.Config(saldo=(config.SaldoRate(Decimal("0.062")),)))
     with pytest.raises(config.ConfigError, match="unknown"):
+        config.validate(config.Config(vat_method="flat"))
+    with pytest.raises(config.ConfigError, match="public bodies"):
         config.validate(config.Config(vat_method="pauschal"))
 
 

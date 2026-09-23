@@ -87,6 +87,7 @@ from dataclasses import dataclass, field
 from datetime import date as Date
 from datetime import timedelta
 from decimal import Decimal
+from itertools import pairwise
 from pathlib import Path
 
 from beancount.core import convert as bc_convert
@@ -183,7 +184,7 @@ def period_range(period: str) -> tuple[str, str]:
 
     Quarters are the effective method's Abrechnungsperioden, half-years the
     Saldosteuersatz method's (Art. 35 MWSTG); a bare year is the annual
-    settlement (Art. 35a MWSTG, on request since 2025).
+    settlement (Art. 35 Abs. 1bis Bst. b MWSTG, on request since 2025).
     """
     m = _PERIOD_SPEC.match(period.upper().replace(" ", ""))
     if not m:
@@ -316,6 +317,12 @@ class MwstReport:
     z910: Decimal = Decimal("0")
     vat_method: str = "effective"
     form: str = ""
+    # The stretch of the period the entity was liable for — the requested
+    # range clamped to its registration — and what that stretch implies
+    # (first return, last return, a method switch next door).
+    liable_from: str = ""
+    liable_to: str = ""
+    notices: list[str] = field(default_factory=list)
     # The period's OutputVAT account movement — what the settlement flushes.
     # Under SSS this is the statutory VAT invoiced, not the SSS owed.
     output_vat: Decimal = Decimal("0")
@@ -344,7 +351,7 @@ class MwstReport:
 # ── compute ───────────────────────────────────────────────────────────────────
 
 
-def _to_chf(units: Amount, date: Date, price_map: bc_prices.PriceMap) -> Decimal:
+def to_chf(units: Amount, date: Date, price_map: bc_prices.PriceMap) -> Decimal:
     """Value an amount in CHF at ``date`` (prior-date fallback via price map)."""
     if units.number is None:  # incomplete amount — cannot occur in a loaded ledger
         return Decimal("0")
@@ -380,7 +387,7 @@ def _txn_tokens(e: data.Transaction) -> frozenset[str]:
     return _parse_tokens((e.meta or {}).get(META_KEY))
 
 
-def _tokens(p: data.Posting, e: data.Transaction) -> frozenset[str]:
+def posting_tokens(p: data.Posting, e: data.Transaction) -> frozenset[str]:
     """The ``mwst:`` vocabulary on a posting, falling back to its transaction."""
     raw = (p.meta or {}).get(META_KEY)
     return _parse_tokens(raw) if raw is not None else _txn_tokens(e)
@@ -438,7 +445,7 @@ def _rate_class(account: str, tokens: frozenset[str], cfg: config.Config) -> str
     return "standard"
 
 
-def _turnover_bucket(
+def turnover_bucket(
     account: str, code: str | None, tokens: frozenset[str], cfg: config.Config
 ) -> str | None:
     """Which section-I line an income posting belongs to (None = not turnover)."""
@@ -606,13 +613,11 @@ class _TxnState:
 def compute(
     ledger_path: Path, date_from: str, date_to: str, cfg: config.Config | None = None
 ) -> MwstReport:
-    cfg = cfg or config.get()
-    d0, d1 = Date.fromisoformat(date_from), Date.fromisoformat(date_to)
-    # Pre-registration activity is not part of any VAT period (the transition
-    # entry reversed its input VAT); clamping keeps calendar-quarter reports
-    # reproducing the filed returns for the registration quarter.
-    if cfg.vat_registered_since and d0 < cfg.vat_registered_since:
-        d0 = cfg.vat_registered_since
+    base = cfg or config.get()
+    # Activity outside the registration is not part of any VAT period, so the
+    # range is clamped to it; and the method, period and rates are the ones in
+    # force for it (a return never spans a change — `for_period` refuses).
+    cfg, d0, d1 = base.for_period(Date.fromisoformat(date_from), Date.fromisoformat(date_to))
     entries, _errors = ledger.load_entries(ledger_path)
     price_map = bc_prices.build_price_map(entries)
     codes = kmu.kmu_map(entries, cfg.entity_marker)
@@ -624,7 +629,78 @@ def compute(
         if _is_settlement(e, cfg):
             continue
         _transaction(e, cfg, codes, price_map, t, detail)
-    return _assemble(date_from, date_to, d0, d1, t, detail, cfg)
+    report = _assemble(date_from, date_to, d0, d1, t, detail, cfg)
+    report.liable_from, report.liable_to = str(d0), str(d1)
+    report.notices = lifecycle_notices(base, cfg, d0, d1)
+    return report
+
+
+def lifecycle_notices(base: config.Config, cfg: config.Config, d0: Date, d1: Date) -> list[str]:
+    """What the entity's VAT timeline asks of this particular return.
+
+    The corrections themselves need judgement — which goods and assets are
+    still on hand, at what value (the Zeitwert: a fifth written off per year
+    for movables, Art. 31 Abs. 3 / Art. 32 Abs. 2 MWSTG) — so quints names
+    them, their law and their Ziffer, and leaves the booking to the books.
+    """
+    notices: list[str] = []
+    since, until = base.vat_registered_since, base.vat_registered_until
+    effective = cfg.vat_method == "effective"
+    if since is not None and d0 == since:
+        notices.append(
+            f"First return: liability starts {since}. "
+            + (
+                "Input VAT on goods and assets still on hand that you bought for taxable use "
+                "may be recovered as Einlageentsteuerung (Art. 32 MWSTG, Art. 72-74 MWSTV) — "
+                'book it against InputVAT tagged mwst: "einlageentsteuerung" (Ziffer 410).'
+                if effective
+                else "Under the Saldosteuersatz there is no Einlageentsteuerung "
+                "(Art. 78 Abs. 5 MWSTV)."
+            )
+        )
+    if until is not None and d1 == until:
+        notices.append(
+            f"Final return: liability ends {until}; it is due within 60 days (Art. 71 Abs. 2 "
+            "MWSTG). "
+            + (
+                "Goods and assets still on hand on which input VAT was deducted are "
+                "Eigenverbrauch (Art. 31 Abs. 2 Bst. d MWSTG) — book the correction against "
+                'InputVAT tagged mwst: "vorsteuerkorrektur" (Ziffer 415).'
+                if effective
+                else "Under the Saldosteuersatz the goods still on hand are not corrected; "
+                "turnover up to the end is taxed at the granted rates (Art. 82 MWSTV)."
+            )
+        )
+    for before, after in pairwise(base.vat_phases):
+        if before.method == after.method or after.start is None:
+            continue
+        if before.end == d1:
+            notices.append(
+                f"Last return under the {before.method} method: from {after.start} you file "
+                f"under {after.method}. "
+                + (
+                    "Input VAT deducted on goods and assets still on hand is repaid in this "
+                    "return (Art. 79 Abs. 3 MWSTV) — book it against InputVAT tagged "
+                    'mwst: "vorsteuerkorrektur" (Ziffer 415).'
+                    if before.method == "effective"
+                    else "Nothing to correct here: the Einlageentsteuerung for the switch goes "
+                    "in the first effective return (Art. 81 Abs. 4 MWSTV)."
+                )
+            )
+        if after.start == d0:
+            notices.append(
+                f"First return under the {after.method} method (since {after.start}; the "
+                "switch had to be notified to the ESTV within 60 days of that date). "
+                + (
+                    "Input VAT on goods and assets still on hand may be deducted now "
+                    "(Art. 81 Abs. 4 MWSTV) — book it against InputVAT tagged "
+                    'mwst: "einlageentsteuerung" (Ziffer 410).'
+                    if after.method == "effective"
+                    else "The input-VAT correction for the switch belonged in the last "
+                    "effective return (Art. 79 Abs. 3 MWSTV)."
+                )
+            )
+    return notices
 
 
 def _transaction(
@@ -639,7 +715,9 @@ def _transaction(
     txn_tokens = _txn_tokens(e)
     # The rate vintage is a property of the whole transaction: one "old_rate"
     # anywhere in it (transaction or posting) files it under 302/312/342/382.
-    old_rate = "old_rate" in txn_tokens or any("old_rate" in _tokens(p, e) for p in e.postings)
+    old_rate = "old_rate" in txn_tokens or any(
+        "old_rate" in posting_tokens(p, e) for p in e.postings
+    )
     state = _TxnState(current=e.date >= RATE_CHANGE and not old_rate)
     unknown: set[str] = _unknown_tokens(txn_tokens, cfg)
 
@@ -648,7 +726,7 @@ def _transaction(
             continue  # incomplete posting — cannot occur in a loaded ledger
         n = p.units.number
         acct = p.account
-        tokens = _tokens(p, e)
+        tokens = posting_tokens(p, e)
         unknown |= _unknown_tokens(tokens, cfg)
 
         if acct == cfg.output_vat:
@@ -757,11 +835,11 @@ def _turnover(
 ) -> None:
     """One income posting → its section-I line, and its share of Ziffer 299."""
     acct = p.account
-    bucket = _turnover_bucket(acct, codes.get(acct), tokens, cfg)
+    bucket = turnover_bucket(acct, codes.get(acct), tokens, cfg)
     if bucket is None:
         return  # income, but not Entgelt — outside the return
     currency = p.units.currency if p.units is not None else "CHF"
-    chf = _to_chf(Amount(-n, currency), e.date, price_map)
+    chf = to_chf(Amount(-n, currency), e.date, price_map)
     line = RevenueLine(str(e.date), e.payee or "", -n, currency, chf)
 
     if bucket in FLOW_ZIFFERN:  # Nicht-Entgelte: section III, not Ziffer 200
@@ -1045,8 +1123,19 @@ def render(
         style="muted",
         justify="center",
     )
+    if report.liable_from and (report.liable_from, report.liable_to) != (
+        report.date_from,
+        report.date_to,
+    ):
+        console.print(
+            f"liable {report.liable_from} – {report.liable_to} only",
+            style="muted",
+            justify="center",
+        )
     console.print()
     console.print(_main_table(report))
+    for notice in report.notices:
+        console.print(f"[warn]![/] {notice}")
 
     if report.violations:
         console.print()

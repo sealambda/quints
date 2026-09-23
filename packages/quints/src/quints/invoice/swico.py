@@ -62,14 +62,20 @@ def billing_information(
     budget (quints sends the invoice number there)."""
     from . import vatid
 
-    uid = vatid.swiss_uid_digits(issuer.vat_id) if issuer.country.upper() == "CH" else None
+    # /30/ and /32/ are the issuer's VAT number and rate — for the payer's input
+    # tax. An issuer that is not registered has neither to give.
+    uid = (
+        vatid.swiss_uid_digits(issuer.vat_id)
+        if issuer.vat_id and issuer.country.upper() == "CH" and totals.vat_registered
+        else None
+    )
     tags: dict[str, str] = {
         "10": inv.number,
         "11": inv.issue_date.strftime("%y%m%d"),
         "20": inv.customer_reference or "",
         "30": uid or "",
         "31": inv.supply.swico(),
-        "32": _rate(totals.vat_rate) if inv.kind == "domestic" else "",
+        "32": _rate(totals.vat_rate) if inv.kind == "domestic" and totals.vat_registered else "",
         "40": f"0:{inv.terms_days}" if inv.terms_days is not None else "",
     }
     if not tags["10"]:

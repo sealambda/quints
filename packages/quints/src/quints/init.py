@@ -89,6 +89,9 @@ class Answers:
     # The Saldosteuersätze the ESTV granted, in per cent ("6.2"); required
     # when vat_method is "saldo", rejected otherwise.
     saldo_rates: tuple[str, ...] = ()
+    # False for a business below the registration threshold (Art. 10 MWSTG):
+    # no VAT accounts in use, no VAT on invoices, nothing to file.
+    vat_registered: bool = True
     vat_registered_since: Date | None = Date(2026, 1, 1)
     operating_currency: str = "CHF"
     report_language: str = "en"
@@ -113,6 +116,7 @@ def answers_from_mapping(raw: dict[str, Any]) -> Answers:
         legal_form=str(raw.get("legal_form", d.legal_form)).lower(),
         vat_method=raw.get("vat_method", d.vat_method),
         saldo_rates=tuple(str(r) for r in raw.get("saldo_rates", d.saldo_rates)),
+        vat_registered=bool(raw.get("vat_registered", d.vat_registered)),
         vat_registered_since=since,
         operating_currency=raw.get("operating_currency", d.operating_currency),
         report_language=raw.get("report_language", d.report_language),
@@ -162,7 +166,14 @@ def _sub(name: str, component: str) -> str:
 
 
 def _open_date(answers: Answers) -> Date:
-    return answers.vat_registered_since or Date(2026, 1, 1)
+    """The day the books start: 1 January of the first year.
+
+    Registration and the start of the books are separate facts — a business
+    that registers for VAT in April has been trading since January — so the
+    accounts open at the start of the registration's year, not on its date.
+    """
+    since = answers.vat_registered_since if answers.vat_registered else None
+    return Date(since.year if since else 2026, 1, 1)
 
 
 def _cfg(answers: Answers) -> config.Config:
@@ -173,7 +184,8 @@ def _cfg(answers: Answers) -> config.Config:
         entity_name=answers.entity_name,
         legal_form=answers.legal_form,
         vat_method=answers.vat_method,
-        vat_registered_since=answers.vat_registered_since,
+        vat_registered=answers.vat_registered,
+        vat_registered_since=answers.vat_registered_since if answers.vat_registered else None,
         operating_currency=answers.operating_currency,
         report_language=answers.report_language,
         input_vat=_sub(base.input_vat, c),
@@ -248,7 +260,7 @@ def _backbone(answers: Answers) -> list[_Account]:
         _Account(cfg.rounding_income, "6950", (oc,)),
         _Account(cfg.fx_gain, "6950", (oc,)),
     ]
-    if answers.vat_method == "saldo":
+    if answers.vat_method == "saldo" and answers.vat_registered:
         # The SSS pays the input tax back through the rate, so the reverse
         # charge is a cost and the gap between the VAT invoiced and the SSS
         # owed is revenue. InputVAT stays opened but unused — a later switch
@@ -403,6 +415,36 @@ def _sample_quarter(answers: Answers) -> str:
     c = _component(answers)
     year = _open_date(answers).year
     bank = _sub(_PRIMARY_BANK, c)
+    registered = answers.vat_registered
+    # Not registered: the sale carries no VAT (Art. 27 MWSTG), and the foreign
+    # service is booked gross — Bezugsteuer only starts above CHF 10'000 of
+    # such purchases a year (Art. 45 Abs. 2 Bst. b MWSTG).
+    sale = (
+        [
+            (cfg.receivable, "1081.00", "CHF"),
+            (cfg.income_domestic, "-1000.00", "CHF"),
+            (cfg.output_vat, "-81.00", "CHF"),
+        ]
+        if registered
+        else [(cfg.receivable, "1000.00", "CHF"), (cfg.income_domestic, "-1000.00", "CHF")]
+    )
+    sale_total = "1081.00" if registered else "1000.00"
+    hosting = (
+        [
+            (_sub(_IT_HOSTING, c), "100.00", "EUR"),
+            # Under the SSS method the self-assessed tax is a cost, not a
+            # deduction (Art. 37 MWSTG) — see the VAT guide.
+            (
+                cfg.bezugsteuer_expense if answers.vat_method == "saldo" else cfg.input_vat,
+                "7.53",
+                "CHF @@ 8.10 EUR",
+            ),
+            (cfg.bezugsteuer, "-7.53", "CHF @@ 8.10 EUR"),
+            (_sub(_WISE_EUR, c), "-100.00", "EUR"),
+        ]
+        if registered
+        else [(_sub(_IT_HOSTING, c), "100.00", "EUR"), (_sub(_WISE_EUR, c), "-100.00", "EUR")]
+    )
     if answers.legal_form == "einzelfirma":
         opening_header = f'{year}-01-02 * "Owner" "Capital contribution"'
         opening_equity = f"Equity:CH:{c}:Contributions"
@@ -419,17 +461,13 @@ def _sample_quarter(answers: Answers) -> str:
         ),
         (
             f'{year}-07-02 * "Acme AG" "Consulting — July" ^INV{year}014',
-            [
-                (cfg.receivable, "1081.00", "CHF"),
-                (cfg.income_domestic, "-1000.00", "CHF"),
-                (cfg.output_vat, "-81.00", "CHF"),
-            ],
+            sale,
         ),
         (
             f'{year}-07-20 * "Acme AG" "Payment INV{year}014" ^INV{year}014',
             [
-                (bank, "1081.00", "CHF"),
-                (cfg.receivable, "-1081.00", "CHF"),
+                (bank, sale_total, "CHF"),
+                (cfg.receivable, f"-{sale_total}", "CHF"),
             ],
         ),
         (
@@ -440,19 +478,9 @@ def _sample_quarter(answers: Answers) -> str:
             ],
         ),
         (
-            f'{year}-08-12 * "Foreign SaaS" "Cloud hosting (reverse charge)"',
-            [
-                (_sub(_IT_HOSTING, c), "100.00", "EUR"),
-                # Under the SSS method the self-assessed tax is a cost, not a
-                # deduction (Art. 37 MWSTG) — see the VAT guide.
-                (
-                    cfg.bezugsteuer_expense if answers.vat_method == "saldo" else cfg.input_vat,
-                    "7.53",
-                    "CHF @@ 8.10 EUR",
-                ),
-                (cfg.bezugsteuer, "-7.53", "CHF @@ 8.10 EUR"),
-                (_sub(_WISE_EUR, c), "-100.00", "EUR"),
-            ],
+            f'{year}-08-12 * "Foreign SaaS" "Cloud hosting'
+            + (' (reverse charge)"' if registered else '"'),
+            hosting,
         ),
         (
             f'{year}-08-20 * "Treuhand Muster" "Bookkeeping — first half" ^TM-{year}-4711\n'
@@ -533,7 +561,10 @@ def _modeline(schema: str) -> str:
     return f"# yaml-language-server: $schema={config.DOCS_URL}/schema/{schema}.schema.json"
 
 
-def _issuer_yaml(_answers: Answers) -> str:
+def _issuer_yaml(answers: Answers) -> str:
+    # A business that is not VAT-registered prints no VAT number (Art. 27
+    # MWSTG): the sample keeps the bare UID, without the MWST suffix.
+    vat_id = _SAMPLE_VAT_ID if answers.vat_registered else _SAMPLE_VAT_ID.removesuffix(" MWST")
     return "\n".join(
         [
             _modeline("issuer"),
@@ -545,7 +576,7 @@ def _issuer_yaml(_answers: Answers) -> str:
             "address:",
             "  - Sulzerstrasse 1",
             "  - 4528 Zuchwil",
-            f"vat_id: {_SAMPLE_VAT_ID}",
+            f"vat_id: {vat_id}",
             "email: receivables@sealambda.com",
             'phone: "+41 76 297 79 35"',
             "# Sample accounts — the standard documentation IBANs, valid but",
@@ -624,7 +655,12 @@ def _invoice_acme_yaml(answers: Answers) -> str:
         [
             _modeline("invoice"),
             f"# Sample domestic invoice — a Swiss QR-bill. It ties to the ^INV{year}014",
-            f"# booking in books/{year}.bean (net 1'000.00 + 8.1% VAT = 1'081.00), so",
+            f"# booking in books/{year}.bean "
+            + (
+                "(net 1'000.00 + 8.1% VAT = 1'081.00), so"
+                if answers.vat_registered
+                else "(1'000.00 — not VAT-registered, so no VAT), so"
+            ),
             "# `quints invoice` cross-checks it clean against the ledger.",
             f"number: INV{year}014",
             "kind: domestic",
@@ -728,12 +764,21 @@ def _quints_toml(answers: Answers) -> str:
         "[entity]",
         f'name = "{answers.entity_name}"',
         f'legal_form = "{answers.legal_form}"           # gmbh | ag | einzelfirma',
-        f'vat_method = "{answers.vat_method}"            # effective | saldo',
     ]
-    if since is not None:
-        lines.append(
-            f"vat_registered_since = {since.isoformat()}   # earlier periods are pre-liability"
-        )
+    if not answers.vat_registered:
+        lines += [
+            "# Not VAT-registered: below the CHF 100'000 threshold (Art. 10 MWSTG).",
+            "# `quints vat liability` tracks the threshold. When you register, set",
+            "# vat_registered = true, vat_registered_since and vat_method — see",
+            f"# {config.DOCS_URL}/guides/vat-registration/",
+            "vat_registered = false",
+        ]
+    else:
+        lines.append(f'vat_method = "{answers.vat_method}"            # effective | saldo')
+        if since is not None:
+            lines.append(
+                f"vat_registered_since = {since.isoformat()}   # earlier periods are pre-liability"
+            )
     lines += [
         f'operating_currency = "{answers.operating_currency}"',
         "",
@@ -786,7 +831,7 @@ def _quints_toml(answers: Answers) -> str:
 
 def _saldo_account_lines(answers: Answers, cfg: config.Config) -> list[str]:
     """The two accounts only the Saldosteuersatz method books to."""
-    if answers.vat_method != "saldo":
+    if answers.vat_method != "saldo" or not answers.vat_registered:
         return []
     return [
         "# SSS only: the gap between the VAT invoiced and the SSS owed, and",
@@ -802,7 +847,7 @@ def _vat_section(answers: Answers) -> list[str]:
     The effective method's quarterly period is the default, so an effective
     project's quints.toml stays exactly as it was.
     """
-    if answers.vat_method != "saldo":
+    if answers.vat_method != "saldo" or not answers.vat_registered:
         return []
     cfg = _cfg(answers)
     lines = [
@@ -810,7 +855,7 @@ def _vat_section(answers: Answers) -> list[str]:
         "[vat]",
         "# quarter | half-year | year. The Saldosteuersatz method files",
         "# half-yearly (Art. 35 MWSTG); annual settlement is on request",
-        "# (Art. 35a MWSTG, turnover up to 5.005 Mio. CHF, three instalments).",
+        "# (Art. 35 Abs. 1bis Bst. b MWSTG, turnover up to CHF 5.005 Mio.).",
         f'period = "{cfg.period_kind}"',
         "",
         "# The Saldosteuersätze the ESTV granted you (Art. 37 MWSTG; the",
@@ -932,17 +977,74 @@ _AGENTS_VAT_STEP = {
         "   Complete the counter leg, decide the VAT treatment (Bezugsteuer or\n"
         "   none — never InputVAT), link the source document, flip `!` to `*`, and move"
     ),
+    "none": (
+        "   Complete the counter leg (gross — these books are not VAT-registered,\n"
+        "   so no VAT legs), link the source document, flip `!` to `*`, and move"
+    ),
 }
+
+
+def _vat_key(answers: Answers) -> str:
+    return answers.vat_method if answers.vat_registered else "none"
 
 
 def _agents_vat_step(answers: Answers) -> str:
     """How a staging draft is completed — the VAT options depend on the method."""
-    return _AGENTS_VAT_STEP.get(answers.vat_method, _AGENTS_VAT_STEP["effective"])
+    return _AGENTS_VAT_STEP.get(_vat_key(answers), _AGENTS_VAT_STEP["effective"])
+
+
+_PERIOD_EXAMPLE = {"quarter": "{year}-Q3", "half-year": "{year}-H2", "year": "{year}"}
+_PERIOD_WORD = {"quarter": "quarterly", "half-year": "half-yearly", "year": "annually"}
+
+
+def _agents_vat_section(answers: Answers) -> str:
+    """What the agent must know about the VAT status before booking anything."""
+    guide = f"{config.DOCS_URL}/guides/vat-registration/"
+    if not answers.vat_registered:
+        return f"""## VAT status — read before booking
+
+These books are **not VAT-registered** (`vat_registered = false` in
+`quints.toml`). Book everything gross — no InputVAT, OutputVAT or Bezugsteuer
+postings — and `quints invoice` issues invoices without VAT, as the law
+requires of a business that is not registered.
+
+Run `quints vat liability` at least every quarter and at the year end: it
+totals the turnover that counts towards the CHF 100'000 threshold and says
+whether registration is due. When it is, the owner registers with the ESTV;
+you then record the date in `quints.toml`. The steps:
+{guide}
+"""
+    cfg = _cfg(answers)
+    method = "Saldosteuersatz" if answers.vat_method == "saldo" else "effective"
+    since = answers.vat_registered_since
+    example = _PERIOD_EXAMPLE[cfg.period_kind].format(year=_open_date(answers).year)
+    registered = f"VAT-registered since {since}" if since else "VAT-registered"
+    return f"""## VAT status — read before booking
+
+These books are {registered}, on the **{method} method**,
+filing **{_PERIOD_WORD[cfg.period_kind]}**:
+
+```bash
+quints vat report -p {example}
+quints vat settle -p {example}
+```
+
+The first computes the return, the second prints the entry that closes it.
+Both list the *notices* a period carries — first or last return, a switch of
+method — with what to book for it.
+
+A company's VAT situation changes over its life. Record each change in
+`quints.toml` **before** you book the period it affects: a switch of method
+or filing period is a `[[vat.change]]` from a 1 January, deregistration is
+`vat_registered_until`. quints then computes every period under the rules in
+force for it — never adjust a past period by hand. The steps:
+{guide}
+"""
 
 
 def _agents_vat_note(answers: Answers) -> str:
     """One saldo-only sentence in the money-out loop; empty for effective."""
-    if answers.vat_method != "saldo":
+    if answers.vat_method != "saldo" or not answers.vat_registered:
         return ""
     return (
         "\n   These books use the **Saldosteuersatz method**: input VAT is never\n"
@@ -951,6 +1053,13 @@ def _agents_vat_note(answers: Answers) -> str:
         "   but is a cost, not a deduction (`quints vat convert --bezugsteuer`\n"
         "   prints the right pair). `quints vat report` flags any InputVAT."
     )
+
+
+def _agents_vat_json(answers: Answers) -> str:
+    if not answers.vat_registered:
+        return f"quints vat liability --at {_open_date(answers).year}-12-31 --json"
+    example = _PERIOD_EXAMPLE[_cfg(answers).period_kind].format(year=_open_date(answers).year)
+    return f"quints vat report -p {example} --json\nquints vat status --json"
 
 
 def _agents_import_step(answers: Answers) -> str:
@@ -1044,6 +1153,7 @@ scaffold. Work in reviewable steps: `git diff` before moving drafts into
 - `invoicing/` — issuer identity (`issuer.yaml`), customer registry
   (`customers.yaml`), one YAML per issued invoice.
 
+{_agents_vat_section(answers)}
 ## Extending the chart of accounts (the part that needs judgement)
 
 Add income/expense sub-trees for this business as `open` directives in
@@ -1142,8 +1252,7 @@ strings:
 
 ```bash
 quints check --json
-quints vat report -q {year}-Q3 --json
-quints vat status --json
+{_agents_vat_json(answers)}
 quints close check --year {year} --json
 quints report bilanz --at {year}-12-31 --json
 quints receivables --json
@@ -1155,6 +1264,7 @@ JSON Schemas for the invoicing files are hosted at
 locally to `invoicing/schema/`).
 
 Never invent VAT numbers or rates — compute them with `quints vat report`.
+Whether VAT applies at all is `quints vat liability`'s call, not a guess.
 {_agents_sample_section(answers)}"""
 
 
@@ -1228,6 +1338,11 @@ def _validate(answers: Answers) -> None:
         raise InitError(
             f"unknown vat_method {answers.vat_method!r} — "
             f"supported: {', '.join(config.VAT_METHODS)}"
+        )
+    if not answers.vat_registered and (answers.vat_method != "effective" or answers.saldo_rates):
+        raise InitError(
+            "a business that is not VAT-registered has no VAT method yet — choose it "
+            "(and apply for any Saldosteuersatz) when you register"
         )
     if answers.vat_method == "saldo" and not answers.saldo_rates:
         raise InitError(

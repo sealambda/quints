@@ -32,7 +32,7 @@ class VatPosting:
     bezugsteuer_account: str = ""
     expense_account: str = ""  # SSS: the non-deductible Bezugsteuer cost
     rate_class: str = "standard"
-    method: str = "effective"
+    method: str = "effective"  # or "saldo", or "none" when not VAT-registered that day
 
     def render(self) -> str:
         """The two lines you paste into the ledger (comment + posting).
@@ -45,6 +45,12 @@ class VatPosting:
             return (
                 f"    ; {self.note}\n"
                 "    ; Saldosteuersatz method: input VAT is not deductible — "
+                "book the gross amount as the expense."
+            )
+        if self.method == "none":
+            return (
+                f"    ; {self.note}\n"
+                "    ; not VAT-registered on this date: input VAT is not deductible — "
                 "book the gross amount as the expense."
             )
         return f"    ; {self.note}\n    {self.input_account:<38} {self.chf:>8} CHF"
@@ -62,6 +68,16 @@ class VatPosting:
         statutory rate but cannot be deducted (Art. 37 MWSTG), so the debit is
         an expense instead: the pair costs real money rather than netting out.
         """
+        if self.method == "none":
+            # Not registered: the reverse charge is owed only once services
+            # bought abroad exceed CHF 10'000 in a calendar year, and then the
+            # business has to register for it (Art. 45 Abs. 2 Bst. b MWSTG).
+            return (
+                f"    ; Bezugsteuer Art. 45 MWSTG: {self.note}\n"
+                "    ; not VAT-registered on this date: owed only once services bought abroad "
+                "exceed CHF 10'000 in the calendar year (Art. 45 Abs. 2 Bst. b MWSTG) — "
+                "then register with the ESTV for it."
+            )
         price = "" if self.currency == "CHF" else f" @@ {self.foreign_vat} {self.currency}"
         # A non-standard rate has to travel with the posting, or `vat report`
         # would value the declaration at the standard rate and flag it.
@@ -110,6 +126,7 @@ def convert(
         note = f"{foreign_vat} {ccy} @ {Decimal(r):.5f} CHF/{ccy} ({src})"
 
     cfg = cfg or config.get()
+    phase = cfg.phase_at(on)
     return VatPosting(
         chf,
         Decimal(r),
@@ -121,5 +138,5 @@ def convert(
         bezugsteuer_account=cfg.bezugsteuer,
         expense_account=cfg.bezugsteuer_expense,
         rate_class=rate_class,
-        method=cfg.vat_method,
+        method=phase.method if phase is not None else "none",
     )
