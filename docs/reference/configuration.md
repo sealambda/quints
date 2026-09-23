@@ -14,12 +14,21 @@ Resolution: `--config <path>` > `./quints.toml` > built-in defaults.
 name = "Jane Doe"
 legal_form = "einzelfirma"          # gmbh | ag | einzelfirma
 vat_method = "effective"            # effective | saldo (Saldosteuersatz)
-vat_registered_since = 2026-01-01   # earlier periods are pre-liability
+vat_registered_since = 2026-01-01   # the first day of VAT liability
 operating_currency = "CHF"
 ```
 
-`vat_registered_since` clamps VAT reports — quarters before it are reported
-as pre-liability instead of producing a wrong return.
+The VAT keys describe the entity's registration:
+
+| Key | Meaning | Default |
+|---|---|---|
+| `vat_registered` | `false` for a business that is not registered (below the threshold): no return, no VAT on invoices | `true` |
+| `vat_registered_since` | the first day of liability. Reports clamp to it; invoices dated before it carry no VAT | none: liable for as far back as the books go |
+| `vat_registered_until` | the last day of liability, after deregistering | none: still registered |
+| `vat_method` | the method the registration **started** with. A later switch is a `[[vat.change]]` | `effective` |
+
+The steps behind each key, with the law, are in
+[Register, switch method, deregister](../guides/vat-registration.md).
 
 ## `[ledger]`
 
@@ -61,13 +70,14 @@ first, and route income to a Form-310 Ziffer or an Art. 25 rate class;
 everything unmarked under `income_prefix` is domestic turnover at the
 standard rate. Set a marker to `""` to disable it. A `mwst:` metadata tag on
 a transaction or posting overrides them, and the account's `kmu:` code
-supplies the rest (Erlösminderungen → Ziffer 235, the 400/405 split) — see
-the [VAT guide](../guides/vat.md).
+supplies the rest (Erlösminderungen → Ziffer 235, the 400/405 split). See
+[How quints fills the VAT return](vat-rules.md).
 
 ## `[vat]`
 
-Only the Saldosteuersatz method needs this section; the effective method's
-quarterly period is the default.
+The effective method with quarterly filing needs no `[vat]` section.
+Anything else goes here: the filing period, the granted Saldosteuersätze,
+and every later change.
 
 ```toml
 [vat]
@@ -84,11 +94,36 @@ rate = 1.3
 marker = ":Handel"
 ```
 
-`period` drives the `-p/--period` labels and the 60-day due date: the
-effective method files quarterly, the Saldosteuersatz method half-yearly
-(Art. 35 MWSTG), and either may file annually on request since 2025
-(Art. 35a MWSTG). A `rate` the ESTV cannot grant is rejected at load — the
-permitted list is law (SR 641.202.62), so it ships in quints, date-ranged.
+`period` drives the period grid that `quints close check` expects. The
+effective method files quarterly and the Saldosteuersatz half-yearly; either
+may file annually on request.[^periods] A `rate` the ESTV can't grant is
+rejected at load: the permitted list is law,[^sss-rates] so it ships in
+quints, dated.
+
+### `[[vat.change]]`
+
+A later change of method, filing period or granted rates, dated:
+
+```toml
+[[vat.change]]
+from = 2027-01-01          # always a 1 January — the start of a tax period
+method = "saldo"           # optional: effective | saldo
+period = "half-year"       # optional: quarter | half-year | year
+saldo = [{ rate = 6.2 }]   # optional: the rates granted from that date
+```
+
+The rules:
+
+- **Order:** list entries oldest first.
+- **Inheritance:** each entry keeps what it doesn't name from the phase
+  before it.
+- **A change of method** resets `period` to that method's default and drops
+  the previous rates.
+- **Validation:** `quints.toml` fails to load when `from` isn't a 1 January,
+  when an entry is out of order, when it names no change, or when a switch
+  comes before the minimum stay (three years on the effective method, one
+  tax period on the Saldosteuersatz).[^switch] The error names the earliest
+  legal date.
 
 With `vat_method = "saldo"`, `[accounts]` also carries the two accounts only
 that method books to:
@@ -100,8 +135,12 @@ bezugsteuer_expense = "Expenses:CH:Einzelfirma:Tax:Bezugsteuer"
 
 The first takes the gap between the VAT your invoices collected and the SSS
 you owe; the second takes the reverse charge, which the SSS does not pay back.
-Both are excluded from the return by account identity, so a hand-written
-settlement cannot mis-file them. See the [VAT guide](../guides/vat.md).
+Both are kept out of the return by name, so a hand-written settlement can't
+file them wrongly. See [File your VAT return](../guides/vat.md).
+
+[^periods]: Art. 35 Abs. 1 and 1bis Bst. b MWSTG, Art. 35a MWSTG. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_35).
+[^sss-rates]: [SR 641.202.62](https://www.fedlex.admin.ch/eli/cc/2024/500/de), in force since 1 January 2025.
+[^switch]: Art. 37 Abs. 4 MWSTG, Art. 34 Abs. 2 MWSTG. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_37).
 
 ## `[payables]`
 

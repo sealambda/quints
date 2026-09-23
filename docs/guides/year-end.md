@@ -6,6 +6,16 @@ depreciation booked. `quints close check` is that list, computed from your
 ledger. The rest of the commands here print the entries it asks for — for you
 to review and paste, never written for you.
 
+!!! abstract "Applies if"
+    - **Legal form:** Einzelfirma, GmbH or AG. The checklist is the same for
+      all three.[^books]
+    - **VAT status:** any.
+        - *Not registered:* the VAT item passes.
+        - *Registered:* it expects one settlement per filing period of the
+          year (quarters, half-years or the whole year, whichever applied
+          that year), from the registration date to its end.
+    - **Fiscal year:** the calendar year, like the books (one file per year).
+
 ## The order of operations
 
 ```bash
@@ -15,10 +25,18 @@ quints close depreciation --year 2026
 quints report statements --year 2026
 ```
 
-Refresh the rates first — `quints prices sync` needs network, so it isn't in
-the block above ([FX rates](fx.md)). Then: check, book what the check asks
-for, check again, and hand the PDF to your Treuhänder
-([Statutory reports](reports.md)).
+The steps:
+
+1. **Refresh the rates.** `quints prices sync` needs the network, so it
+   isn't in the block above ([FX rates](fx.md)).
+2. **Check.** `quints close check` lists what is still open.
+3. **Book what the check asks for.** The other commands print the entries.
+4. **Check again**, until nothing fails.
+5. **Hand the PDF to your Treuhänder** ([Statutory reports](reports.md)).
+
+A registered business also runs `quints vat liability --at 2026-12-31` at
+the year end. If turnover stayed below the threshold, it says whether you may
+deregister and by when ([Register, switch method, deregister](vat-registration.md)).
 
 ## The checklist
 
@@ -31,8 +49,8 @@ counts, account names, dates — and the command that fixes it.
 
 | Item | Passes when |
 |---|---|
-| `ledger` | the ledger loads and every `:CH:GmbH:` account carries a valid `kmu:` code |
-| `vat` | every VAT quarter of the year is settled *and* paid (filed but unpaid: warn) |
+| `ledger` | the ledger loads and every account of the entity (`:CH:GmbH:`, `:CH:Einzelfirma:`, …) carries a valid `kmu:` code |
+| `vat` | every VAT period of the year is settled *and* paid (filed but unpaid: warn); not registered: pass |
 | `flagged` | no `!`-flagged transaction is left in the year |
 | `staging` | no importer drafts are waiting in `staging/` |
 | `inbox` | `inbox/` holds no unfiled document |
@@ -72,7 +90,7 @@ same items with `ok`, `failed` and `warned` counters.
 quints close depreciation --year 2026
 ```
 
-Prints the year's depreciation entry (Art. 960a OR) to paste into
+Prints the year's depreciation entry[^960a] to paste into
 `books/2026.bean`, with a balance assertion per asset. Run it again after
 booking and it prints nothing: the generated transaction carries
 `depreciation_year: "2026"`, which is how quints knows the charge is already
@@ -112,9 +130,7 @@ acquisition.
 ### Maximum rates: ESTV Merkblatt A/1995
 
 `depreciation_category:` is checked against the *Normalsätze* of the ESTV's
-[Merkblatt A/1995 — Abschreibungen auf dem Anlagevermögen geschäftlicher
-Betriebe](https://www.estv.admin.ch/dam/de/sd-web/Qyxr5xBfdWDp/dbst-mb-a-1995-geschbetriebe-de.pdf)
-(Rechtsgrundlagen: Art. 27 Abs. 2 Bst. a, 28 und 62 DBG). The rates are
+Merkblatt A/1995.[^a1995] The rates are
 percentages **of book value**; the Merkblatt's footnote 3 halves them when you
 depreciate from the Anschaffungswert, which is what `linear` does here.
 
@@ -155,9 +171,17 @@ prorata = "full"                    # or "months" in the year of acquisition
 receivable_review_days = 90         # open longer at year end → Delkredere review
 ```
 
-## What quints does not do
+## What quints doesn't do here
 
-It does not book anything, does not close the P&L into equity, and does not
-file anything. Tax provisions, Delkredere percentages and the decision to
-depreciate less than the maximum are yours (or your Treuhänder's) — quints
-computes what follows from the books and the published rates, and says so.
+- **Book, or file.** Every entry is printed for you to review and paste.
+- **Close the P&L into equity**, or appropriate the profit (the dividend
+  decision of a GmbH/AG, the owner's share of an Einzelfirma).
+- **Judgements:** tax provisions, Delkredere percentages, and whether to
+  depreciate less than the maximum. Those are yours, or your Treuhänder's.
+  quints computes what follows from the books and the published rates, and
+  says so.
+- **A fiscal year that isn't the calendar year.**
+
+[^books]: Bookkeeping and financial-reporting duty: Art. 957 ff. OR, [SR 220](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_957). An Einzelunternehmen below CHF 500'000 turnover may keep simplified accounts (Art. 957 Abs. 2); quints keeps full double-entry books either way.
+[^960a]: Art. 960a OR, [fedlex](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_960_a).
+[^a1995]: [Merkblatt A/1995 — Abschreibungen auf dem Anlagevermögen geschäftlicher Betriebe](https://www.estv.admin.ch/dam/de/sd-web/Qyxr5xBfdWDp/dbst-mb-a-1995-geschbetriebe-de.pdf); legal basis Art. 27 Abs. 2 Bst. a, 28 and 62 DBG ([SR 642.11](https://www.fedlex.admin.ch/eli/cc/1991/1184_1184_1184/de)). The table lives in `quints.closing.MERKBLATT_A1995`.

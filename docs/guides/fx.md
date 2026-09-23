@@ -1,7 +1,18 @@
 # FX rates
 
-Swiss tax accounting uses the official BAZG/EZV daily rates, not market
-rates. quints fetches them into `prices.bean` at full precision.
+Keep `prices.bean` filled with official rates, so every foreign amount
+converts to CHF the way the tax authorities accept. For VAT, a foreign amount
+is converted at the rate the ESTV publishes, either the monthly average or
+the daily selling rate, and you keep your choice for at least a tax
+period.[^fx] quints uses the daily rate and fetches it from the BAZG at full
+precision.
+
+!!! abstract "Applies if"
+    - **Legal form:** any.
+    - **VAT status:** any. The rates matter for VAT once you're registered,
+      and for the year-end valuation always.
+    - **Currencies:** any the BAZG publishes, or any other
+      [beanprice](https://github.com/beancount/beanprice) source.
 
 ## Keep rates current
 
@@ -75,8 +86,8 @@ around the fetch:
 - **Full precision.** `bean-price --update` rounds through the ledger's
   `display_precision`; sync writes the raw source rate (BAZG publishes five
   decimals), which is what the ESTV-accepted daily rate actually is.
-- **Tax rates are daily rates.** Swiss VAT wants the official rate of the
-  transaction day, not the latest quote — so the unit of work here is "keep
+- **Daily rates, by day.** quints converts at the official rate of the
+  transaction day (the daily option of Art. 45 MWSTV), not the latest quote — so the unit of work here is "keep
   a complete daily series current", which is a loop and a file format, not
   a one-shot fetch.
 
@@ -86,7 +97,7 @@ around the fetch:
 quints fx revalue --at 2026-12-31
 ```
 
-Prints the year-end revaluation transaction (Art. 960 OR): unrealized FX
+Prints the year-end revaluation transaction:[^960] unrealized FX
 differences on non-CHF balances, booked against the configured
 `fx_gain`/`fx_loss` accounts. Review it, paste it into `books/<year>.bean`.
 Like everything in quints, it's printed for review — never written into your
@@ -97,3 +108,6 @@ it is still outstanding; see [Close the year](year-end.md).
 
 For VAT amounts on foreign invoices, use [`quints vat convert`](vat.md#foreign-currency-vat)
 instead of manual conversion.
+
+[^fx]: Art. 45 MWSTV, [SR 641.201](https://www.fedlex.admin.ch/eli/cc/2009/828/de#art_45). Abs. 3: "nach dem von der ESTV veröffentlichten Wechselkurs, wobei wahlweise der Monatsmittelkurs oder der Tageskurs für den Verkauf von Devisen verwendet werden kann"; Abs. 5: the choice is kept "während mindestens einer Steuerperiode". Input tax follows the same rule (Art. 58 MWSTV). [MWST-Info 07 *Steuerbemessung und Steuersätze*, Ziff. 1.3.2](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/tableOfContent.xhtml?publicationId=1007607&lang=de); [ESTV, Fremdwährungskurse](https://www.estv.admin.ch/de/mwst-fremdwaehrungskurse); the daily rates: [BAZG](https://www.rates.bazg.admin.ch/home).
+[^960]: Valuation: Art. 960 ff. OR; the currency of the accounts and the disclosure of the rates used: Art. 958d Abs. 3 OR. [SR 220](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_958_d).

@@ -39,7 +39,7 @@ Scaffold a project with a sample quarter already booked, and run against it:
 ```bash
 quints init my-books --samples --yes   # drop --yes to answer the questionnaire
 cd my-books
-quints vat report -q 2026-Q3
+quints vat report -p 2026-Q3
 ```
 
 `quints init` writes a runnable project: a Swiss KMU chart of accounts in
@@ -64,12 +64,17 @@ rules) is configuration; VAT *rates* are law and ship date-ranged in code.
 
 Run these from your project directory; with `--samples` they work out of the box.
 
-### File your quarterly Swiss VAT (MWST)
+### Swiss VAT (MWST), from the threshold to the last return
 
 ```bash
-quints vat report -q 2026-Q3    # Form-310 Ziffern, mapped to the ESTV return
-quints vat status         # VAT filed but not yet paid, with due dates
+quints vat liability            # must you register? turnover vs the CHF 100'000 threshold
+quints vat report -p 2026-Q3    # the return, Ziffer by Ziffer — effective or Saldosteuersatz
+quints vat status               # VAT filed but not yet paid, with due dates
 ```
+
+Registration, a switch of method, annual filing and deregistration are dated
+entries in `quints.toml`; every period is computed under the rules in force
+for it, and invoices dated before registration carry no VAT.
 
 ### See who owes you
 
@@ -95,7 +100,7 @@ quints report statements --year 2026 --lang de   # both, as one PDF
 <!-- no-test: prices sync needs network; fx revalue is covered by docs/guides/fx.md -->
 ```bash
 quints prices sync                    # official BAZG/EZV daily CHF rates (needs network)
-quints fx revalue --at 2026-12-31     # year-end revaluation entry to paste (Art. 960 OR)
+quints fx revalue --at 2026-12-31     # year-end revaluation entry to paste (Art. 960 ff. OR)
 ```
 
 ### Draft bank / PSP statements into a review area

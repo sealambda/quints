@@ -8,9 +8,11 @@ Plain-text accounting for Swiss micro-companies — GmbH, AG, or Einzelfirma —
 on top of [beancount](https://github.com/beancount/beancount) and
 [Fava](https://github.com/beancount/fava).
 
-Swiss VAT (MWST) returns, Bezugsteuer, QR-bill invoicing, statutory KMU
+Swiss VAT (MWST) returns under the effective or the Saldosteuersatz method,
+the registration threshold, Bezugsteuer, QR-bill invoicing, statutory KMU
 statements, official BAZG FX rates. The things a Swiss micro-company actually
-has to do, on a ledger you own as text.
+has to do, from its first invoice before it is VAT-registered to its last
+return, on a ledger you own as text.
 
 `quints` is deterministic and machine-readable by design, so an AI coding
 agent (Claude Code, Codex, …) can drive it: the agent proposes bookings,
@@ -34,20 +36,22 @@ bundled. Nothing else to install.
 quints init my-books --samples --yes    # drop --yes to answer the questionnaire
 cd my-books
 quints check
-quints vat report -q 2026-Q3
+quints vat report -p 2026-Q3
 ```
 
-That's a runnable project with a sample quarter booked and a Form-310 VAT
-report on screen. [Getting started](getting-started.md) walks through a real
-setup — including the legal-form choice.
+That's a runnable project with a sample quarter booked and a VAT return on
+screen. [Getting started](getting-started.md) walks through a real setup:
+the legal form, whether you are VAT-registered, and the VAT method.
 
-![quints init scaffolds sample books, quints check validates them, and quints vat report prints the Form-310 VAT return](assets/quickstart.gif)
+![quints init scaffolds sample books, quints check validates them, and quints vat report prints the VAT return](assets/quickstart.gif)
 
 ## By the job
 
 | You need to | Run | Guide |
 |---|---|---|
-| File quarterly VAT | `quints vat report -q 2026-Q3` | [Quarterly VAT](guides/vat.md) |
+| Know whether you must register for VAT | `quints vat liability` | [Register, switch method, deregister](guides/vat-registration.md) |
+| File a VAT return | `quints vat report -p 2026-Q3` | [File your VAT return](guides/vat.md) |
+| Record a registration, method switch or deregistration | `quints.toml` → `[entity]`, `[[vat.change]]` | [Register, switch method, deregister](guides/vat-registration.md) |
 | See who owes you | `quints receivables` | [Invoicing](guides/invoicing.md) |
 | See what you owe | `quints payables` | [Import statements](guides/importing.md) |
 | Send a QR-bill invoice | `quints invoice <invoice.yaml>` | [Invoicing](guides/invoicing.md) |
@@ -60,6 +64,9 @@ setup — including the legal-form choice.
 
 Every command in these docs is executed by the test suite against the shipped
 example project. If a documented command breaks, CI fails before you see it.
+Every legal rule a page relies on is footnoted to its source — the article in
+the law, the ESTV publication, the standard — so you can check it applies to
+you.
 
 ## The building blocks
 
