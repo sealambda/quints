@@ -363,6 +363,7 @@ def test_invoice_json_reports_the_reference_it_used(tmp_path: Path) -> None:
     inv = tmp_path / "inv.yaml"
     inv.write_text(
         "number: INV2026014\nkind: domestic\ncurrency: CHF\nissue_date: 2026-07-02\n"
+        "supply: 2026-06\n"
         "customer: {name: Acme AG, address: [Bahnhofstrasse 1, 8001 Zürich]}\n"
         "customer_reference: PO-2026-118\n"
         "items:\n  - {description: Consulting, quantity: 1, unit_price: 1000.00}\n"

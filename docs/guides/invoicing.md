@@ -33,7 +33,7 @@ number: INV2026014
 kind: domestic          # or export (reverse charge, no QR part)
 currency: CHF
 issue_date: 2026-07-02
-supply: Juli 2026
+supply: 2026-07          # the supply period — see below
 customer:
   name: Acme AG
   address:
@@ -49,6 +49,34 @@ locale: de_CH
 Issuer identity — name, address, VAT ID, bank details per currency, logo —
 lives once in `invoicing/issuer.yaml`. Repeat customers can live in
 `invoicing/customers.yaml` and be referenced by key (`customer: acme`).
+
+## Supply period
+
+`supply` says when the work was done or the goods delivered, and every invoice
+needs one. It takes one of three forms:
+
+```yaml
+supply: 2026-07                              # a calendar month
+supply: 2026-07-15                           # a single day
+supply: {from: 2026-07-01, to: 2026-09-30}   # any period, both days included
+```
+
+It is printed under *Leistungsperiode* / *Service period* in the invoice's
+locale (`Juli 2026`, `15.07.2026`, `1. Juli – 30. Sept. 2026`). On a QR-bill it
+also goes into the billing information as Swico `/31/` (see
+[below](#your-customers-references)), so the payer's software books the input
+tax in the right VAT period without anyone retyping it.
+
+The law asks for this date. A Swiss invoice has to state the date or period
+of the supply whenever it differs from the invoice date (Art. 26 Abs. 2 lit. c
+MWSTG). An EU invoice has to state the date the supply was made or completed,
+under the same condition (Art. 226(7) VAT Directive). An invoice that goes out
+on the day of the supply could skip it, but quints asks for it every time. A
+stated date is never wrong, and the payer's VAT booking relies on it.
+
+Free text is refused. `supply: Juli 2026` fails at load, and the error names
+the value to write instead (`supply: 2026-07`), so older invoice files are a
+one-line fix. The ledger draft still reads `Juli 2026 invoiced`.
 
 ## Bank details
 
@@ -199,11 +227,12 @@ On a QR-bill it additionally travels in the structured *billing information*
 element, in Swico's S1 syntax:
 
 ```text
-//S1/10/INV2026014/11/260702/20/PO-2026-118/30/267359056/32/8.1/40/0:30
+//S1/10/INV2026014/11/260702/20/PO-2026-118/30/267359056/31/260701260731/32/8.1/40/0:30
 ```
 
 That is the invoice number, its date, your customer's reference, your UID, the
-VAT rate and the payment terms — machine-readable for the payer's
+supply period (`/31/`, first and last day as `YYMMDD`; a single day is one
+date), the VAT rate and the payment terms — machine-readable for the payer's
 accounts-payable software. Banks do not forward it with the payment; what comes
 back to you is the reference and the unstructured message, which carries the
 invoice number.

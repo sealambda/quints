@@ -32,6 +32,7 @@ number: INV1
 kind: export
 currency: EUR
 issue_date: 2026-08-05
+supply: 2026-08
 customer:
   name: Globex Ltd
   address: [1 Liffey Street, Dublin 1]

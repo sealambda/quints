@@ -15,7 +15,7 @@ data omitted:
 ``11`` invoice date, ``YYMMDD``
 ``20`` customer reference — the payer's PO / order number
 ``30`` the issuer's UID, digits only (``CHE-106.017.086 MWST`` → ``106017086``)
-``31`` VAT date or period (omitted: quints' `supply` is free text)
+``31`` VAT date — the supply: ``YYMMDD`` for a day, ``YYMMDDYYMMDD`` for a period
 ``32`` VAT rate on the whole invoice, e.g. ``8.1``
 ``33`` pure import VAT (not applicable to an invoice quints issues)
 ``40`` payment conditions, ``discount%:days`` — ``0:30`` is net 30 days
@@ -40,7 +40,7 @@ MAX_LENGTH = 140  # additional information + billing information, per the IG
 # Dropped in this order when the 140 characters run out: the payer's software
 # can live without payment conditions, VAT details and even the issuer's UID
 # long before it can live without its own reference or the invoice number.
-_DROP_ORDER = ("40", "32", "30", "20", "11")
+_DROP_ORDER = ("40", "32", "31", "30", "20", "11")
 
 
 def escape(value: str) -> str:
@@ -68,8 +68,7 @@ def billing_information(
         "11": inv.issue_date.strftime("%y%m%d"),
         "20": inv.customer_reference or "",
         "30": uid or "",
-        # `31` (VAT date or period) stays empty: `supply` is free text, and a
-        # period quints cannot parse is worse in a payer's system than none.
+        "31": inv.supply.swico(),
         "32": _rate(totals.vat_rate) if inv.kind == "domestic" else "",
         "40": f"0:{inv.terms_days}" if inv.terms_days is not None else "",
     }

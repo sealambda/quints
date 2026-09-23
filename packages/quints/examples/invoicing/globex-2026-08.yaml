@@ -5,7 +5,7 @@ number: INV2026015
 kind: export
 currency: EUR
 issue_date: 2026-08-05
-supply: August 2026
+supply: 2026-08
 customer: globex
 items:
   - description: Export consulting

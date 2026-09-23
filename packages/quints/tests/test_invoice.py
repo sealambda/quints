@@ -15,6 +15,7 @@ from quints.invoice.model import (
     Issuer,
     LineItem,
     Party,
+    SupplyPeriod,
     compute,
     document_path,
     load_customers,
@@ -50,7 +51,7 @@ def _domestic() -> Invoice:
         kind="domestic",
         currency="CHF",
         issue_date=date(2026, 7, 2),
-        supply="Juni 2026",
+        supply=SupplyPeriod.month(2026, 6),
         customer=Party(name="ACME AG", address=["Bahnhofstrasse 1", "8000 Zürich"]),
         items=[
             LineItem(
@@ -90,7 +91,7 @@ def test_compute_export_no_vat():
         kind="export",
         currency="EUR",
         issue_date=date(2026, 6, 17),
-        supply="May 2026",
+        supply=SupplyPeriod.month(2026, 5),
         customer=Party(
             name="nordsoft",
             address=["Tornimäe tn 1", "15551 Tallinn"],
@@ -276,7 +277,7 @@ def test_invoice_number_must_yield_a_reference():
 
 def test_manual_reference_is_validated_against_the_scheme(tmp_path: Path):
     base = (
-        "number: X1\nkind: domestic\ncurrency: CHF\nissue_date: 2026-07-02\n"
+        "number: X1\nkind: domestic\ncurrency: CHF\nissue_date: 2026-07-02\nsupply: 2026-06\n"
         "customer: {name: A, address: [B]}\n"
         "items:\n  - {description: Work, quantity: 1, unit_price: 100}\n"
     )
@@ -331,10 +332,11 @@ def test_qr_payload_carries_swico_billing_information():
     inv.customer_reference = "PO-4711"
     inv.terms_days = 30
     payload = qr.payload(qr.build_bill(inv, ISSUER, ISSUER.account("CHF"), compute(inv)))
-    # Tags ascending, each once; /30/ is the issuer's UID digits only, /32/ the
-    # rate on the whole invoice, /40/ net 30 days. No /31/: `supply` is free text.
+    # Tags ascending, each once; /30/ is the issuer's UID digits only, /31/ the
+    # supply period (June 2026, first and last day), /32/ the rate on the whole
+    # invoice, /40/ net 30 days.
     assert payload.splitlines()[-1] == (
-        "//S1/10/ACME202606/11/260702/20/PO-4711/30/267359056/32/8.1/40/0:30"
+        "//S1/10/ACME202606/11/260702/20/PO-4711/30/267359056/31/260601260630/32/8.1/40/0:30"
     )
     # A slash in a value is escaped in the payload, the way Swico's own
     # example writes it (`/10/X.66711\/8824`).
@@ -342,8 +344,28 @@ def test_qr_payload_carries_swico_billing_information():
     inv.terms_days = None  # no payment conditions → no /40/ at all
     payload = qr.payload(qr.build_bill(inv, ISSUER, ISSUER.account("CHF"), compute(inv)))
     assert payload.splitlines()[-1] == (
-        "//S1/10/ACME202606/11/260702/20/MW\\/2020\\/04/30/267359056/32/8.1"
+        "//S1/10/ACME202606/11/260702/20/MW\\/2020\\/04/30/267359056/31/260601260630/32/8.1"
     )
+
+
+def test_scor_qr_bill_carries_every_field():
+    """IBAN + SCOR is a full QR-bill: the scheme changes the account and the
+    reference, not the message or the billing information."""
+    inv = _domestic()
+    inv.customer_reference = "PO-4711"
+    scor_only = BankAccount(iban="CH93 0076 2011 6238 5295 7")
+    lines = qr.payload(qr.build_bill(inv, ISSUER, scor_only, compute(inv))).splitlines()
+    assert lines[3] == "CH9300762011623852957"  # the regular IBAN, not a QR-IBAN
+    assert lines[lines.index("SCOR") + 1] == "RF46ACME202606"
+    assert lines[lines.index("EPD") - 1] == "ACME202606"  # unstructured message
+    assert lines[-1] == (
+        "//S1/10/ACME202606/11/260702/20/PO-4711/30/267359056/31/260601260630/32/8.1/40/0:30"
+    )
+    # The longest number a SCOR carries (21 characters) goes through whole.
+    inv.number = "ABCDEFGHIJ12345678901"
+    lines = qr.payload(qr.build_bill(inv, ISSUER, scor_only, compute(inv))).splitlines()
+    assert lines[lines.index("SCOR") + 1] == "RF07ABCDEFGHIJ12345678901"
+    assert lines[-1].startswith("//S1/10/ABCDEFGHIJ12345678901/11/260702/20/PO-4711/")
 
 
 def test_swico_escapes_and_fits_the_140_character_budget():
@@ -373,6 +395,7 @@ def test_export_invoice_prints_a_scor_reference():
         kind="export",
         currency="EUR",
         issue_date=date(2026, 8, 5),
+        supply=SupplyPeriod.month(2026, 8),
         customer=Party(
             name="Globex Ltd",
             address=["1 Liffey Street", "Dublin 1"],
@@ -434,7 +457,7 @@ def test_load_invoice_resolves_customer_ref(tmp_path: Path):
         "acme:\n  name: ACME AG\n  address: [Bahnhofstrasse 1, 8000 Zürich]\n"
     )
     (tmp_path / "inv.yaml").write_text(
-        "number: X1\nkind: domestic\ncurrency: CHF\nissue_date: 2026-07-02\n"
+        "number: X1\nkind: domestic\ncurrency: CHF\nissue_date: 2026-07-02\nsupply: 2026-06\n"
         "customer: acme\nitems:\n  - {description: Work, quantity: 1, unit_price: 100}\n"
     )
     reg = load_customers(tmp_path / "customers.yaml")
@@ -455,7 +478,7 @@ def test_customer_slug_falls_back_to_name(tmp_path: Path):
         "keinois:\n  name: keinois OÜ\n  address: [Sepapaja tn 6, 15551 Tallinn]\n  country: EE\n"
     )
     (tmp_path / "inv.yaml").write_text(
-        "number: KEI202601\nkind: export\ncurrency: EUR\nissue_date: 2026-07-02\n"
+        "number: KEI202601\nkind: export\ncurrency: EUR\nissue_date: 2026-07-02\nsupply: 2026-06\n"
         "customer: keinois\nitems:\n  - {description: Work, quantity: 1, unit_price: 100}\n"
     )
     inv = load_invoice(tmp_path / "inv.yaml", load_customers(tmp_path / "customers.yaml"))
@@ -466,7 +489,7 @@ def test_customer_slug_falls_back_to_name(tmp_path: Path):
 def test_load_invoice_toml(tmp_path: Path):
     (tmp_path / "inv.toml").write_text(
         'number = "X2"\nkind = "export"\ncurrency = "EUR"\n'
-        'issue_date = 2026-06-17\n\n[customer]\nname = "nordsoft"\n'
+        'issue_date = 2026-06-17\nsupply = "2026-05"\n\n[customer]\nname = "nordsoft"\n'
         'address = ["Tornimäe tn 1", "15551 Tallinn"]\ncountry = "EE"\n\n'
         '[[items]]\ndescription = "Consulting"\nquantity = 1\nunit_price = 771.16\n'
     )
@@ -576,6 +599,7 @@ def _export(**overrides: object) -> Invoice:
         "kind": "export",
         "currency": "EUR",
         "issue_date": date(2026, 6, 17),
+        "supply": SupplyPeriod.month(2026, 5),
         "customer": Party(
             name="nordsoft",
             address=["Tornimäe tn 1", "15551 Tallinn"],
@@ -727,6 +751,7 @@ def _invoice(**over: object) -> Invoice:
         "kind": "domestic",
         "currency": "CHF",
         "issue_date": date(2026, 7, 2),
+        "supply": SupplyPeriod.month(2026, 6),
         "customer": Party(name="ACME AG", address=["Bahnhofstrasse 1", "8000 Zürich"]),
         "items": [LineItem(description="Work", quantity=Decimal("1"), unit_price=Decimal("100"))],
     }
@@ -975,3 +1000,63 @@ def test_iban_check_reports_instead_of_guessing():
     # worth a look, not a blocker.
     mismatch = bank.check("CH44 3199 9123 0008 8901 2", "COBADEFFXXX")
     assert mismatch.ok and "BIC country DE" in mismatch.notes[0]
+
+
+# ── supply period ─────────────────────────────────────────────────────────────
+
+
+def test_supply_is_a_day_a_month_or_a_period():
+    assert _invoice(supply=date(2026, 6, 5)).supply == SupplyPeriod.day(date(2026, 6, 5))
+    assert _invoice(supply="2026-06-05").supply == SupplyPeriod.day(date(2026, 6, 5))  # TOML/JSON
+    assert _invoice(supply="2026-02").supply == SupplyPeriod(
+        start=date(2026, 2, 1), end=date(2026, 2, 28)
+    )
+    period = _invoice(supply={"from": date(2026, 4, 1), "to": date(2026, 6, 30)}).supply
+    assert (period.start, period.end) == (date(2026, 4, 1), date(2026, 6, 30))
+
+
+def test_supply_is_required_and_refuses_free_text():
+    base = {k: v for k, v in _invoice().model_dump().items() if k != "supply"}
+    with pytest.raises(ValueError, match="supply"):
+        Invoice.model_validate(base)
+    # The pre-structured free text names the value to write instead, in any
+    # invoice language.
+    with pytest.raises(ValueError, match="Write supply: 2026-07"):
+        _invoice(supply="Juli 2026")
+    with pytest.raises(ValueError, match="Write supply: 2026-08"):
+        _invoice(supply="Agosto 2026")
+    with pytest.raises(ValueError, match="is free text"):
+        _invoice(supply="Q2 retainer")
+    with pytest.raises(ValueError, match="no month 13"):
+        _invoice(supply="2026-13")
+    with pytest.raises(ValueError, match=r"ends .* before it starts"):
+        _invoice(supply={"from": date(2026, 6, 30), "to": date(2026, 6, 1)})
+
+
+def test_supply_prints_in_the_invoice_locale():
+    from quints.invoice import swico
+
+    june = SupplyPeriod.month(2026, 6)
+    assert june.text("de_CH") == "Juni 2026"
+    assert june.text("en") == "June 2026"
+    assert SupplyPeriod.day(date(2026, 6, 5)).text("de_CH") == "05.06.2026"
+    q = SupplyPeriod(start=date(2026, 4, 1), end=date(2026, 6, 30))
+    assert q.text("de_CH") == "1. Apr.\u2009–\u200930. Juni 2026"  # CLDR thin spaces
+    # Swico S1 /31/: one date for a day, start and end run together otherwise.
+    assert SupplyPeriod.day(date(2026, 6, 5)).swico() == "260605"
+    assert q.swico() == "260401260630"
+    inv = _invoice(supply=date(2026, 6, 5))
+    built = swico.billing_information(inv, ISSUER, compute(inv), inv.number)
+    assert built is not None and "/31/260605/" in built
+    # The ledger draft is narrated with the printed period.
+    assert '"Juni 2026 invoiced"' in draft.build_draft(_domestic(), compute(_domestic()))
+
+
+def test_supply_schema_advertises_every_accepted_form():
+    schema = Invoice.model_json_schema()
+    forms = schema["properties"]["supply"]["anyOf"]
+    assert {"format": "date", "type": "string"} in forms
+    assert any(f.get("pattern") == r"^\d{4}-(0[1-9]|1[0-2])$" for f in forms)
+    assert any("$ref" in f for f in forms)
+    assert "supply" in schema["required"]
+    assert set(schema["$defs"]["SupplyPeriod"]["properties"]) == {"from", "to"}

@@ -6,7 +6,7 @@ number: INV2026014
 kind: domestic
 currency: CHF
 issue_date: 2026-07-02
-supply: Juli 2026
+supply: 2026-07  # the supply period: a month, a day, or {from:, to:}
 customer: acme
 # The customer's own reference for this invoice — their PO number. It is
 # printed next to the invoice number and travels in the QR-bill's structured
