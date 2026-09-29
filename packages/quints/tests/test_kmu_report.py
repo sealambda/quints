@@ -72,6 +72,15 @@ def test_bilanz_balances_and_splits_result(tmp_path: Path) -> None:
     assert [c.code for c in cash.codes] == ["1020"]
 
 
+def test_bilanz_extended_first_year_has_no_prior_result(tmp_path: Path) -> None:
+    f = _ledger_file(tmp_path)
+    r = kmu.compute_bilanz(f, "2026-06-30", date_from="2025-01-01")
+    assert r.retained_prior == Decimal("0.00")
+    assert r.result == Decimal("120.00")  # 180 current + 2025 loss 50, FX loss 10
+    assert r.total_assets == r.total_liabilities_equity
+    assert kmu.compute_erfolg(f, "2025-01-01", "2026-06-30").result == Decimal("130.00")
+
+
 def test_erfolg_flows_at_transaction_rates(tmp_path: Path) -> None:
     r = kmu.compute_erfolg(_ledger_file(tmp_path), "2026-01-01", "2026-12-31")
     assert r.revenue[0].amount == Decimal("190.00")  # 200 EUR @ 0.95
