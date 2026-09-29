@@ -443,14 +443,17 @@ def _rows_from(
     return [rows[k] for k in keys if k in rows]
 
 
-def compute_bilanz(ledger_path: Path, at: str, cfg: config.Config | None = None) -> BilanzReport:
+def compute_bilanz(
+    ledger_path: Path, at: str, cfg: config.Config | None = None, *, date_from: str | None = None
+) -> BilanzReport:
     cfg = cfg or config.get()
     on = Date.fromisoformat(at)
+    fy_start = Date.fromisoformat(date_from) if date_from else Date(on.year, 1, 1)
+    if fy_start > on:
+        raise ValueError("period start must not be after balance-sheet date")
     entries, _ = ledger.load_entries(ledger_path)
     price_map = bc_prices.build_price_map(entries)
     mapping = kmu_map(entries, cfg.entity_marker)
-
-    fy_start = Date(on.year, 1, 1)
     inventories: dict[str, Inventory] = {}
     prior_flows = Decimal("0")  # P&L of years before the report year, at txn-date rates
     for e in entries:

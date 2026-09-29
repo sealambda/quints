@@ -1289,6 +1289,14 @@ def iban(
 
 # ── reports & year-end ────────────────────────────────────────────────────────
 
+
+def _report_start(from_: str | None, at: str) -> None:
+    end = _parse_date(at)
+    if from_ and _parse_date(from_) > end:
+        typer.secho("ERROR: period start must not be after balance-sheet date", fg="red", err=True)
+        raise typer.Exit(1)
+
+
 report_app = typer.Typer(
     no_args_is_help=True,
     help="Statutory statements grouped by the Swiss KMU chart of accounts (OR Art. 959a/959b).",
@@ -1299,14 +1307,17 @@ app.add_typer(report_app, name="report", rich_help_panel=PANEL_REPORTS)
 @report_app.command()
 def bilanz(
     at: str = typer.Option(..., "--at", metavar="YYYY-MM-DD", help="Report date."),
+    from_: str | None = typer.Option(
+        None, "--from", metavar="YYYY-MM-DD", help="Fiscal period start (default: January 1)."
+    ),
     lang: str = _lang_option(),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
 ):
     """Balance sheet (Bilanz, OR Art. 959a) grouped by KMU codes."""
-    _parse_date(at)
+    _report_start(from_, at)
     _require_ledger(file)
-    _emit(kmu_mod.compute_bilanz(file, at), kmu_mod.render_bilanz, lang, as_json)
+    _emit(kmu_mod.compute_bilanz(file, at, date_from=from_), kmu_mod.render_bilanz, lang, as_json)
 
 
 @report_app.command()
@@ -1345,6 +1356,9 @@ def statements(
     at: str | None = typer.Option(
         None, "--at", metavar="YYYY-MM-DD", help="Balance-sheet date (default: <year>-12-31)."
     ),
+    from_: str | None = typer.Option(
+        None, "--from", metavar="YYYY-MM-DD", help="Fiscal period start (default: January 1)."
+    ),
     lang: str = _lang_option(),
     out: Path | None = typer.Option(None, "--out", "-o", help="Output PDF path."),
     file: Path = _file_option(),
@@ -1354,10 +1368,12 @@ def statements(
 
     _require_ledger(file)
     balance_date = at or f"{year}-12-31"
-    _parse_date(balance_date)
+    _report_start(from_, balance_date)
     lang = lang or config_mod.get().report_language
-    bilanz_report = kmu_mod.compute_bilanz(file, balance_date)
-    erfolg_report = kmu_mod.compute_erfolg(file, f"{year}-01-01", f"{year}-12-31")
+    bilanz_report = kmu_mod.compute_bilanz(file, balance_date, date_from=from_)
+    erfolg_report = kmu_mod.compute_erfolg(
+        file, from_ or f"{year}-01-01", balance_date if from_ else f"{year}-12-31"
+    )
     out = out or Path(f"statements-{year}-{lang}.pdf")
     path = report_pdf.render_pdf(bilanz_report, erfolg_report, lang, out)
     typer.secho(f"Wrote {path}", fg="green")
