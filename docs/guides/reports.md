@@ -11,6 +11,8 @@ codes.
       for the form: Eigenkapital, Stammkapital or Aktienkapital.
     - **VAT status:** any. VAT balances appear as receivables or liabilities
       like any other.
+    - **Fiscal year:** the calendar year, or a GmbH's or AG's extended first
+      year (`--from`, see [Close the year](year-end.md#an-extended-first-year)).
     - **Not covered:** consolidated accounts, the notes to the accounts
       (Anhang, Art. 959c OR), a cash-flow statement, and the larger
       companies' additional reporting (Art. 961 ff. OR).
@@ -24,23 +26,10 @@ quints report erfolg --year 2026
 
 `bilanz` values non-CHF balances at the report-date rate (same method Fava
 uses, so totals tie out) and splits the balancing figure into
-Gewinnvortrag and the fiscal period's result. By default the period starts on
-January 1 of the report year; use `--from` for an extended first year. `erfolg`
-converts flows at each transaction's date and accepts `--from`/`--to` for
-arbitrary periods.
-
-For an extended first fiscal year, e.g. July 4, 2025 to December 31, 2026:
-
-```bash
-quints report bilanz --at 2026-12-31 --from 2025-07-04
-quints report erfolg --from 2025-07-04 --to 2026-12-31
-quints report statements --year 2026 --from 2025-07-04 --lang de
-```
-
-`--from` applies to both the Bilanz's result/retained-earnings split and the
-Erfolgsrechnung in the combined PDF. For following years, omit it to return
-to the normal calendar-year boundary. The PDF's `--at` sets the balance date;
-with `--from`, it also sets the end of the income-statement period.
+Gewinnvortrag and the fiscal year's result. The fiscal year starts on
+1 January of the `--at` year; `--from` moves the start for an
+[extended first year](year-end.md#an-extended-first-year). `erfolg` converts
+flows at each transaction's date and takes `--from`/`--to` for any period.
 
 The equity section is labeled for your [legal form](../legal-forms.md):
 Eigenkapital, Stammkapital, or Aktienkapital.
@@ -62,7 +51,8 @@ quints report statements --year 2026 --lang de
 
 Bilanz + Erfolgsrechnung as one PDF, in German (`--lang de`) or English,
 with your issuer identity from `invoicing/issuer.yaml` on it. `--out` picks
-the path.
+the path. Both statements cover the same fiscal year: `--from` (default
+1 January) to `--at` (default 31 December).
 
 ![The Bilanz page of the generated statements PDF, grouped by KMU code](../assets/statements.png){ width="480" }
 

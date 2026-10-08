@@ -15,6 +15,8 @@ to review and paste, never written for you.
           year (quarters, half-years or the whole year, whichever applied
           that year), from the registration date to its end.
     - **Fiscal year:** the calendar year, like the books (one file per year).
+      A GmbH's or AG's first year may run longer: see
+      [An extended first year](#an-extended-first-year).
 
 ## The order of operations
 
@@ -37,6 +39,43 @@ The steps:
 A registered business also runs `quints vat liability --at 2026-12-31` at
 the year end. If turnover stayed below the threshold, it says whether you may
 deregister and by when ([Register, switch method, deregister](vat-registration.md)).
+
+## An extended first year
+
+A GmbH or AG may skip the closing in the calendar year it was founded. Its
+first fiscal year then runs on to the end of the next calendar year at the
+latest: founded 4 July 2025, first closing 31 December 2026.[^fy] Zürich asks
+you to report the extension to the Kantonales Steueramt; check what your
+canton asks.[^zh] An Einzelfirma can't extend: it closes every calendar
+year.[^fy-ef]
+
+```bash
+quints close check --year 2025
+quints close check --year 2026
+quints close depreciation --year 2026
+quints report statements --year 2026 --from 2025-07-04
+```
+
+1. **Check both calendar years.** `close check` works per calendar year, so
+   the founding year's VAT periods, flagged entries and missing documents
+   only show up under `--year 2025`. Its year-end items (`fx`, `prices`,
+   `depreciation`, `receivables`) don't apply to 2025: nothing closes on
+   31 December 2025.
+2. **Depreciate once, for 2026.** Don't run `close depreciation --year 2025`.
+   The 2026 run charges one year's depreciation, 2025 purchases included.
+   Whether the longer first year allows more is for you and your Treuhänder
+   to decide.
+3. **Report from the founding date.** With `--from`, both statements cover
+   4 July 2025 to 31 December 2026, and none of it is Gewinnvortrag. `report
+   bilanz` and `report erfolg` take the same dates:
+
+    ```bash
+    quints report bilanz --at 2026-12-31 --from 2025-07-04
+    quints report erfolg --from 2025-07-04 --to 2026-12-31
+    ```
+
+4. **From 2027 on, drop `--from`.** The fiscal year is the calendar year
+   again, and the first year's result is Gewinnvortrag.
 
 ## The checklist
 
@@ -180,8 +219,13 @@ receivable_review_days = 90         # open longer at year end → Delkredere rev
   depreciate less than the maximum. Those are yours, or your Treuhänder's.
   quints computes what follows from the books and the published rates, and
   says so.
-- **A fiscal year that isn't the calendar year.**
+- **A fiscal year that isn't the calendar year**, other than an extended
+  first one. Even then, `close check` and `close depreciation` work per
+  calendar year ([An extended first year](#an-extended-first-year)).
 
 [^books]: Bookkeeping and financial-reporting duty: Art. 957 ff. OR, [SR 220](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_957). An Einzelunternehmen below CHF 500'000 turnover may keep simplified accounts (Art. 957 Abs. 2); quints keeps full double-entry books either way.
 [^960a]: Art. 960a OR, [fedlex](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_960_a).
 [^a1995]: [Merkblatt A/1995 — Abschreibungen auf dem Anlagevermögen geschäftlicher Betriebe](https://www.estv.admin.ch/dam/de/sd-web/Qyxr5xBfdWDp/dbst-mb-a-1995-geschbetriebe-de.pdf); legal basis Art. 27 Abs. 2 Bst. a, 28 and 62 DBG ([SR 642.11](https://www.fedlex.admin.ch/eli/cc/1991/1184_1184_1184/de)). The table lives in `quints.closing.MERKBLATT_A1995`.
+[^fy]: Art. 79 Abs. 3 DBG, [SR 642.11](https://www.fedlex.admin.ch/eli/cc/1991/1184_1184_1184/de#art_79): "In jedem Kalenderjahr, ausgenommen im Gründungsjahr, muss ein Geschäftsabschluss mit Bilanz und Erfolgsrechnung erstellt werden." The year after the founding needs a closing, so the first fiscal year ends by 31 December of that year.
+[^fy-ef]: Art. 41 Abs. 3 DBG, [SR 642.11](https://www.fedlex.admin.ch/eli/cc/1991/1184_1184_1184/de#art_41): a closing "in jeder Steuerperiode"; for a natural person the tax period is the calendar year (Art. 40 Abs. 1).
+[^zh]: Kantonales Steueramt Zürich, [Steuererklärung juristische Personen](https://www.zh.ch/de/steuern-finanzen/steuern/steuern-juristische-personen/steuererklaerung-juristische-personen.html), section *Steuererklärung im Gründungsjahr*: an extended fiscal year "bis maximal 31. Dezember des Folgejahres", to be reported to the Kantonales Steueramt.

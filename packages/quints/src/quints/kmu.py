@@ -328,8 +328,8 @@ class BilanzReport:
     short_term_liabilities: list[RowLine]
     long_term_liabilities: list[RowLine]
     equity: list[RowLine]
-    retained_prior: Decimal  # unbooked P&L of years before the report year (Gewinnvortrag)
-    result: Decimal  # report-year share of the balancing figure (Jahresgewinn)
+    retained_prior: Decimal  # unbooked P&L before the fiscal year (Gewinnvortrag)
+    result: Decimal  # the fiscal year's share of the balancing figure (Jahresgewinn)
     total_assets: Decimal
     total_liabilities_equity: Decimal
     converted: dict[str, Decimal] = field(
@@ -450,12 +450,12 @@ def compute_bilanz(
     on = Date.fromisoformat(at)
     fy_start = Date.fromisoformat(date_from) if date_from else Date(on.year, 1, 1)
     if fy_start > on:
-        raise ValueError("period start must not be after balance-sheet date")
+        raise ValueError(f"fiscal year start {fy_start} is after the balance-sheet date {on}")
     entries, _ = ledger.load_entries(ledger_path)
     price_map = bc_prices.build_price_map(entries)
     mapping = kmu_map(entries, cfg.entity_marker)
     inventories: dict[str, Inventory] = {}
-    prior_flows = Decimal("0")  # P&L of years before the report year, at txn-date rates
+    prior_flows = Decimal("0")  # P&L before the fiscal year, at txn-date rates
     for e in entries:
         if not isinstance(e, data.Transaction) or e.date > on:
             continue
@@ -497,7 +497,7 @@ def compute_bilanz(
     total_assets = sum((r.amount for r in current + noncurrent), Decimal("0"))
     liabilities_and_equity = sum((r.amount for r in short + long_ + equity), Decimal("0"))
     # Balancing figure = all not-yet-closed P&L since inception. Split it into
-    # prior years (Gewinnvortrag) and the report year (Jahresgewinn); the report
+    # prior years (Gewinnvortrag) and the fiscal year (Jahresgewinn); the fiscal
     # year's share absorbs the unrealized FX of report-date valuation.
     balancing = total_assets - liabilities_and_equity
     retained_prior = ledger.rappen(-prior_flows)

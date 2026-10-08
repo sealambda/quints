@@ -5,7 +5,13 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+from typer.testing import CliRunner
+
 from quints import kmu
+from quints.cli import app
+
+runner = CliRunner()
 
 _LEDGER = """
 2024-01-01 open Assets:CH:GmbH:Current:UBS:CHF CHF
@@ -79,6 +85,45 @@ def test_bilanz_extended_first_year_has_no_prior_result(tmp_path: Path) -> None:
     assert r.result == Decimal("120.00")  # 180 current + 2025 loss 50, FX loss 10
     assert r.total_assets == r.total_liabilities_equity
     assert kmu.compute_erfolg(f, "2025-01-01", "2026-06-30").result == Decimal("130.00")
+
+
+def _statements(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *args: str
+) -> tuple[kmu.BilanzReport, kmu.ErfolgReport]:
+    """Run `report statements`; return the two reports it would render."""
+    seen: list[tuple[kmu.BilanzReport, kmu.ErfolgReport]] = []
+
+    def render(bilanz: kmu.BilanzReport, erfolg: kmu.ErfolgReport, lang: str, out: Path) -> Path:
+        seen.append((bilanz, erfolg))
+        return out
+
+    monkeypatch.setattr("quints.report_pdf.render_pdf", render)
+    f = _ledger_file(tmp_path)
+    res = runner.invoke(app, ["report", "statements", *args, "--lang", "en", "-f", str(f)])
+    assert res.exit_code == 0, res.output
+    return seen[0]
+
+
+def test_statements_cover_one_fiscal_year(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # a mid-year --at ends the Erfolgsrechnung there too, not on 31 December
+    bilanz, erfolg = _statements(tmp_path, monkeypatch, "--year", "2026", "--at", "2026-06-30")
+    assert (erfolg.date_from, erfolg.date_to) == ("2026-01-01", "2026-06-30")
+    assert bilanz.retained_prior == Decimal("-50.00")
+
+
+def test_statements_extended_first_year(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bilanz, erfolg = _statements(tmp_path, monkeypatch, "--year", "2026", "--from", "2025-01-01")
+    assert (erfolg.date_from, erfolg.date_to) == ("2025-01-01", "2026-12-31")
+    assert bilanz.retained_prior == Decimal("0.00")
+    assert bilanz.result == erfolg.result - 10  # less the unrealized EUR drop
+
+
+def test_fiscal_year_cannot_start_after_balance_date(tmp_path: Path) -> None:
+    f = _ledger_file(tmp_path)
+    args = ["report", "bilanz", "--at", "2026-06-30", "--from", "2026-07-01", "-f", str(f)]
+    res = runner.invoke(app, args)
+    assert res.exit_code == 1
+    assert res.stderr.startswith("ERROR: fiscal year start 2026-07-01 is after the balance-sheet")
 
 
 def test_erfolg_flows_at_transaction_rates(tmp_path: Path) -> None:

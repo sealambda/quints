@@ -1303,14 +1303,6 @@ def iban(
 
 # ── reports & year-end ────────────────────────────────────────────────────────
 
-
-def _report_start(from_: str | None, at: str) -> None:
-    end = _parse_date(at)
-    if from_ and _parse_date(from_) > end:
-        typer.secho("ERROR: period start must not be after balance-sheet date", fg="red", err=True)
-        raise typer.Exit(1)
-
-
 report_app = typer.Typer(
     no_args_is_help=True,
     help="Statutory statements grouped by the Swiss KMU chart of accounts (OR Art. 959a/959b).",
@@ -1322,14 +1314,19 @@ app.add_typer(report_app, name="report", rich_help_panel=PANEL_REPORTS)
 def bilanz(
     at: str = typer.Option(..., "--at", metavar="YYYY-MM-DD", help="Report date."),
     from_: str | None = typer.Option(
-        None, "--from", metavar="YYYY-MM-DD", help="Fiscal period start (default: January 1)."
+        None,
+        "--from",
+        metavar="YYYY-MM-DD",
+        help="Fiscal year start (default: 1 January of --at's year).",
     ),
     lang: str = _lang_option(),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
 ):
     """Balance sheet (Bilanz, OR Art. 959a) grouped by KMU codes."""
-    _report_start(from_, at)
+    _parse_date(at)
+    if from_:
+        _parse_date(from_)
     _require_ledger(file)
     _emit(kmu_mod.compute_bilanz(file, at, date_from=from_), kmu_mod.render_bilanz, lang, as_json)
 
@@ -1368,26 +1365,32 @@ def konten(
 def statements(
     year: int = typer.Option(..., "--year", help="Fiscal year."),
     at: str | None = typer.Option(
-        None, "--at", metavar="YYYY-MM-DD", help="Balance-sheet date (default: <year>-12-31)."
+        None,
+        "--at",
+        metavar="YYYY-MM-DD",
+        help="Fiscal year end, the balance-sheet date (default: <year>-12-31).",
     ),
     from_: str | None = typer.Option(
-        None, "--from", metavar="YYYY-MM-DD", help="Fiscal period start (default: January 1)."
+        None, "--from", metavar="YYYY-MM-DD", help="Fiscal year start (default: <year>-01-01)."
     ),
     lang: str = _lang_option(),
     out: Path | None = typer.Option(None, "--out", "-o", help="Output PDF path."),
     file: Path = _file_option(),
 ):
-    """Bilanz + Erfolgsrechnung as one PDF for the Treuhänder/auditor."""
+    """Bilanz + Erfolgsrechnung as one PDF for the Treuhänder/auditor.
+
+    Both cover the same fiscal year, `--from` to `--at`.
+    """
     from . import report_pdf
 
     _require_ledger(file)
+    date_from = from_ or f"{year}-01-01"
     balance_date = at or f"{year}-12-31"
-    _report_start(from_, balance_date)
+    _parse_date(date_from)
+    _parse_date(balance_date)
     lang = lang or config_mod.get().report_language
-    bilanz_report = kmu_mod.compute_bilanz(file, balance_date, date_from=from_)
-    erfolg_report = kmu_mod.compute_erfolg(
-        file, from_ or f"{year}-01-01", balance_date if from_ else f"{year}-12-31"
-    )
+    bilanz_report = kmu_mod.compute_bilanz(file, balance_date, date_from=date_from)
+    erfolg_report = kmu_mod.compute_erfolg(file, date_from, balance_date)
     out = out or Path(f"statements-{year}-{lang}.pdf")
     path = report_pdf.render_pdf(bilanz_report, erfolg_report, lang, out)
     typer.secho(f"Wrote {path}", fg="green")
