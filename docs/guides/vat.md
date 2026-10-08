@@ -116,7 +116,10 @@ quints vat status
 
 It lists what has been settled but not yet paid, with due dates. When the
 payment leaves the bank, book it against `PayableVAT` with the same
-`^VAT-<period>` link, and the period drops off the list. A credit
+`^VAT-<period>` link, and the period drops off the list. The statement
+importers add the link for you when a payee rule routes the ESTV debit to
+`PayableVAT` and the amount clears exactly one open period; two periods
+owing the same amount leave the draft unlinked for you to decide. A credit
 (Ziffer 510) shows as a negative amount until the ESTV refunds or offsets
 it.
 

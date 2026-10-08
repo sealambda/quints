@@ -57,7 +57,7 @@ from beangulp_wise import Importer as WiseImporter
 from beangulp_wise import ScaChallenge, WiseClient, merge_conversions
 from beangulp_yapeal import Importer as YapealImporter
 
-from . import config, ledger, payables
+from . import config, ledger, payables, settlement
 from . import receivables as recv_mod
 from .invoice.model import slugify
 
@@ -149,6 +149,9 @@ class ImportResult:
     payable_matches: list[tuple[str, data.Transaction]] = field(
         default_factory=list
     )  # (bill number, draft)
+    vat_matches: list[tuple[str, data.Transaction]] = field(
+        default_factory=list
+    )  # (VAT-<period> link, draft)
     fee_tax_periods: list[str] = field(default_factory=list)  # YYYY-MM, see _fee_tax_periods
 
 
@@ -321,6 +324,37 @@ def match_payables(
         result.payable_matches.append((bill.number, matched))
 
 
+def match_vat(result: ImportResult, existing: Sequence[data.Directive], cfg: config.Config) -> None:
+    """Link VAT payments to the filed period they settle.
+
+    A settlement and its payment share a ``^VAT-<period>`` link — that is how
+    `quints vat status` tells a paid period from an open one; an unlinked
+    payment nets the total but leaves its period listed as owed. A payee rule
+    can route the ESTV debit to PayableVAT, but it cannot know the period.
+    The amount does: a draft already counter-booked to PayableVAT is linked
+    to the one open period whose balance it clears exactly — an ESTV refund
+    of a Ziffer-510 credit the same way, the other sign. Two periods owing
+    the same amount identify neither; the draft stays unlinked for a human.
+    """
+    opens, _, _, _ = settlement.outstanding(Path(), TodayDate.today(), cfg, list(existing))
+    for i, draft in enumerate(result.drafts):
+        if len(draft.postings) != 2 or draft.postings[1].account != cfg.payable_vat:
+            continue  # only a draft the rules already routed to PayableVAT
+        if any(lk.startswith("VAT-") for lk in draft.links or ()):
+            continue
+        cash = draft.postings[0].units
+        if cash is None or cash.number is None or cash.currency != cfg.operating_currency:
+            continue
+        paid = cash.number
+        fits = [liab for liab in opens if abs(liab.owed + paid) <= _PAYABLE_TOL]
+        if len(fits) != 1:
+            continue
+        opens.remove(fits[0])  # a period is paid once
+        matched = draft._replace(flag="*", links=frozenset(draft.links or ()) | {fits[0].period})
+        result.drafts[i] = matched
+        result.vat_matches.append((fits[0].period, matched))
+
+
 def _write_staging(result: ImportResult, out_dir: Path, source: str) -> None:
     if not (result.drafts or result.balances):
         return
@@ -357,6 +391,7 @@ def run_yapeal(
     _split(result, extracted, _cash_pool(existing, {yapeal.account}))
     match_receivables(result, existing, cfg)
     match_payables(result, existing, cfg)
+    match_vat(result, existing, cfg)
     _write_staging(result, out_dir, "yapeal")
     return result
 
@@ -382,6 +417,7 @@ def run_ubs(
     _split(result, extracted, _cash_pool(existing, {ubs.account}))
     match_receivables(result, existing, cfg)
     match_payables(result, existing, cfg)
+    match_vat(result, existing, cfg)
     _write_staging(result, out_dir, "ubs")
     return result
 
@@ -414,6 +450,7 @@ def run_wise(
     _split(result, merge_conversions(deduped), _cash_pool(existing, set(wise.account_map.values())))
     match_receivables(result, existing, cfg)
     match_payables(result, existing, cfg)
+    match_vat(result, existing, cfg)
     _write_staging(result, out_dir, "wise")
     return result
 
@@ -446,6 +483,7 @@ def run_stripe(
     _split(result, deduped, _cash_pool(existing, set(stripe.account_map.values())))
     match_receivables(result, existing, cfg)
     match_payables(result, existing, cfg)
+    match_vat(result, existing, cfg)
     result.fee_tax_periods = _fee_tax_periods(statements)
     _write_staging(result, out_dir, "stripe")
     return result

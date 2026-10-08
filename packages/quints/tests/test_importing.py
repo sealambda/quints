@@ -364,3 +364,77 @@ def test_match_receivables_completes_a_cash_only_draft() -> None:
     booked = _RECV_LEDGER + "\n" + printer.format_entry(matched)
     _entries, errors, _ = load_string(booked)
     assert not errors, errors
+
+
+_VAT_LEDGER = """
+2024-01-01 open Assets:CH:GmbH:Current:UBS:CHF CHF
+2024-01-01 open Liabilities:CH:GmbH:Tax:PayableVAT CHF
+2024-01-01 open Liabilities:CH:GmbH:Tax:OutputVAT CHF
+
+2026-03-31 * "2026-Q1 VAT Settlement" ^VAT-2026-Q1
+    due: 2026-05-30
+    Liabilities:CH:GmbH:Tax:PayableVAT   -300.00 CHF
+    Liabilities:CH:GmbH:Tax:OutputVAT     300.00 CHF
+
+2026-06-30 * "2026-Q2 VAT Settlement" ^VAT-2026-Q2
+    due: 2026-08-29
+    Liabilities:CH:GmbH:Tax:PayableVAT   -419.73 CHF
+    Liabilities:CH:GmbH:Tax:OutputVAT     419.73 CHF
+"""
+
+
+def _vat_draft(amount: str) -> data.Transaction:
+    d = _draft("Eidg. Steuerverwaltung", "MWST", amount)
+    return d._replace(
+        flag="*",
+        postings=[
+            d.postings[0],
+            d.postings[1]._replace(account="Liabilities:CH:GmbH:Tax:PayableVAT"),
+        ],
+    )
+
+
+def test_match_vat_links_the_payment_to_the_period_it_clears() -> None:
+    from beancount.loader import load_string
+
+    entries, _, _ = load_string(_VAT_LEDGER)
+    result = importing.ImportResult(source="test")
+    result.drafts = [
+        _vat_draft("-419.73"),  # clears Q2 exactly
+        _vat_draft("-100.00"),  # a part payment identifies no period
+        _draft("Somebody", "same amount, not routed to PayableVAT", "-300.00"),
+    ]
+    importing.match_vat(result, entries, config.Config())
+
+    assert [n for n, _ in result.vat_matches] == ["VAT-2026-Q2"]
+    assert result.drafts[0].links == {"VAT-2026-Q2"}
+    assert not result.drafts[1].links
+    assert not result.drafts[2].links and result.drafts[2].flag == "!"
+
+
+def test_match_vat_refuses_two_periods_owing_the_same_amount() -> None:
+    from beancount.loader import load_string
+
+    entries, _, _ = load_string(_VAT_LEDGER.replace("300.00", "419.73"))
+    result = importing.ImportResult(source="test")
+    result.drafts = [_vat_draft("-419.73")]
+    importing.match_vat(result, entries, config.Config())
+
+    assert not result.vat_matches and not result.drafts[0].links
+
+
+def test_run_ubs_links_the_estv_debit_to_its_period(tmp_path: Path) -> None:
+    ledger_file = tmp_path / "main.bean"
+    ledger_file.write_text(
+        "2024-01-01 open Assets:CH:GmbH:Current:UBS:CHF CHF\n"
+        "2024-01-01 open Liabilities:CH:GmbH:Tax:PayableVAT CHF\n"
+        "2024-01-01 open Liabilities:CH:GmbH:Tax:OutputVAT CHF\n"
+        '2026-03-31 * "2026-Q1 VAT Settlement" ^VAT-2026-Q1\n'
+        "    Liabilities:CH:GmbH:Tax:PayableVAT   -398.08 CHF\n"
+        "    Liabilities:CH:GmbH:Tax:OutputVAT     398.08 CHF\n"
+    )
+    result = importing.run_ubs(FIXTURE, ledger_file, out_dir=tmp_path / "staging", cfg=_CFG)
+
+    assert [n for n, _ in result.vat_matches] == ["VAT-2026-Q1"]
+    assert result.out_path is not None
+    assert "^VAT-2026-Q1" in result.out_path.read_text(encoding="utf-8")
