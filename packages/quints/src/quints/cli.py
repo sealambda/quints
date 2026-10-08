@@ -1112,6 +1112,7 @@ def _report_import(
                     {**txn(t), "invoice": n} for n, t in result.receivable_matches
                 ],
                 "payable_matches": [{**txn(t), "bill": n} for n, t in result.payable_matches],
+                "vat_matches": [{**txn(t), "period": n} for n, t in result.vat_matches],
                 "fee_tax_periods": result.fee_tax_periods,
                 "invoices": [dataclasses.asdict(d) for d in invoices or []],
                 "balances": [
@@ -1152,6 +1153,14 @@ def _report_import(
         )
         for number, draft in result.payable_matches:
             typer.echo(f"  {draft.date}  {draft.postings[0].units}  ^{number}")
+    if result.vat_matches:
+        typer.secho(
+            f"{len(result.vat_matches)} payment(s) matched filed VAT periods "
+            f"(settlement link drafted):",
+            fg="green",
+        )
+        for link, draft in result.vat_matches:
+            typer.echo(f"  {draft.date}  {draft.postings[0].units}  ^{link}")
     if result.drafts:
         typer.secho(f"{len(result.drafts)} draft(s) → {result.out_path}", fg="green")
         for draft in result.drafts:
