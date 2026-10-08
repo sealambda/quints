@@ -225,12 +225,18 @@ def render(
     at: Date,
     consolidation: receivables.Consolidation | None = None,
     console: Console | None = None,
+    vat_owed: Decimal = Decimal("0"),
 ) -> None:
+    """``vat_owed`` is the filed-but-unpaid VAT (``quints vat status``). It is
+    no supplier bill — it sits on PayableVAT, not the payables account — so
+    it stays out of the table, but an empty list must not read as "nothing
+    owed" while the ESTV is still to be paid."""
     console = console or ui.console
     console.print()
     console.rule(f"[bold]Open payables[/]  ·  {at}")
     if not open_bills:
         console.print("[ok]Nothing open — every supplier bill is paid.[/]")
+        _vat_footer(vat_owed, console)
         console.print()
         return
 
@@ -250,3 +256,14 @@ def render(
         )
     t.add_section()
     receivables.render_totals(t, open_bills, consolidation, at, console)
+    _vat_footer(vat_owed, console)
+
+
+def _vat_footer(vat_owed: Decimal, console: Console) -> None:
+    if abs(vat_owed) <= _TOL:
+        return
+    what = "VAT owed to" if vat_owed > 0 else "VAT credit from"
+    console.print(
+        f"[warn]+ {what} the ESTV: {ui.money(abs(vat_owed))} CHF[/]  "
+        "[muted]not a supplier bill — see [b]quints vat status[/][/]"
+    )

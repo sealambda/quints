@@ -259,3 +259,13 @@ def test_fava_document_links_are_not_bill_ids(tmp_path: Path) -> None:
 """
     )
     assert payables.compute(led, date(2026, 6, 30), config.Config())[0] == []
+
+
+def test_vat_owed_is_footed_not_listed() -> None:
+    from rich.console import Console
+
+    console = Console(record=True, width=120)
+    payables.render([], date(2026, 10, 8), console=console, vat_owed=Decimal("419.73"))
+    out = console.export_text()
+    assert "Nothing open" in out
+    assert "VAT owed to the ESTV: 419.73 CHF" in out and "quints vat status" in out

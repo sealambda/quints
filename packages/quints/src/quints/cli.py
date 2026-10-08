@@ -895,6 +895,10 @@ def payables(
     open_bills, consolidation, ref = pay_mod.compute(
         file, _parse_date(at) if at else None, currency=consolidate
     )
+    # Filed-but-unpaid VAT sits on PayableVAT, not the payables account: footed, not listed.
+    entries, _ = ledger.load_entries(file)
+    as_of = [e for e in entries if e.date <= ref]
+    _, _, vat_owed, _ = settle_mod.outstanding(file, ref, entries=as_of)
     if as_json:
         import dataclasses
 
@@ -902,6 +906,7 @@ def payables(
             {
                 "at": str(ref),
                 "open": [dataclasses.asdict(b) for b in open_bills],
+                "vat_owed": str(vat_owed),
                 "totals": [dataclasses.asdict(ct) for ct in consolidation.totals],
                 "consolidated": {
                     "currency": consolidation.currency,
@@ -911,7 +916,7 @@ def payables(
             }
         )
         return
-    pay_mod.render(open_bills, ref, consolidation)
+    pay_mod.render(open_bills, ref, consolidation, vat_owed=vat_owed)
 
 
 # ── banking & reconciliation ──────────────────────────────────────────────────
