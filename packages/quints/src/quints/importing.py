@@ -309,10 +309,12 @@ def match_payables(
             continue  # ambiguous shape — leave the draft unmatched, still flagged
         meta = dict(draft.meta or {})
         meta["bill"] = bill.number
+        # A fallback key (`Google · 24.13`) is no valid ^link; `bill:` carries it.
+        link = set() if bill.keyed_by == payables.KEY_FALLBACK else {bill.number}
         matched = draft._replace(
             flag="*",
             meta=meta,
-            links=frozenset(draft.links or ()) | {bill.number},
+            links=frozenset(draft.links or ()) | link,
             postings=postings,
         )
         result.drafts[i] = matched
