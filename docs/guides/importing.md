@@ -166,7 +166,9 @@ supplier bills and existing bookings, so you see what belongs together before
 you book. `inbox` inventories `inbox/` — filename hints, duplicates, documents
 already linked. `payables` ages the supplier bills you still owe, in their
 original currency plus a consolidated total; `--at` reports as of a date,
-`--json` for an agent.
+`--json` for an agent. Settled but unpaid VAT is no supplier bill — it sits
+on `PayableVAT` — so it is shown as a footer line, not in the table; the
+detail is in `quints vat status`.
 
 Drop source PDFs into `inbox/` named `YYYY-MM-DD.payee.narrative.pdf`; once
 booked, file them under `documents/` mirroring the account path, and link
