@@ -227,3 +227,35 @@ def test_booked_bill_recognises_only_the_billing_leg(tmp_path: Path) -> None:
     keys = [payables.booked_bill(e, config.Config()) for e in txns]
     # bill, payment, bill, payment — only the two credits are bills
     assert keys == ["TM-2026-4711", None, "HOST-77", None]
+
+
+def test_fava_document_links_are_not_bill_ids(tmp_path: Path) -> None:
+    # fava.plugins.link_documents adds ^dok-<date> to every bill with a
+    # `document:`, never to its payment. Read as a bill id, it split each
+    # bill from its payment: a lone dok- keyed the bill, and next to a real
+    # link it made two, pushing the bill onto the (payee, amount) fallback.
+    led = tmp_path / "m.bean"
+    led.write_text(
+        """
+2024-01-01 open Liabilities:CH:GmbH:Payable:Trade
+2024-01-01 open Assets:CH:GmbH:Current:UBS:CHF
+2024-01-01 open Expenses:CH:GmbH:Admin:Bookkeeping
+
+2026-06-01 * "Google" "Workspace May" ^dok-2026-06-01
+  Expenses:CH:GmbH:Admin:Bookkeeping       24.13 CHF
+  Liabilities:CH:GmbH:Payable:Trade       -24.13 CHF
+
+2026-06-02 * "Google" "Workspace May paid"
+  Liabilities:CH:GmbH:Payable:Trade        24.13 CHF
+  Assets:CH:GmbH:Current:UBS:CHF          -24.13 CHF
+
+2026-06-02 * "Hoster AG" "Hosting June" ^HOST-9 ^dok-2026-06-02
+  Expenses:CH:GmbH:Admin:Bookkeeping       17.31 CHF
+  Liabilities:CH:GmbH:Payable:Trade       -17.31 CHF
+
+2026-06-03 * "Hoster AG" "Paid" ^HOST-9
+  Liabilities:CH:GmbH:Payable:Trade        17.31 CHF
+  Assets:CH:GmbH:Current:UBS:CHF          -17.31 CHF
+"""
+    )
+    assert payables.compute(led, date(2026, 6, 30), config.Config())[0] == []

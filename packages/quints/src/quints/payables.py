@@ -24,6 +24,7 @@ ours to number:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date as Date
@@ -40,6 +41,9 @@ from rich.table import Table
 from . import config, ledger, receivables, ui
 
 _TOL = Decimal("0.005")
+# fava.plugins.link_documents stamps `^dok-<date>` on every transaction with a
+# `document:` — a link to the PDF, never a bill number.
+_FAVA_DOC_LINK = re.compile(r"^dok-\d{4}-\d{2}-\d{2}$")
 
 KEY_BILL = "bill"  # `bill:` metadata — the supplier's invoice number
 KEY_LINK = "link"  # a lone ^link on the transaction
@@ -74,12 +78,14 @@ def bill_id(e: data.Transaction) -> tuple[str, str] | None:
     so there is no shape to require. The cost is the mirror image: on a
     transaction touching the payables account, a lone ``^PROJ2024-A`` *is*
     read as the bill id. Set ``bill:`` — which always wins — whenever a bill
-    or its payment carries a link that doesn't name it.
+    or its payment carries a link that doesn't name it. The one link never
+    counted is fava's ``^dok-<date>``: ``link_documents`` puts it on every
+    bill that has its PDF attached, and none of the payments.
     """
     meta = (e.meta or {}).get("bill")
     if meta:
         return str(meta), KEY_BILL
-    links = list(e.links or ())
+    links = [lk for lk in (e.links or ()) if not _FAVA_DOC_LINK.match(lk)]
     return (links[0], KEY_LINK) if len(links) == 1 else None
 
 
