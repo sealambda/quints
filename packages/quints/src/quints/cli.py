@@ -169,7 +169,10 @@ def _print_version(value: bool) -> None:
 @app.callback()
 def root(
     config: Path | None = typer.Option(
-        None, "--config", help="quints.toml path (default: ./quints.toml, else built-in defaults)."
+        None,
+        "--config",
+        help="quints.toml path (default: the one beside the ledger or above it, "
+        "else ./quints.toml, else built-in defaults).",
     ),
     version: bool = typer.Option(
         False,
@@ -180,6 +183,7 @@ def root(
     ),
 ):
     config_mod.set_path(config)
+    config_mod.use_ledger(None)  # a command that reads a ledger names it
 
 
 def _lang_option() -> str:
@@ -258,6 +262,7 @@ def _vat_chf(file: Path, totals: Totals, inv: Invoice) -> Decimal | None:
 
 
 def _require_ledger(file: Path) -> None:
+    config_mod.use_ledger(file)
     if not file.exists():
         typer.secho(f"ERROR: ledger not found: {file}", fg="red", err=True)
         raise typer.Exit(1)
@@ -790,6 +795,7 @@ def invoice(
             typer.secho(f"ERROR: {what} not found: {p}", fg="red", err=True)
             raise typer.Exit(1)
 
+    config_mod.use_ledger(file)  # the issuer's VAT status comes from its quints.toml
     registry = m.load_customers(customers) if customers.exists() else None
     inv = m.load_invoice(data, registry)
     iss = m.load_issuer(issuer)

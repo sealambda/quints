@@ -92,10 +92,11 @@ table, so a typo can't quietly change a return.
 - **Input VAT** is split into 400 or 405 by the **counter-leg's** code
   (below).
 
-**3. The income-account markers** in `quints.toml`. Each is matched as a
-substring of the account name, most specific first:
+**3. The income-account markers** under `[accounts]` in `quints.toml`.
+Each is matched as a substring of the account name, most specific first:
 
 ```toml
+[accounts]
 export_marker = ":Export"             # Ziffer 221
 export_goods_marker = ":ExportGoods"  # Ziffer 220
 exempt_marker = ":Exempt"             # Ziffer 230

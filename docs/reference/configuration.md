@@ -5,7 +5,21 @@ Everything entity-specific lives in `quints.toml`, next to `main.bean`.
 reference. VAT *rates* are deliberately absent — they are law and ship
 date-ranged in code.
 
-Resolution: `--config <path>` > `./quints.toml` > built-in defaults.
+Resolution: `--config <path>` > the `quints.toml` beside the ledger you pass
+with `-f`, or in the nearest directory above it > `./quints.toml` > built-in
+defaults. So `quints vat report -f ~/books/main.bean` run from anywhere uses
+`~/books/quints.toml`.
+
+Every key is checked. An unknown section or key, or a value of the wrong
+kind, stops the command and names the problem, with the closest known key:
+
+```text
+quints.toml:
+  [entity] vat_methd is not a quints.toml key — did you mean vat_method?
+  [entity] vat_registered = 'no' must be true or false
+```
+
+A typo never falls back to a default.
 
 ## `[entity]`
 
@@ -129,6 +143,7 @@ With `vat_method = "saldo"`, `[accounts]` also carries the two accounts only
 that method books to:
 
 ```toml
+[accounts]
 saldo_difference = "Income:CH:Einzelfirma:VAT:SaldoDifference"
 bezugsteuer_expense = "Expenses:CH:Einzelfirma:Tax:Bezugsteuer"
 ```
