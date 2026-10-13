@@ -260,20 +260,9 @@ class Importer(beangulp.Importer):
             flag = self._review_flag
             if details.get("type") != "CONVERSION":
                 haystack = f"{payee}\n{narration}\n{details.get('paymentReference') or ''}"
-                for pattern, counter, rule_flag in self._rules:
-                    if pattern.search(haystack):
-                        postings.append(
-                            data.Posting(
-                                counter,
-                                Amount(-number - posted_fee, currency),
-                                None,
-                                None,
-                                None,
-                                None,
-                            )
-                        )
-                        flag = rule_flag
-                        break
+                counter, flag = self._counter(haystack, Amount(-number - posted_fee, currency))
+                if counter is not None:
+                    postings.append(counter)
 
             date = dt.datetime.fromisoformat(txn["date"].replace("Z", "+00:00")).date()
             entries.append(
@@ -290,21 +279,36 @@ class Importer(beangulp.Importer):
             )
 
         entries.sort(key=lambda e: e.date)
-        closing = statement.get("endOfStatementBalance")
-        end = statement["query"].get("intervalEnd")
-        if closing and end:
-            end_date = dt.datetime.fromisoformat(end.replace("Z", "+00:00")).date()
-            entries.append(
-                data.Balance(
-                    data.new_metadata(filepath, len(entries)),
-                    end_date + dt.timedelta(days=1),
-                    cash_account,
-                    Amount(_decimal(closing["value"]), closing["currency"]),
-                    None,
-                    None,
-                )
-            )
+        balance = _closing_balance(statement, cash_account, filepath, len(entries))
+        if balance is not None:
+            entries.append(balance)
         return entries
+
+    def _counter(self, haystack: str, units: Amount) -> tuple[data.Posting | None, str]:
+        """The first matching rule's counter leg and flag; none (review flag) otherwise."""
+        for pattern, account, rule_flag in self._rules:
+            if pattern.search(haystack):
+                return data.Posting(account, units, None, None, None, None), rule_flag
+        return None, self._review_flag
+
+
+def _closing_balance(
+    statement: _Statement, cash_account: str, filepath: str, index: int
+) -> data.Balance | None:
+    """The statement's closing balance, asserted the day after its end; None if absent."""
+    closing = statement.get("endOfStatementBalance")
+    end = statement["query"].get("intervalEnd")
+    if not (closing and end):
+        return None
+    end_date = dt.datetime.fromisoformat(end.replace("Z", "+00:00")).date()
+    return data.Balance(
+        data.new_metadata(filepath, index),
+        end_date + dt.timedelta(days=1),
+        cash_account,
+        Amount(_decimal(closing["value"]), closing["currency"]),
+        None,
+        None,
+    )
 
 
 def _cash_value(txn: data.Transaction) -> tuple[Decimal, str] | None:

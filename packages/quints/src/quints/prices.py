@@ -491,7 +491,7 @@ def _sync_job(
     done = 0
 
     def tick(n: int) -> None:
-        nonlocal done
+        nonlocal done  # p10: allow R6 -- progress counter local to this job's closure
         done += n
         if progress is not None:
             progress(label, done, total)

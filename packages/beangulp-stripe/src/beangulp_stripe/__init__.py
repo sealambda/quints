@@ -314,36 +314,11 @@ class Importer(beangulp.Importer):
 
             payee = _payee(txn)
             narration = (txn.get("description") or "").strip()
-            flag = self._review_flag
-            if txn.get("type") in FEE_TYPES and self._fees_account:
-                # Monthly-billed fees: the counter leg is the fee net of the
-                # split-out tax; the VAT conversion still needs review.
-                postings.append(
-                    data.Posting(
-                        self._fees_account,
-                        Amount(-net - posted_fee, currency),
-                        None,
-                        None,
-                        None,
-                        None,
-                    )
-                )
-            else:
-                haystack = f"{payee}\n{narration}\n{txn.get('type') or ''}"
-                for pattern, counter, rule_flag in self._rules:
-                    if pattern.search(haystack):
-                        postings.append(
-                            data.Posting(
-                                counter,
-                                Amount(-net - posted_fee, currency),
-                                None,
-                                None,
-                                None,
-                                None,
-                            )
-                        )
-                        flag = rule_flag
-                        break
+            counter, flag = self._counter(
+                txn, payee, narration, Amount(-net - posted_fee, currency)
+            )
+            if counter is not None:
+                postings.append(counter)
 
             date = dt.datetime.fromtimestamp(created, tz=dt.timezone.utc).date()
             entries.append(
@@ -362,6 +337,21 @@ class Importer(beangulp.Importer):
         entries.sort(key=lambda e: e.date)
         entries.extend(self._balance_assertions(document, filepath, len(entries)))
         return entries
+
+    def _counter(
+        self, txn: _Txn, payee: str, narration: str, units: Amount
+    ) -> tuple[data.Posting | None, str]:
+        """The counter leg and flag; no leg (review flag) when no rule matches."""
+        if txn.get("type") in FEE_TYPES and self._fees_account:
+            # Monthly-billed fees: the counter leg is the fee net of the
+            # split-out tax; the VAT conversion still needs review.
+            leg = data.Posting(self._fees_account, units, None, None, None, None)
+            return leg, self._review_flag
+        haystack = f"{payee}\n{narration}\n{txn.get('type') or ''}"
+        for pattern, account, rule_flag in self._rules:
+            if pattern.search(haystack):
+                return data.Posting(account, units, None, None, None, None), rule_flag
+        return None, self._review_flag
 
     def _fee_postings(self, txn: _Txn, fee: Decimal, currency: str) -> list[data.Posting]:
         """The fee legs, when a fee is due and ``fees_account`` is set.
@@ -552,6 +542,7 @@ def _match(txn_id: str, invoice: _Invoice, matched_by: str) -> InvoiceMatch:
     )
 
 
+# p10: allow R4 -- 17 of its lines are the docstring stating the matching contract
 def correlate_invoices(
     transactions: Sequence[dict[str, object]], invoices: Sequence[dict[str, object]]
 ) -> tuple[list[InvoiceMatch], list[str]]:

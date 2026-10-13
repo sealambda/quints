@@ -44,7 +44,9 @@ def _amount(text: str) -> Decimal:
 class _YapealAmount(csvbase.Column):
     """Amount from either Gutschrift (credit), Belastung (debit), or Betrag+indicator."""
 
-    def parse(self, gutschrift: str, belastung: str, betrag: str, indicator: str) -> Decimal:  # type: ignore[override] -- csvbase.Column.parse(*values) is untyped varargs
+    def parse(  # type: ignore[override] -- csvbase's parse(*values) is untyped varargs
+        self, gutschrift: str, belastung: str, betrag: str, indicator: str
+    ) -> Decimal:
         if gutschrift:
             return _amount(gutschrift)
         if belastung:
@@ -61,7 +63,9 @@ class Importer(csvbase.Importer):
     """Yapeal CSV statement importer for one bank account."""
 
     ref = csvbase.Column("Transaktions-ID")
-    date = csvbase.Date("Transaktions-Datum", "%d.%m.%Y")  # type: ignore[assignment] -- csvbase.Date narrows the Column attribute
+    date = csvbase.Date(  # type: ignore[assignment] -- csvbase.Date narrows a Column
+        "Transaktions-Datum", "%d.%m.%Y"
+    )
     payee = csvbase.Column("Gegenpartei")
     narration = csvbase.Column("Transaktions-Info")
     amount = _YapealAmount(
@@ -129,14 +133,14 @@ class Importer(csvbase.Importer):
                 continue
 
             try:
-                amount_val = row.amount  # type: ignore[attr-defined] -- csvbase builds rows dynamically
+                amount_val = row.amount  # type: ignore[attr-defined] -- dynamic csvbase row
             except ValueError as e:
                 raise ValueError(f"{filepath}:{lineno}: {e}") from e
 
             meta = self.metadata(filepath, lineno, row)
-            payee = row.payee  # type: ignore[attr-defined] -- csvbase builds rows dynamically
-            narration = row.narration  # type: ignore[attr-defined] -- csvbase builds rows dynamically
-            date_val = row.date  # type: ignore[attr-defined] -- csvbase builds rows dynamically
+            payee = row.payee  # type: ignore[attr-defined] -- dynamic csvbase row
+            narration = row.narration  # type: ignore[attr-defined] -- dynamic csvbase row
+            date_val = row.date  # type: ignore[attr-defined] -- dynamic csvbase row
             units = Amount(amount_val, self.currency)
             postings = [data.Posting(self.importer_account, units, None, None, None, None)]
 

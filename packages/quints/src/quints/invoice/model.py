@@ -234,9 +234,11 @@ def _parse_supply(v: object) -> object:
             raise ValueError(f"supply {v!r}: there is no month {month}")
         return SupplyPeriod.month(year, month)
     try:
-        return SupplyPeriod.day(date.fromisoformat(text))
+        day = date.fromisoformat(text)
     except ValueError:
-        pass
+        day = None  # not a day either: the ValueError below names the forms
+    if day is not None:
+        return SupplyPeriod.day(day)
     hint = (
         "supply: 2026-07 (a month), supply: 2026-07-15 (a day), or "
         "supply: {from: 2026-07-01, to: 2026-09-30}"
