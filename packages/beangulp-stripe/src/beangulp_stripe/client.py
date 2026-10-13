@@ -66,7 +66,7 @@ class StripeClient:
         if response.status_code != 200:
             try:
                 message = response.json()["error"]["message"]
-            except Exception:
+            except (ValueError, KeyError, TypeError):  # not Stripe's JSON error shape
                 message = response.text[:200]
             raise StripeError(f"GET {path} → {response.status_code}: {message}")
         return response.json()

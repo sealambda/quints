@@ -426,5 +426,8 @@ def numbers_in(text: str) -> list[str]:
                 singles.add(token.replace("-", ""))
     words = [w for w in re.split(r"[^0-9A-Z]+", up) if w]
     joins = {"".join(words[i : i + k]) for k in (2, 3) for i in range(len(words) - k + 1)} - singles
-    by_length = lambda t: (-len(t), t)  # noqa: E731
+
+    def by_length(t: str) -> tuple[int, str]:
+        return (-len(t), t)
+
     return sorted(singles, key=by_length) + sorted(joins, key=by_length)
