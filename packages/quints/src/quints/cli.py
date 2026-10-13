@@ -19,7 +19,10 @@ from typer.core import TyperGroup
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
 
+    from .invoice.bank import Check as BankCheck
     from .invoice.model import Invoice, Totals
+    from .invoice.reference import PaymentReference
+    from .invoice.verify import CrossCheck
 
 from . import (
     closing as closing_mod,
@@ -307,6 +310,7 @@ _PERIOD_HELP = "e.g. 2026-Q2, 2026-H1 or 2026 (instead of --from/--to)."
 
 
 @app.command(rich_help_panel=PANEL_START)
+# p10: allow R4 -- 45 of its lines are the typer option signature; the body delegates
 def init(
     directory: Path = typer.Argument(
         Path("."), help="Target project directory (created if missing)."
@@ -358,15 +362,48 @@ def init(
     Deterministic: the same answers always produce the same files. Run
     interactively, or feed a TOML answer-file with --answers for CI/repeatable
     setups."""
-    if answers_file is not None:
-        if not answers_file.exists():
-            typer.secho(f"ERROR: answer-file not found: {answers_file}", fg="red", err=True)
-            raise typer.Exit(1)
-        answers = init_mod.load_answers(answers_file)
-    else:
-        answers = init_mod.Answers()
-
+    answers = _init_answers_file(answers_file)
     interactive = answers_file is None and not yes
+    answers = _init_identity(answers, interactive, answers_file is None, legal_form, name, lang)
+    answers = _init_vat(answers, interactive, vat_since, vat_method, saldo_rates)
+    if importers is not None:
+        answers = replace(
+            answers, importers=tuple(i.strip() for i in importers.split(",") if i.strip())
+        )
+    if samples:
+        answers = replace(answers, include_samples=True)
+
+    try:
+        files = init_mod.plan(answers)
+    except init_mod.InitError as e:
+        typer.secho(f"ERROR: {e}", fg="red", err=True)
+        raise typer.Exit(1) from None
+    result = init_mod.write(directory, files, force=force)
+    git_result = (
+        init_mod.init_git(directory, result.written) if use_git and result.written else None
+    )
+    _report_init(directory, answers, result, git_result, as_json)
+
+
+def _init_answers_file(answers_file: Path | None) -> init_mod.Answers:
+    """The answer-file's answers, or the defaults when there is none."""
+    if answers_file is None:
+        return init_mod.Answers()
+    if not answers_file.exists():
+        typer.secho(f"ERROR: answer-file not found: {answers_file}", fg="red", err=True)
+        raise typer.Exit(1)
+    return init_mod.load_answers(answers_file)
+
+
+def _init_identity(
+    answers: init_mod.Answers,
+    interactive: bool,
+    no_file: bool,
+    legal_form: str | None,
+    name: str | None,
+    lang: str | None,
+) -> init_mod.Answers:
+    """Legal form, entity name and report language: flag, else prompt, else as is."""
     if legal_form is not None:
         answers = replace(answers, legal_form=legal_form.strip().lower())
     elif interactive:
@@ -379,7 +416,7 @@ def init(
     # An answer-file's entity name is authoritative; otherwise suggest one
     # that matches the chosen legal form instead of the GmbH default.
     example_names = {"gmbh": "Example GmbH", "ag": "Example AG", "einzelfirma": "Jane Doe"}
-    if answers_file is None and answers.entity_name == init_mod.Answers.entity_name:
+    if no_file and answers.entity_name == init_mod.Answers.entity_name:
         answers = replace(
             answers, entity_name=example_names.get(answers.legal_form, answers.entity_name)
         )
@@ -398,6 +435,17 @@ def init(
                 "Report language (en/de)", default=answers.report_language
             ),
         )
+    return answers
+
+
+def _init_vat(
+    answers: init_mod.Answers,
+    interactive: bool,
+    vat_since: str | None,
+    vat_method: str | None,
+    saldo_rates: str | None,
+) -> init_mod.Answers:
+    """VAT registration, method and Saldosteuersätze: flag, else prompt, else as is."""
     # Naming a method answers the question: a VAT method implies registration.
     if vat_since is None and vat_method is None and interactive:
         default = answers.vat_registered_since if answers.vat_registered else None
@@ -437,23 +485,17 @@ def init(
                 if r.strip()
             ),
         )
-    if importers is not None:
-        answers = replace(
-            answers, importers=tuple(i.strip() for i in importers.split(",") if i.strip())
-        )
-    if samples:
-        answers = replace(answers, include_samples=True)
+    return answers
 
-    try:
-        files = init_mod.plan(answers)
-    except init_mod.InitError as e:
-        typer.secho(f"ERROR: {e}", fg="red", err=True)
-        raise typer.Exit(1) from None
-    result = init_mod.write(directory, files, force=force)
-    git_result = (
-        init_mod.init_git(directory, result.written) if use_git and result.written else None
-    )
 
+def _report_init(
+    directory: Path,
+    answers: init_mod.Answers,
+    result: init_mod.WriteResult,
+    git_result: init_mod.GitResult | None,
+    as_json: bool,
+) -> None:
+    """What `quints init` wrote, and what to run next."""
     if as_json:
         import dataclasses
 
@@ -782,8 +824,6 @@ def invoice(
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ):
     """Render a Swiss QR-bill invoice PDF (domestic or export)."""
-    import dataclasses
-
     from .invoice import draft as dr
     from .invoice import model as m
     from .invoice import reference as ref_mod
@@ -811,27 +851,9 @@ def invoice(
     path, totals, payload = r.render(inv, iss, out, vat_registered=registered)
     ref = ref_mod.payment_reference(inv, iss.account(inv.currency))
 
-    qr_ok = None
-    if payload:
-        lines = payload.splitlines()
-        # The payload ends with EPD, or with the Swico billing information
-        # element that follows it.
-        qr_ok = lines[:1] == ["SPC"] and "EPD" in lines
+    qr_ok = _qr_payload_ok(payload)
     if not as_json:
-        ui.console.print(
-            f"[ok]Wrote[/] {path}  ·  {inv.kind}  ·  {inv.currency} {m.money(totals.grand_total)}"
-        )
-        ui.console.print(f"[muted]ref {ref.kind} {ref.formatted}[/]")
-        if not registered:
-            ui.console.print(
-                f"[muted]not VAT-registered on {inv.issue_date}: no VAT charged or shown[/]"
-            )
-        if payload:
-            ui.console.print(
-                f"[muted]QR-bill payload: {'SPC…EPD ✓' if qr_ok else 'CHECK!'} "
-                f"({len(payload.splitlines())} lines)[/]"
-            )
-
+        _print_rendered(path, inv, totals, ref, registered, payload, qr_ok)
     cc = None
     ledger_draft = None
     if verify and file.exists():
@@ -839,53 +861,106 @@ def invoice(
         if not cc.found:
             ledger_draft = dr.build_draft(inv, totals, vat_chf=_vat_chf(file, totals, inv))
         if not as_json:
-            _problems(cc.violations)
-            if not cc.found:
-                ui.console.print(
-                    f"[warn]No ledger txn for {inv.number}[/] — paste this draft "
-                    f"into books/{inv.issue_date.year}.bean:\n"
-                )
-                print(ledger_draft)
-                print()
-            elif cc.ok:
-                if cc.ledger_total is None:  # unreachable: found implies totals are set
-                    raise ValueError(f"cross-check for {inv.number} lost its ledger total")
-                ui.console.print(
-                    f"[ok]Ledger match[/] ({cc.date}): {inv.currency} {m.money(cc.ledger_total)}"
-                )
-                if not cc.date_ok:
-                    ui.console.print(
-                        f"[warn]booking date {cc.date} ≠ invoice date {inv.issue_date}[/]"
-                    )
-            else:
-                if cc.ledger_total is None or cc.invoice_total is None:
-                    # unreachable: found implies totals are set, but narrows the Optionals
-                    raise ValueError(f"cross-check for {inv.number} lost its totals")
-                ui.console.print(
-                    f"[err]Ledger CONFLICT[/] ({cc.date}): {inv.number} is already booked "
-                    f"at {m.money(cc.ledger_total)} but the invoice says "
-                    f"{m.money(cc.invoice_total)} {inv.currency} — fix one side before issuing."
-                )
+            _print_cross_check(cc, inv, ledger_draft)
     elif verify and not as_json:
         ui.console.print("[warn]ledger not found — cross-check skipped.[/]")
 
     if as_json:
-        _json_out(
-            {
-                "number": inv.number,
-                "kind": inv.kind,
-                "currency": inv.currency,
-                "issue_date": inv.issue_date,
-                "customer": inv.resolved_customer.name,
-                "reference": ref.value,
-                "reference_type": ref.kind,
-                "customer_reference": inv.customer_reference,
-                "pdf": str(path),
-                "totals": totals.model_dump(),
-                "qr_payload_ok": qr_ok,
-                "cross_check": dataclasses.asdict(cc) if cc else None,
-                "ledger_draft": ledger_draft,
-            }
+        _json_out(_invoice_payload(inv, ref, path, totals, qr_ok, cc, ledger_draft))
+
+
+def _qr_payload_ok(payload: str | None) -> bool | None:
+    """SPC first, EPD present — or, after it, the Swico billing information."""
+    if not payload:
+        return None
+    lines = payload.splitlines()
+    return lines[:1] == ["SPC"] and "EPD" in lines
+
+
+def _invoice_payload(
+    inv: Invoice,
+    ref: PaymentReference,
+    path: Path,
+    totals: Totals,
+    qr_ok: bool | None,
+    cc: CrossCheck | None,
+    ledger_draft: str | None,
+) -> dict[str, object]:
+    """`quints invoice --json`."""
+    import dataclasses
+
+    return {
+        "number": inv.number,
+        "kind": inv.kind,
+        "currency": inv.currency,
+        "issue_date": inv.issue_date,
+        "customer": inv.resolved_customer.name,
+        "reference": ref.value,
+        "reference_type": ref.kind,
+        "customer_reference": inv.customer_reference,
+        "pdf": str(path),
+        "totals": totals.model_dump(),
+        "qr_payload_ok": qr_ok,
+        "cross_check": dataclasses.asdict(cc) if cc else None,
+        "ledger_draft": ledger_draft,
+    }
+
+
+def _print_rendered(
+    path: Path,
+    inv: Invoice,
+    totals: Totals,
+    ref: PaymentReference,
+    registered: bool,
+    payload: str | None,
+    qr_ok: bool | None,
+) -> None:
+    """What was written: the PDF, its reference, VAT status and QR payload."""
+    from .invoice import model as m
+
+    ui.console.print(
+        f"[ok]Wrote[/] {path}  ·  {inv.kind}  ·  {inv.currency} {m.money(totals.grand_total)}"
+    )
+    ui.console.print(f"[muted]ref {ref.kind} {ref.formatted}[/]")
+    if not registered:
+        ui.console.print(
+            f"[muted]not VAT-registered on {inv.issue_date}: no VAT charged or shown[/]"
+        )
+    if payload:
+        ui.console.print(
+            f"[muted]QR-bill payload: {'SPC…EPD ✓' if qr_ok else 'CHECK!'} "
+            f"({len(payload.splitlines())} lines)[/]"
+        )
+
+
+def _print_cross_check(cc: CrossCheck, inv: Invoice, ledger_draft: str | None) -> None:
+    """The invoice against its booking: the draft to paste, a match, or a conflict."""
+    from .invoice import model as m
+
+    _problems(cc.violations)
+    if not cc.found:
+        ui.console.print(
+            f"[warn]No ledger txn for {inv.number}[/] — paste this draft "
+            f"into books/{inv.issue_date.year}.bean:\n"
+        )
+        print(ledger_draft)
+        print()
+    elif cc.ok:
+        if cc.ledger_total is None:  # unreachable: found implies totals are set
+            raise ValueError(f"cross-check for {inv.number} lost its ledger total")
+        ui.console.print(
+            f"[ok]Ledger match[/] ({cc.date}): {inv.currency} {m.money(cc.ledger_total)}"
+        )
+        if not cc.date_ok:
+            ui.console.print(f"[warn]booking date {cc.date} ≠ invoice date {inv.issue_date}[/]")
+    else:
+        if cc.ledger_total is None or cc.invoice_total is None:
+            # unreachable: found implies totals are set, but narrows the Optionals
+            raise ValueError(f"cross-check for {inv.number} lost its totals")
+        ui.console.print(
+            f"[err]Ledger CONFLICT[/] ({cc.date}): {inv.number} is already booked "
+            f"at {m.money(cc.ledger_total)} but the invoice says "
+            f"{m.money(cc.invoice_total)} {inv.currency} — fix one side before issuing."
         )
 
 
@@ -1154,48 +1229,7 @@ def _report_import(
     invoices: list[importing_mod.InvoiceDoc] | None = None,
 ) -> None:
     if as_json:
-        import dataclasses
-
-        from beancount.core import data
-
-        def txn(t: data.Transaction) -> dict[str, object]:
-            u = t.postings[0].units
-            return {
-                "date": str(t.date),
-                "flag": t.flag,
-                "payee": t.payee,
-                "narration": t.narration,
-                "amount": u.number if u else None,
-                "currency": u.currency if u else None,
-            }
-
-        _json_out(
-            {
-                "source": result.source,
-                "staging_file": str(result.out_path) if result.out_path else None,
-                "skipped_ref": result.skipped_ref,
-                "drafts": [txn(t) for t in result.drafts],
-                "legacy_matches": [{**txn(t), "booked": str(d)} for t, d in result.legacy_matches],
-                "receivable_matches": [
-                    {**txn(t), "invoice": n} for n, t in result.receivable_matches
-                ],
-                "payable_matches": [{**txn(t), "bill": n} for n, t in result.payable_matches],
-                "vat_matches": [{**txn(t), "period": n} for n, t in result.vat_matches],
-                "fee_tax_periods": result.fee_tax_periods,
-                "violations": [dataclasses.asdict(v) for v in result.violations],
-                "already_staged": result.already_staged,
-                "invoices": [dataclasses.asdict(d) for d in invoices or []],
-                "balances": [
-                    {
-                        "date": str(b.date),
-                        "account": b.account,
-                        "amount": b.amount.number,
-                        "currency": b.amount.currency,
-                    }
-                    for b in result.balances
-                ],
-            }
-        )
+        _json_out(_import_payload(result, invoices or []))
         return
     if result.violations:
         typer.secho(
@@ -1212,38 +1246,7 @@ def _report_import(
             "earlier import — move each to books/ once (no staging file was overwritten).",
             fg="yellow",
         )
-    if result.legacy_matches:
-        typer.echo(
-            f"{len(result.legacy_matches)} entr(ies) matched already-booked postings "
-            f"(amount within ±{importing_mod.LEGACY_WINDOW_DAYS}d):"
-        )
-        for draft, booked in result.legacy_matches:
-            units = draft.postings[0].units
-            typer.echo(f"  {draft.date}  {units}  {draft.payee}  → booked {booked}")
-    if result.receivable_matches:
-        typer.secho(
-            f"{len(result.receivable_matches)} payment(s) matched open invoices "
-            f"(receivable clearing drafted):",
-            fg="green",
-        )
-        for number, draft in result.receivable_matches:
-            typer.echo(f"  {draft.date}  {draft.postings[0].units}  ^{number}")
-    if result.payable_matches:
-        typer.secho(
-            f"{len(result.payable_matches)} payment(s) matched open supplier bills "
-            f"(payable clearing drafted):",
-            fg="green",
-        )
-        for number, draft in result.payable_matches:
-            typer.echo(f"  {draft.date}  {draft.postings[0].units}  ^{number}")
-    if result.vat_matches:
-        typer.secho(
-            f"{len(result.vat_matches)} payment(s) matched filed VAT periods "
-            f"(settlement link drafted):",
-            fg="green",
-        )
-        for link, draft in result.vat_matches:
-            typer.echo(f"  {draft.date}  {draft.postings[0].units}  ^{link}")
+    _print_import_matches(result)
     if result.drafts:
         typer.secho(f"{len(result.drafts)} draft(s) → {result.out_path}", fg="green")
         for draft in result.drafts:
@@ -1267,6 +1270,73 @@ def _report_import(
             "10th) — it has no API, and the quarterly VAT close needs it.",
             fg="yellow",
         )
+
+
+def _import_payload(
+    result: importing_mod.ImportResult, invoices: list[importing_mod.InvoiceDoc]
+) -> dict[str, object]:
+    """`quints import … --json`."""
+    import dataclasses
+
+    from beancount.core import data
+
+    def txn(t: data.Transaction) -> dict[str, object]:
+        u = t.postings[0].units
+        return {
+            "date": str(t.date),
+            "flag": t.flag,
+            "payee": t.payee,
+            "narration": t.narration,
+            "amount": u.number if u else None,
+            "currency": u.currency if u else None,
+        }
+
+    return {
+        "source": result.source,
+        "staging_file": str(result.out_path) if result.out_path else None,
+        "skipped_ref": result.skipped_ref,
+        "drafts": [txn(t) for t in result.drafts],
+        "legacy_matches": [{**txn(t), "booked": str(d)} for t, d in result.legacy_matches],
+        "receivable_matches": [{**txn(t), "invoice": n} for n, t in result.receivable_matches],
+        "payable_matches": [{**txn(t), "bill": n} for n, t in result.payable_matches],
+        "vat_matches": [{**txn(t), "period": n} for n, t in result.vat_matches],
+        "fee_tax_periods": result.fee_tax_periods,
+        "violations": [dataclasses.asdict(v) for v in result.violations],
+        "already_staged": result.already_staged,
+        "invoices": [dataclasses.asdict(d) for d in invoices],
+        "balances": [
+            {
+                "date": str(b.date),
+                "account": b.account,
+                "amount": b.amount.number,
+                "currency": b.amount.currency,
+            }
+            for b in result.balances
+        ],
+    }
+
+
+def _print_import_matches(result: importing_mod.ImportResult) -> None:
+    """Drafts the import already matched: booked, invoices, bills, VAT periods."""
+    if result.legacy_matches:
+        typer.echo(
+            f"{len(result.legacy_matches)} entr(ies) matched already-booked postings "
+            f"(amount within ±{importing_mod.LEGACY_WINDOW_DAYS}d):"
+        )
+        for draft, booked in result.legacy_matches:
+            units = draft.postings[0].units
+            typer.echo(f"  {draft.date}  {units}  {draft.payee}  → booked {booked}")
+    linked = (
+        (result.receivable_matches, "open invoices (receivable clearing drafted)"),
+        (result.payable_matches, "open supplier bills (payable clearing drafted)"),
+        (result.vat_matches, "filed VAT periods (settlement link drafted)"),
+    )
+    for matches, what in linked:
+        if not matches:
+            continue
+        typer.secho(f"{len(matches)} payment(s) matched {what}:", fg="green")
+        for number, draft in matches:
+            typer.echo(f"  {draft.date}  {draft.postings[0].units}  ^{number}")
 
 
 @app.command(rich_help_panel=PANEL_BANK)
@@ -1323,34 +1393,9 @@ def iban(
     """
     import dataclasses
 
-    from rich.padding import Padding
-
     from .invoice import bank
-    from .invoice import model as m
 
-    checks: list[tuple[str, bank.Check]] = []
-    if number:
-        checks.append(("", bank.check(number, bic)))
-    else:
-        if not issuer.exists():
-            typer.secho(
-                f"ERROR: pass an IBAN, or an issuer config to check (not found: {issuer})",
-                fg="red",
-                err=True,
-            )
-            raise typer.Exit(1)
-        iss = m.load_issuer(issuer)
-        for currency, acct in sorted(iss.bank.items()):
-            # A QR-IBAN is only ever paid inside the Swiss QR-bill scheme,
-            # which carries no BIC — checked, but not held to that rule.
-            if acct.qr_iban:
-                checks.append((f"{currency} (QR-IBAN)", bank.check(acct.qr_iban, acct.bic)))
-            if acct.iban:
-                checks.append((f"{currency}", bank.check(acct.iban, acct.bic)))
-        if not checks:
-            typer.secho(f"ERROR: no bank accounts configured in {issuer}", fg="red", err=True)
-            raise typer.Exit(1)
-
+    checks = [("", bank.check(number, bic))] if number else _issuer_checks(issuer)
     if as_json:
         _json_out(
             {
@@ -1361,22 +1406,54 @@ def iban(
         raise typer.Exit(0 if all(c.ok for _, c in checks) else 1)
 
     for label, c in checks:
-        head = f"[bold]{c.formatted}[/]" + (f"  [muted]{label}[/]" if label else "")
-        ui.console.print(head)
-        if c.iid:
-            ui.console.print(f"  [muted]country {c.country} · institution (IID) {c.iid}[/]")
-        elif c.country:
-            ui.console.print(f"  [muted]country {c.country}[/]")
-        ui.console.print(f"  BIC/SWIFT  [bold]{c.bic}[/]" if c.bic else "  BIC/SWIFT  [warn]—[/]")
-        # These sentences are long enough to wrap; Padding keeps the wrapped
-        # lines indented with the block instead of back at the margin.
-        for note in c.notes:
-            ui.console.print(Padding(f"[warn]note[/] {note}", (0, 0, 0, 2)))
-        for problem in c.problems:
-            ui.console.print(Padding(f"[err]✗[/] {problem}", (0, 0, 0, 2)))
-        if c.ok and not c.notes:
-            ui.console.print("  [ok]✓ IBAN and BIC both check out[/]")
+        _print_bank_check(label, c)
     raise typer.Exit(0 if all(c.ok for _, c in checks) else 1)
+
+
+def _issuer_checks(issuer: Path) -> list[tuple[str, BankCheck]]:
+    """Every IBAN (and QR-IBAN) in the issuer config, with its BIC."""
+    from .invoice import bank
+    from .invoice import model as m
+
+    if not issuer.exists():
+        typer.secho(
+            f"ERROR: pass an IBAN, or an issuer config to check (not found: {issuer})",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(1)
+    checks: list[tuple[str, BankCheck]] = []
+    for currency, acct in sorted(m.load_issuer(issuer).bank.items()):
+        # A QR-IBAN is only ever paid inside the Swiss QR-bill scheme,
+        # which carries no BIC — checked, but not held to that rule.
+        if acct.qr_iban:
+            checks.append((f"{currency} (QR-IBAN)", bank.check(acct.qr_iban, acct.bic)))
+        if acct.iban:
+            checks.append((f"{currency}", bank.check(acct.iban, acct.bic)))
+    if not checks:
+        typer.secho(f"ERROR: no bank accounts configured in {issuer}", fg="red", err=True)
+        raise typer.Exit(1)
+    return checks
+
+
+def _print_bank_check(label: str, c: BankCheck) -> None:
+    from rich.padding import Padding
+
+    head = f"[bold]{c.formatted}[/]" + (f"  [muted]{label}[/]" if label else "")
+    ui.console.print(head)
+    if c.iid:
+        ui.console.print(f"  [muted]country {c.country} · institution (IID) {c.iid}[/]")
+    elif c.country:
+        ui.console.print(f"  [muted]country {c.country}[/]")
+    ui.console.print(f"  BIC/SWIFT  [bold]{c.bic}[/]" if c.bic else "  BIC/SWIFT  [warn]—[/]")
+    # These sentences are long enough to wrap; Padding keeps the wrapped
+    # lines indented with the block instead of back at the margin.
+    for note in c.notes:
+        ui.console.print(Padding(f"[warn]note[/] {note}", (0, 0, 0, 2)))
+    for problem in c.problems:
+        ui.console.print(Padding(f"[err]✗[/] {problem}", (0, 0, 0, 2)))
+    if c.ok and not c.notes:
+        ui.console.print("  [ok]✓ IBAN and BIC both check out[/]")
 
 
 # ── reports & year-end ────────────────────────────────────────────────────────
@@ -1592,69 +1669,22 @@ def prices_sync(
     it left off.
     With --from DATE: re-check the whole range, ignoring the verified record.
     """
-    from rich.progress import (
-        BarColumn,
-        MofNCompleteColumn,
-        Progress,
-        TaskID,
-        TextColumn,
-        TimeRemainingColumn,
-    )
-
     cfg = config_mod.get()
     out = out if out is not None else cfg.ledger_prices
     repair = _parse_date(from_) if from_ else None
-    # bean-price mode: commodity `price:` metadata declares what to fetch.
-    # --source forces config mode; a metadata-less ledger falls back to it too.
-    jobs = None
-    warnings: list[str] = []  # listed, and in --json; a bad `price:` spec also fails the run
-    unusable: list[str] = []
-    if source is None and cfg.ledger_main.exists():
-        entries, loaded = ledger.load(cfg.ledger_main)
-        warnings += [v.message for v in loaded]
-
-        def bad_meta(ccy: str, message: str) -> None:
-            unusable.append(f"{ccy}: unusable price metadata, not synced — {message}")
-
-        jobs = prices_mod.jobs_from_ledger(entries, on_error=bad_meta) or None
-        warnings += unusable
-        if loaded and jobs is None:
-            warnings.append(
-                f"{cfg.ledger_main.name} has loader errors and no usable `price:` metadata — "
-                "syncing the [prices] currencies from quints.toml instead"
-            )
+    jobs, warnings, unusable = _price_jobs(cfg, source)
     for warning in warnings:
         typer.secho(f"WARNING: {warning}", fg="yellow", err=True)
-    # Sources without a bulk endpoint fetch one request per day per currency,
-    # so a backfill takes a while: show a live per-currency bar (stderr,
-    # transient) unless the caller asked for machine-readable output.
-    with Progress(
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TextColumn("days"),
-        TimeRemainingColumn(),
-        console=ui.err_console,
-        transient=True,
-        disable=as_json,
-    ) as bars:
-        tasks: dict[str, TaskID] = {}
-
-        def on_progress(ccy: str, done: int, total: int) -> None:
-            if ccy not in tasks:
-                tasks[ccy] = bars.add_task(ccy, total=total)
-            bars.update(tasks[ccy], completed=done)
-
-        result = prices_mod.sync(
-            out,
-            repair_from=repair,
-            currencies=cfg.prices_currencies,
-            source=source if source is not None else cfg.prices_source,
-            quote=cfg.operating_currency,
-            tickers=dict(cfg.prices_tickers),
-            progress=on_progress,
-            jobs=jobs,
-        )
+    result = _sync_with_progress(
+        out,
+        quiet=as_json,
+        repair_from=repair,
+        currencies=cfg.prices_currencies,
+        source=source if source is not None else cfg.prices_source,
+        quote=cfg.operating_currency,
+        tickers=dict(cfg.prices_tickers),
+        jobs=jobs,
+    )
     if as_json:
         _json_out(
             {
@@ -1676,6 +1706,12 @@ def prices_sync(
         if unusable:
             raise typer.Exit(1)
         return
+    _print_sync(result, out)
+    if unusable:
+        _fail(f"{len(unusable)} commodit(ies) with unusable `price:` metadata were not synced.")
+
+
+def _print_sync(result: prices_mod.SyncResult, out: Path) -> None:
     for ccy, s in result.per_currency.items():
         where = f"had through {s.last}" if s.last else "was empty"
         healed = f", {s.healed} gap day(s) healed" if s.healed else ""
@@ -1690,8 +1726,70 @@ def prices_sync(
         typer.secho(f"Wrote {result.added} new price(s) to {out.name} (sorted).", fg="green")
     else:
         typer.echo(f"{out.name} already current.")
-    if unusable:
-        _fail(f"{len(unusable)} commodit(ies) with unusable `price:` metadata were not synced.")
+
+
+def _price_jobs(
+    cfg: config_mod.Config, source: str | None
+) -> tuple[list[prices_mod.SyncJob] | None, list[str], list[str]]:
+    """(jobs, warnings, unusable specs) — bean-price mode, or None for config mode.
+
+    Commodity `price:` metadata declares what to fetch; --source forces
+    config mode, and a metadata-less ledger falls back to it too. Warnings are
+    listed and go into --json; an unusable `price:` spec also fails the run.
+    """
+    warnings: list[str] = []
+    unusable: list[str] = []
+    if source is not None or not cfg.ledger_main.exists():
+        return None, warnings, unusable
+    entries, loaded = ledger.load(cfg.ledger_main)
+    warnings += [v.message for v in loaded]
+
+    def bad_meta(ccy: str, message: str) -> None:
+        unusable.append(f"{ccy}: unusable price metadata, not synced — {message}")
+
+    jobs = prices_mod.jobs_from_ledger(entries, on_error=bad_meta) or None
+    warnings += unusable
+    if loaded and jobs is None:
+        warnings.append(
+            f"{cfg.ledger_main.name} has loader errors and no usable `price:` metadata — "
+            "syncing the [prices] currencies from quints.toml instead"
+        )
+    return jobs, warnings, unusable
+
+
+def _sync_with_progress(out: Path, *, quiet: bool, **kwargs: Any) -> prices_mod.SyncResult:
+    """prices.sync with a live per-currency bar (stderr, transient) unless ``quiet``.
+
+    Sources without a bulk endpoint fetch one request per day per currency,
+    so a backfill takes a while.
+    """
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        TaskID,
+        TextColumn,
+        TimeRemainingColumn,
+    )
+
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TextColumn("days"),
+        TimeRemainingColumn(),
+        console=ui.err_console,
+        transient=True,
+        disable=quiet,
+    ) as bars:
+        tasks: dict[str, TaskID] = {}
+
+        def on_progress(ccy: str, done: int, total: int) -> None:
+            if ccy not in tasks:
+                tasks[ccy] = bars.add_task(ccy, total=total)
+            bars.update(tasks[ccy], completed=done)
+
+        return prices_mod.sync(out, progress=on_progress, **kwargs)
 
 
 @fx_app.command("revalue")

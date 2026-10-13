@@ -1157,6 +1157,46 @@ def _saldo_rows(t: _Totals, d0: Date, d1: Date, cfg: config.Config) -> list[Rate
     return rows
 
 
+def _check_inputs(t: _Totals) -> None:
+    """Every InputVAT movement was deducted, or reported and left out."""
+    deducted = sum(t.inputs.get(k, Decimal("0")) for k in ("400", "405", "410"))
+    deducted -= sum(t.inputs.get(k, Decimal("0")) for k in MINUS_ZIFFERN)
+    ledger.invariant(
+        deducted == t.input_moved - t.input_left_out,
+        f"input VAT {deducted} ≠ InputVAT moved {t.input_moved} − left out {t.input_left_out}",
+    )
+
+
+def _settle_299(
+    rows: list[RateRow], z299: Decimal, saldo: bool, detail: _Detail, date_to: str
+) -> None:
+    """Make the rate rows add up to Ziffer 299, or report what's missing.
+
+    Rounding moves z200, each of the six deductions and each row net by at
+    most 0.005: a residual within that is rounding, and lands on the
+    largest row. Anything beyond is turnover that landed in no row.
+    """
+    residual = z299 - sum((r.net for r in rows), Decimal("0"))
+    if rows and residual and abs(residual) <= Decimal("0.005") * (7 + len(rows)):
+        largest = max(rows, key=lambda r: abs(r.net))
+        largest.net += residual
+        if saldo:  # the form multiplies the base as entered
+            largest.tax = ledger.rappen(largest.net * largest.rate)
+        return
+    if residual:
+        detail.violations.append(
+            Violation(
+                date_to,
+                "",
+                "",
+                "Ziffer 299 ≠ the turnover rows' total — turnover landed nowhere",
+                z299,
+                z299 - residual,
+            )
+        )
+
+
+# p10: allow R4 -- most of it is the flat zNNN fields the JSON contract pins, one per line
 def _assemble(
     date_from: str,
     date_to: str,
@@ -1168,14 +1208,7 @@ def _assemble(
 ) -> MwstReport:
     """Totals, cross-checks, and the flat Ziffer fields the JSON contract pins."""
     saldo = cfg.vat_method == "saldo"
-
-    # Every InputVAT movement was deducted, or reported and left out.
-    deducted = sum(t.inputs.get(k, Decimal("0")) for k in ("400", "405", "410"))
-    deducted -= sum(t.inputs.get(k, Decimal("0")) for k in MINUS_ZIFFERN)
-    ledger.invariant(
-        deducted == t.input_moved - t.input_left_out,
-        f"input VAT {deducted} ≠ InputVAT moved {t.input_moved} − left out {t.input_left_out}",
-    )
+    _check_inputs(t)
 
     # The form takes Rappen: every Ziffer is rounded once, and the form's
     # own sums (289, 299, 399, 479, 500) are taken over the rounded figures.
@@ -1194,28 +1227,7 @@ def _assemble(
     z200 = ledger.rappen(t.gross)
     z289 = sum((z(k) for k in ("220", "221", "225", "230", "235", "280")), Decimal("0"))
     z299 = z200 - z289
-    residual = z299 - sum((r.net for r in rows), Decimal("0"))
-    # Rounding moves z200, each of the six deductions and each row net by at
-    # most 0.005: a residual within that is rounding, and lands on the
-    # largest row. Anything beyond is turnover that landed in no row.
-    if rows and residual and abs(residual) <= Decimal("0.005") * (7 + len(rows)):
-        largest = max(rows, key=lambda r: abs(r.net))
-        largest.net += residual
-        if saldo:  # the form multiplies the base as entered
-            largest.tax = ledger.rappen(largest.net * largest.rate)
-        residual = Decimal("0")
-    rate_net_total = z299 - residual
-    if residual:
-        detail.violations.append(
-            Violation(
-                date_to,
-                "",
-                "",
-                "Ziffer 299 ≠ the turnover rows' total — turnover landed nowhere",
-                z299,
-                rate_net_total,
-            )
-        )
+    _settle_299(rows, z299, saldo, detail, date_to)
     z383_tax = ledger.rappen(t.bezug_tax.get(True, Decimal("0")))
     z382_tax = ledger.rappen(t.bezug_tax.get(False, Decimal("0")))
     z399 = sum((r.tax for r in rows), Decimal("0")) + z383_tax + z382_tax
@@ -1371,20 +1383,6 @@ def _main_table(report: MwstReport) -> Table:
     main.add_column("Position")
     main.add_column("Umsatz CHF", justify="right", no_wrap=True)
     main.add_column("Steuer CHF", justify="right", no_wrap=True)
-
-    def row(
-        z: str,
-        label: str,
-        umsatz: Decimal | None = None,
-        steuer: Decimal | None = None,
-        style: str | None = None,
-    ) -> None:
-        u = ui.money(umsatz) if umsatz is not None else ""
-        s = ui.money(steuer) if steuer is not None else ""
-        if style:
-            label, u, s = (f"[{style}]{x}[/]" if x else x for x in (label, u, s))
-        main.add_row(z, label, u, s)
-
     values: dict[str, Decimal] = {
         "205": report.z205,
         "220": report.z220,
@@ -1399,45 +1397,29 @@ def _main_table(report: MwstReport) -> Table:
         "415": report.z415,
         "420": report.z420,
     }
-    row("200", "Total der vereinbarten Entgelte (weltweit)", report.z200)
+    _form_row(main, "200", "Total der vereinbarten Entgelte (weltweit)", report.z200)
     for ziffer, label, always in _SECTION_I:
         if always or values[ziffer]:
-            row(ziffer, label, values[ziffer])
-    row("289", "Total Abzüge", report.z289)
-    row("299", "Steuerbarer Gesamtumsatz", report.z299)
+            _form_row(main, ziffer, label, values[ziffer])
+    _form_row(main, "289", "Total Abzüge", report.z289)
+    _form_row(main, "299", "Steuerbarer Gesamtumsatz", report.z299)
     main.add_section()
-    for r in report.rate_rows:
-        vintage = "" if r.current else " (bis 31.12.2023)"
-        if r.rate_class == "saldo":
-            name = f"Leistungen zum Saldosteuersatz {r.label} %"
-        else:
-            _new, _old, long_label, short = RATE_ZIFFERN[r.rate_class]
-            name = f"{long_label if r.current else short} {r.rate * 100:.1f} %"
-        row(r.ziffer, f"{name}{vintage}", r.net, r.tax)
-    d0 = Date.fromisoformat(report.date_from)
-    d1 = Date.fromisoformat(report.date_to)
-    for current in (True, False):
-        tax = report.z383_tax if current else report.z382_tax
-        in_force = (d1 >= RATE_CHANGE) if current else (d0 < RATE_CHANGE)
-        if not tax and not in_force:
-            continue
-        net = report.z383_net if current else report.z382_net
-        label = "Bezugsteuer (Art. 45 ff. MWSTG)" if current else "Bezugsteuer (bis 31.12.2023)"
-        row(BEZUGSTEUER_ZIFFERN[0 if current else 1], label, net, tax)
+    _tax_rows(main, report)
     # The Saldosteuersatz form has no total-tax line and no input-VAT block:
     # part II goes straight from the turnover rows and the Bezugsteuer to the
     # Steuerforderung (MWST-Info 12, Ziff. 18.1.1 and 18.1.4).
     if report.vat_method != "saldo":
-        row("399", "Total geschuldete Steuer", None, report.z399)
+        _form_row(main, "399", "Total geschuldete Steuer", None, report.z399)
         main.add_section()
         for ziffer, label, always in _INPUT_ROWS:
             if always or values[ziffer]:
                 shown = -values[ziffer] if ziffer in MINUS_ZIFFERN else values[ziffer]
-                row(ziffer, label, None, shown)
-        row("479", "Total Vorsteuer", None, report.z479)
+                _form_row(main, ziffer, label, None, shown)
+        _form_row(main, "479", "Total Vorsteuer", None, report.z479)
     main.add_section()
     owed = report.z500 >= 0
-    row(
+    _form_row(
+        main,
         "500" if owed else "510",
         "Zu bezahlender Betrag" if owed else "Guthaben der steuerpflichtigen Person",
         None,
@@ -1447,10 +1429,51 @@ def _main_table(report: MwstReport) -> Table:
     if report.z900 or report.z910:
         main.add_section()
         if report.z900:
-            row("900", "Subventionen, Tourismusabgaben u.a. (Art. 18 II a–c)", report.z900)
+            _form_row(
+                main, "900", "Subventionen, Tourismusabgaben u.a. (Art. 18 II a–c)", report.z900
+            )
         if report.z910:
-            row("910", "Spenden, Dividenden, Schadenersatz (Art. 18 II d–l)", report.z910)
+            _form_row(
+                main, "910", "Spenden, Dividenden, Schadenersatz (Art. 18 II d–l)", report.z910
+            )
     return main
+
+
+def _form_row(
+    main: Table,
+    z: str,
+    label: str,
+    umsatz: Decimal | None = None,
+    steuer: Decimal | None = None,
+    style: str | None = None,
+) -> None:
+    u = ui.money(umsatz) if umsatz is not None else ""
+    s = ui.money(steuer) if steuer is not None else ""
+    if style:
+        label, u, s = (f"[{style}]{x}[/]" if x else x for x in (label, u, s))
+    main.add_row(z, label, u, s)
+
+
+def _tax_rows(main: Table, report: MwstReport) -> None:
+    """Section II's turnover rows by rate and vintage, then the Bezugsteuer."""
+    for r in report.rate_rows:
+        vintage = "" if r.current else " (bis 31.12.2023)"
+        if r.rate_class == "saldo":
+            name = f"Leistungen zum Saldosteuersatz {r.label} %"
+        else:
+            _new, _old, long_label, short = RATE_ZIFFERN[r.rate_class]
+            name = f"{long_label if r.current else short} {r.rate * 100:.1f} %"
+        _form_row(main, r.ziffer, f"{name}{vintage}", r.net, r.tax)
+    d0 = Date.fromisoformat(report.date_from)
+    d1 = Date.fromisoformat(report.date_to)
+    for current in (True, False):
+        tax = report.z383_tax if current else report.z382_tax
+        in_force = (d1 >= RATE_CHANGE) if current else (d0 < RATE_CHANGE)
+        if not tax and not in_force:
+            continue
+        net = report.z383_net if current else report.z382_net
+        label = "Bezugsteuer (Art. 45 ff. MWSTG)" if current else "Bezugsteuer (bis 31.12.2023)"
+        _form_row(main, BEZUGSTEUER_ZIFFERN[0 if current else 1], label, net, tax)
 
 
 def _vat_table(lines: list[VatLine], total: Decimal, title: str) -> Table:

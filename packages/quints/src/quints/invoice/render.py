@@ -17,7 +17,7 @@ from babel.dates import format_date
 from . import bank, qr
 from . import reference as ref_mod
 from .labels import labels as get_labels
-from .model import Invoice, Issuer, Totals, compute, money, number
+from .model import BankAccount, Invoice, Issuer, Totals, compute, money, number
 
 TEMPLATE = Path(__file__).parent / "template.typ"
 # Always on the search path: the default brand families (Geist, Geist Mono,
@@ -111,34 +111,43 @@ def build_context(
             }
             for i, it in enumerate(inv.items)
         ],
-        "totals": {
-            "subtotal": money(totals.subtotal, inv.locale),
-            "vat_rate": number(totals.vat_rate, inv.locale),
-            "vat_amount": money(totals.vat_amount, inv.locale),
-            "rounding": money(totals.rounding, inv.locale),
-            "show_rounding": totals.rounding != 0,
-            "grand_total": money(totals.grand_total, inv.locale),
-            "export": inv.kind == "export",
-            # Not registered: no VAT row and no Swiss VAT note — the invoice
-            # may not mention the tax at all (Art. 27 Abs. 1 MWSTG).
-            "vat_registered": totals.vat_registered,
-        },
+        "totals": _totals_context(inv, totals),
         "payment": payment,
         "notes": list(inv.notes),
-        "brand": {
-            "accent": issuer.brand.accent,
-            "font": issuer.brand.font,
-            "font_display": issuer.brand.font_display or issuer.brand.font,
-            "display_stretch": issuer.brand.font_display_stretch,
-            "display_weight": issuer.brand.font_display_weight,
-            "font_mono": issuer.brand.font_mono or issuer.brand.font,
-            "ink": issuer.brand.ink,
-            "subtle": issuer.brand.subtle,
-            "rule": issuer.brand.rule,
-            "panel": issuer.brand.panel,
-            "logo": logo,
-            "logo_height": issuer.brand.logo_height,
-        },
+        "brand": _brand_context(issuer, logo),
+    }
+
+
+def _totals_context(inv: Invoice, totals: Totals) -> dict[str, str | bool]:
+    return {
+        "subtotal": money(totals.subtotal, inv.locale),
+        "vat_rate": number(totals.vat_rate, inv.locale),
+        "vat_amount": money(totals.vat_amount, inv.locale),
+        "rounding": money(totals.rounding, inv.locale),
+        "show_rounding": totals.rounding != 0,
+        "grand_total": money(totals.grand_total, inv.locale),
+        "export": inv.kind == "export",
+        # Not registered: no VAT row and no Swiss VAT note — the invoice
+        # may not mention the tax at all (Art. 27 Abs. 1 MWSTG).
+        "vat_registered": totals.vat_registered,
+    }
+
+
+def _brand_context(issuer: Issuer, logo: str | None) -> dict[str, str | float | None]:
+    brand = issuer.brand
+    return {
+        "accent": brand.accent,
+        "font": brand.font,
+        "font_display": brand.font_display or brand.font,
+        "display_stretch": brand.font_display_stretch,
+        "display_weight": brand.font_display_weight,
+        "font_mono": brand.font_mono or brand.font,
+        "ink": brand.ink,
+        "subtle": brand.subtle,
+        "rule": brand.rule,
+        "panel": brand.panel,
+        "logo": logo,
+        "logo_height": brand.logo_height,
     }
 
 
@@ -196,6 +205,69 @@ def check_vat_identity(issuer: Issuer, vat_registered: bool) -> None:
         )
 
 
+def _reverse_charge(inv: Invoice) -> bool:
+    """Whether the invoice carries the reverse-charge mention.
+
+    Reverse charge needs a VAT-identified recipient: Art. 196 EU VAT Directive,
+    and Art. 226(4)+(11a) require the customer's VAT number + mention on the
+    invoice. Default for exports is reverse charge ON; opt out explicitly.
+    """
+    if inv.kind != "export":
+        return False
+    reverse_charge = True if inv.reverse_charge is None else inv.reverse_charge
+    customer = inv.resolved_customer
+    if reverse_charge and not customer.vat_id:
+        raise ValueError(
+            f"export invoice {inv.number} claims reverse charge but customer "
+            f"{customer.name!r} has no vat_id — add their VAT number, or "
+            f"set `reverse_charge: false` if they are outside a reverse-charge "
+            f"regime (Art. 196 / Art. 226(4) EU VAT Directive)"
+        )
+    return reverse_charge
+
+
+def _sepa_payment(inv: Invoice, issuer: Issuer, account: BankAccount) -> dict[str, str | None]:
+    """The cross-border payment block: IBAN, BIC and reference."""
+    # Cross-border: a QR-IBAN only works inside the QR-bill scheme —
+    # foreign transfers need the regular IBAN.
+    if not account.iban:
+        raise ValueError(
+            f"export invoice in {inv.currency} needs a regular `iban` "
+            f"(a QR-IBAN cannot receive normal credit transfers)"
+        )
+    # No BIC, no invoice. A payer who has to look the code up gets it
+    # wrong sooner or later and the transfer comes back — the one
+    # failure a printed invoice can prevent outright. It cannot be
+    # derived from the IBAN, so it has to be configured.
+    if not account.bic:
+        raise ValueError(
+            f"export invoice {inv.number} in {inv.currency} has no `bic` — "
+            f"a SEPA/SWIFT payer left to look the code up can get it wrong "
+            f"and have the payment returned. Add `bic:` under "
+            f"bank.{inv.currency} in the issuer config; "
+            f"`quints iban {account.iban}` shows what to ask the bank for"
+        )
+    return {
+        "type": "sepa",
+        "beneficiary": account.holder or issuer.name,
+        "iban": bank.format_iban(account.iban),
+        "bic": account.bic,
+        "bank_name": account.bank_name,
+        "reference": ref_mod.payment_reference(inv, account).formatted,
+    }
+
+
+def _fonts(issuer: Issuer) -> tuple[list[Path], bool]:
+    """(font search path, whether only the bundled families may be used)."""
+    font_dir = issuer.brand.font_dir
+    issuer_fonts = [Path(font_dir)] if font_dir and Path(font_dir).is_dir() else []
+    # Ours first so the guaranteed fallback is always resolvable; the
+    # issuer's own families win on name, not on search order.
+    brand = issuer.brand
+    named = {brand.font, brand.font_display or brand.font, brand.font_mono or brand.font}
+    return [BUNDLED_FONTS, *issuer_fonts], bool(issuer_fonts) or named <= BUNDLED_FAMILIES
+
+
 def render(
     inv: Invoice, issuer: Issuer, out_path: Path, vat_registered: bool = True
 ) -> tuple[Path, Totals, str | None]:
@@ -206,21 +278,8 @@ def render(
     check_vat_identity(issuer, vat_registered)
     totals = compute(inv, vat_registered)
     account = issuer.account(inv.currency)
-    customer = inv.resolved_customer
 
-    # Reverse charge needs a VAT-identified recipient: Art. 196 EU VAT Directive,
-    # and Art. 226(4)+(11a) require the customer's VAT number + mention on the
-    # invoice. Default for exports is reverse charge ON; opt out explicitly.
-    reverse_charge = False
-    if inv.kind == "export":
-        reverse_charge = True if inv.reverse_charge is None else inv.reverse_charge
-        if reverse_charge and not customer.vat_id:
-            raise ValueError(
-                f"export invoice {inv.number} claims reverse charge but customer "
-                f"{customer.name!r} has no vat_id — add their VAT number, or "
-                f"set `reverse_charge: false` if they are outside a reverse-charge "
-                f"regime (Art. 196 / Art. 226(4) EU VAT Directive)"
-            )
+    reverse_charge = _reverse_charge(inv)
     work = Path(tempfile.mkdtemp(prefix="quints-inv-"))
     try:
         qr_payload = None
@@ -231,33 +290,7 @@ def render(
             qr_payload = qr.payload(bill)
             payment = {"type": "qrbill"}
         else:
-            # Cross-border: a QR-IBAN only works inside the QR-bill scheme —
-            # foreign transfers need the regular IBAN.
-            if not account.iban:
-                raise ValueError(
-                    f"export invoice in {inv.currency} needs a regular `iban` "
-                    f"(a QR-IBAN cannot receive normal credit transfers)"
-                )
-            # No BIC, no invoice. A payer who has to look the code up gets it
-            # wrong sooner or later and the transfer comes back — the one
-            # failure a printed invoice can prevent outright. It cannot be
-            # derived from the IBAN, so it has to be configured.
-            if not account.bic:
-                raise ValueError(
-                    f"export invoice {inv.number} in {inv.currency} has no `bic` — "
-                    f"a SEPA/SWIFT payer left to look the code up can get it wrong "
-                    f"and have the payment returned. Add `bic:` under "
-                    f"bank.{inv.currency} in the issuer config; "
-                    f"`quints iban {account.iban}` shows what to ask the bank for"
-                )
-            payment = {
-                "type": "sepa",
-                "beneficiary": account.holder or issuer.name,
-                "iban": bank.format_iban(account.iban),
-                "bic": account.bic,
-                "bank_name": account.bank_name,
-                "reference": ref_mod.payment_reference(inv, account).formatted,
-            }
+            payment = _sepa_payment(inv, issuer, account)
 
         logo = issuer.brand.logo
         logo_name = None
@@ -270,15 +303,7 @@ def render(
         (work / "data.json").write_text(json.dumps(ctx, ensure_ascii=False, indent=2))
         shutil.copy(TEMPLATE, work / "template.typ")
 
-        font_dir = issuer.brand.font_dir
-        issuer_fonts = [Path(font_dir)] if font_dir and Path(font_dir).is_dir() else []
-        # Ours first so the guaranteed fallback is always resolvable; the
-        # issuer's own families win on name, not on search order.
-        font_paths = [BUNDLED_FONTS, *issuer_fonts]
-        brand = issuer.brand
-        named = {brand.font, brand.font_display or brand.font, brand.font_mono or brand.font}
-        only_bundled = bool(issuer_fonts) or named <= BUNDLED_FAMILIES
-
+        font_paths, only_bundled = _fonts(issuer)
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         _compile(work / "template.typ", out_path, work, font_paths, only_bundled)
