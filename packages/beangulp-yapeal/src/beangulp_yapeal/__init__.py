@@ -35,7 +35,7 @@ _IDENTIFY_HEADER = "Transaktions-ID,Belastung oder Gutschrift,Buchungs-Datum"
 class _YapealAmount(csvbase.Column):
     """Amount from either Gutschrift (credit), Belastung (debit), or Betrag+indicator."""
 
-    def parse(self, gutschrift: str, belastung: str, betrag: str, indicator: str) -> Decimal:  # type: ignore[override]
+    def parse(self, gutschrift: str, belastung: str, betrag: str, indicator: str) -> Decimal:  # type: ignore[override] -- csvbase.Column.parse(*values) is untyped varargs
         if gutschrift:
             return Decimal(gutschrift)
         if belastung:
@@ -52,7 +52,7 @@ class Importer(csvbase.Importer):
     """Yapeal CSV statement importer for one bank account."""
 
     ref = csvbase.Column("Transaktions-ID")
-    date = csvbase.Date("Transaktions-Datum", "%d.%m.%Y")  # type: ignore[assignment]
+    date = csvbase.Date("Transaktions-Datum", "%d.%m.%Y")  # type: ignore[assignment] -- csvbase.Date narrows the Column attribute
     payee = csvbase.Column("Gegenpartei")
     narration = csvbase.Column("Transaktions-Info")
     amount = _YapealAmount(
@@ -118,14 +118,14 @@ class Importer(csvbase.Importer):
                 continue
 
             try:
-                amount_val = row.amount  # type: ignore[attr-defined]
+                amount_val = row.amount  # type: ignore[attr-defined] -- csvbase builds rows dynamically
             except (ValueError, InvalidOperation):
                 continue
 
             meta = self.metadata(filepath, lineno, row)
-            payee = row.payee  # type: ignore[attr-defined]
-            narration = row.narration  # type: ignore[attr-defined]
-            date_val = row.date  # type: ignore[attr-defined]
+            payee = row.payee  # type: ignore[attr-defined] -- csvbase builds rows dynamically
+            narration = row.narration  # type: ignore[attr-defined] -- csvbase builds rows dynamically
+            date_val = row.date  # type: ignore[attr-defined] -- csvbase builds rows dynamically
             units = Amount(amount_val, self.currency)
             postings = [data.Posting(self.importer_account, units, None, None, None, None)]
 

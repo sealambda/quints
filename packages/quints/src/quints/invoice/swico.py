@@ -33,6 +33,8 @@ import warnings
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+from .. import ledger
+
 if TYPE_CHECKING:
     from .model import Invoice, Issuer, Totals
 
@@ -80,7 +82,8 @@ def billing_information(
     }
     if not tags["10"]:
         return None
-    while True:
+    # Each pass returns, raises, or clears one droppable tag.
+    for _ in range(len(_DROP_ORDER) + 1):
         rendered = "//S1" + "".join(f"/{t}/{escape(v)}" for t, v in tags.items() if v)
         if len(rendered) + len(message) <= MAX_LENGTH:
             return rendered
@@ -101,3 +104,5 @@ def billing_information(
                 f"nothing but the invoice number in it — shorten the number"
             )
         tags[droppable] = ""
+    ledger.invariant(False, f"invoice {inv.number}: billing information never converged")
+    return None

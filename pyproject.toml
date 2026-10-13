@@ -66,6 +66,7 @@ select = [
     "I",        # isort
     "UP",       # pyupgrade
     "B",        # bugbear
+    "BLE",      # blind except — catch what you can handle, name it
     "C4",       # comprehensions
     "SIM",      # simplify
     "S",        # bandit (security)
@@ -78,6 +79,10 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/*" = ["S101", "S105", "S106"]  # asserts and hardcoded test credentials are fine in tests
+
+[tool.pytest.ini_options]
+# A warning in our code or a dependency is a defect until triaged.
+filterwarnings = ["error"]
 
 [tool.basedpyright]
 include = ["packages"]
