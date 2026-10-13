@@ -70,6 +70,9 @@ def _section(
     lines: list[Line] = []
     for row in rows:
         lines.append(_line(label(row.key, lang, form), _money(sign * row.amount, lang)))
+        if row.parts:  # a subtotal (`reserves`): list its positions, not its codes twice
+            lines += _section(row.parts, lang, sign=sign, form=form)
+            continue
         for cl in row.codes:
             lines.append(
                 _line(
@@ -133,6 +136,18 @@ def erfolg_lines(report: ErfolgReport, lang: str) -> list[Line]:
     lines.append(_line(label("ebit", lang), _money(report.ebit, lang), bold=True, rule=True))
     lines += _section(report.financial_expenses, lang, sign=-1)
     lines += _section(report.financial_income, lang)
+    if report.other_results or report.direct_taxes:  # Art. 959b Abs. 2 Ziff. 8-10 OR
+        lines.append(_line(label("ebt", lang), _money(report.ebt, lang), bold=True, rule=True))
+        lines += _section(report.other_results, lang)
+        lines.append(
+            _line(
+                label("result_before_taxes", lang),
+                _money(report.result_before_taxes, lang),
+                bold=True,
+                rule=True,
+            )
+        )
+        lines += _section(report.direct_taxes, lang, sign=-1)
     lines.append(_line(label("result", lang), _money(report.result, lang), bold=True, rule=True))
     return lines
 
@@ -164,6 +179,8 @@ def build_context(
             "en": f"Non-CHF balances valued at the {bilanz.at} rate: {parts}.",
             "de": f"Fremdwährungsbestände zum Kurs per {bilanz.at} bewertet: {parts}.",
         }.get(lang, "")
+    if bilanz.unrealized_fx:
+        fx_note += f" {label('unrealized_fx', lang)}: {_money(bilanz.unrealized_fx, lang)}."
     # Both statements load the same books: list each problem once.
     problems: list[dict[str, str]] = []
     for v in bilanz.violations + erfolg.violations:

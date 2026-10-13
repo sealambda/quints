@@ -427,7 +427,7 @@ def test_cli_saldo_flow_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     assert Decimal(d["z200"]) == Decimal("1551.00")
     assert Decimal(d["z299"]) == Decimal("1081.00")
     assert d["z323_tax"] == "67.02" and d["z500"] == "74.55"
-    assert d["z479"] == "0" and d["violations"] == []
+    assert d["z479"] == "0.00" and d["violations"] == []
     (row,) = d["rate_rows"]
     assert row["ziffer"] == "323" and row["label"] == "6.2" and row["rate_class"] == "saldo"
 

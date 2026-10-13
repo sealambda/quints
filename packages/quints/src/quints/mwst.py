@@ -564,8 +564,8 @@ def _rate_rows(
                     ziffer=_vintage_ziffer(rate_class, current),
                     rate_class=rate_class,
                     rate=_rate_on(current, rate_class),
-                    net=net,
-                    tax=tax,
+                    net=ledger.rappen(net),
+                    tax=ledger.rappen(tax),
                     current=current,
                 )
             )
@@ -621,6 +621,10 @@ class _Totals:
     sss_nets: dict[tuple[str, bool], Decimal] = field(default_factory=dict)
     gross: Decimal = Decimal("0")  # Ziffer 200
     output_vat: Decimal = Decimal("0")  # the OutputVAT account movement
+    # The InputVAT account movement, and what of it was reported and left out:
+    # the rest is exactly 479 (checked in _assemble).
+    input_moved: Decimal = Decimal("0")
+    input_left_out: Decimal = Decimal("0")
 
 
 @dataclass
@@ -641,6 +645,8 @@ class _TxnState:
 
     current: bool
     expected_tax: Decimal = Decimal("0")
+    # net × rate per (rate class, vintage) — a mixed-rate sale's split
+    expected_by_row: dict[tuple[str, bool], Decimal] = field(default_factory=dict)
     posted_tax: Decimal = Decimal("0")
     rate_class: str = "standard"
     weight: Decimal = Decimal("-1")  # of the dominant taxable leg
@@ -784,11 +790,14 @@ def _transaction(
                 # Credits accrue; a debit outside a settlement reverses one.
                 _bezugsteuer(e, p, -n, tokens, cfg, state.current, t, detail)
             elif acct == cfg.input_vat:
+                t.input_moved += n
                 _input_vat(e, p, n, tokens, codes, price_map, cfg, t, detail)
             elif acct.startswith(cfg.income_prefix):
                 _turnover(e, p, n, tokens, codes, price_map, cfg, state, t, detail)
         except ledger.RateUnavailable as exc:  # raised before anything accrues
             detail.violations.append(_missing_rate(e, p, exc))
+            if acct == cfg.input_vat:
+                t.input_left_out += n
 
     if cfg.vat_method == "saldo":
         _saldo_gross(e, state, t, detail)
@@ -861,6 +870,7 @@ def _input_vat(
                 n,
             )
         )
+        t.input_left_out += n
         return
     ziffer = _input_ziffer(e, p, tokens, codes, price_map, cfg)
     tagged = any(name in tokens for name in INPUT_ZIFFERN)
@@ -882,6 +892,7 @@ def _input_vat(
                 n,
             )
         )
+        t.input_left_out += n
         return
     else:
         # A supplier credit note's credit reduces it, in the period it is
@@ -956,7 +967,9 @@ def _turnover(
     rate_class = _rate_class(acct, tokens, cfg)
     key = (rate_class, state.current)
     t.nets[key] = t.nets.get(key, Decimal("0")) + chf
-    state.expected_tax += chf * _rate_on(state.current, rate_class)
+    expected = chf * _rate_on(state.current, rate_class)
+    state.expected_tax += expected
+    state.expected_by_row[key] = state.expected_by_row.get(key, Decimal("0")) + expected
     granted = _saldo_for(acct, tokens, cfg) if cfg.vat_method == "saldo" else None
     if granted is not None:
         sss_key = (granted.name, state.current)
@@ -1011,13 +1024,23 @@ def _check(e: data.Transaction, state: _TxnState, t: _Totals, detail: _Detail) -
         return
     t.output_vat += state.posted_tax
     key = (state.rate_class, state.current)
-    t.taxes[key] = t.taxes.get(key, Decimal("0")) + state.posted_tax
+    matches = abs(state.posted_tax - state.expected_tax) <= _tolerance(state.expected_tax)
+    rest = state.posted_tax
+    if state.has_turnover and matches:
+        # A mixed-rate sale: each rate row gets the tax its net owes; the
+        # Rappen rounding stays with the dominant row.
+        for other, expected in state.expected_by_row.items():
+            if other != key:
+                share = ledger.rappen(expected)
+                t.taxes[other] = t.taxes.get(other, Decimal("0")) + share
+                rest -= share
+    t.taxes[key] = t.taxes.get(key, Decimal("0")) + rest
     if not state.has_turnover:
         # VAT with no income leg at all (a fixed-asset sale, a manual
         # correction): declare it at the standard rate, but there is nothing to
         # check it against — stay quiet rather than cry wolf.
         return
-    if abs(state.posted_tax - state.expected_tax) > _tolerance(state.expected_tax):
+    if not matches:
         rate = _rate_on(state.current, state.rate_class) * 100
         detail.violations.append(
             Violation(
@@ -1053,7 +1076,7 @@ def _saldo_rows(t: _Totals, d0: Date, d1: Date, cfg: config.Config) -> list[Rate
         in_force = (d1 >= RATE_CHANGE) if current else (d0 < RATE_CHANGE)
         for granted in cfg.saldo:
             key = (granted.name, current)
-            base = t.sss_nets.get(key, Decimal("0"))
+            base = ledger.rappen(t.sss_nets.get(key, Decimal("0")))
             if not in_force and not base:
                 continue
             rows.append(
@@ -1082,8 +1105,18 @@ def _assemble(
     """Totals, cross-checks, and the flat Ziffer fields the JSON contract pins."""
     saldo = cfg.vat_method == "saldo"
 
+    # Every InputVAT movement was deducted, or reported and left out.
+    deducted = sum(t.inputs.get(k, Decimal("0")) for k in ("400", "405", "410"))
+    deducted -= sum(t.inputs.get(k, Decimal("0")) for k in MINUS_ZIFFERN)
+    ledger.invariant(
+        deducted == t.input_moved - t.input_left_out,
+        f"input VAT {deducted} ≠ InputVAT moved {t.input_moved} − left out {t.input_left_out}",
+    )
+
+    # The form takes Rappen: every Ziffer is rounded once, and the form's
+    # own sums (289, 299, 399, 479, 500) are taken over the rounded figures.
     def z(key: str) -> Decimal:
-        return t.turnover.get(key, Decimal("0"))
+        return ledger.rappen(t.turnover.get(key, Decimal("0")))
 
     rows = _saldo_rows(t, d0, d1, cfg) if saldo else _rate_rows(t.nets, t.taxes, d0, d1)
 
@@ -1094,10 +1127,21 @@ def _assemble(
                 total += r.net if index == 0 else r.tax
         return total
 
+    z200 = ledger.rappen(t.gross)
     z289 = sum((z(k) for k in ("220", "221", "225", "230", "235", "280")), Decimal("0"))
-    z299 = t.gross - z289
-    rate_net_total = sum((r.net for r in rows), Decimal("0"))
-    if rate_net_total != z299:
+    z299 = z200 - z289
+    residual = z299 - sum((r.net for r in rows), Decimal("0"))
+    # Rounding moves z200, each of the six deductions and each row net by at
+    # most 0.005: a residual within that is rounding, and lands on the
+    # largest row. Anything beyond is turnover that landed in no row.
+    if rows and residual and abs(residual) <= Decimal("0.005") * (7 + len(rows)):
+        largest = max(rows, key=lambda r: abs(r.net))
+        largest.net += residual
+        if saldo:  # the form multiplies the base as entered
+            largest.tax = ledger.rappen(largest.net * largest.rate)
+        residual = Decimal("0")
+    rate_net_total = z299 - residual
+    if residual:
         detail.violations.append(
             Violation(
                 date_to,
@@ -1108,20 +1152,18 @@ def _assemble(
                 rate_net_total,
             )
         )
-    z383_tax = t.bezug_tax.get(True, Decimal("0"))
-    z382_tax = t.bezug_tax.get(False, Decimal("0"))
+    z383_tax = ledger.rappen(t.bezug_tax.get(True, Decimal("0")))
+    z382_tax = ledger.rappen(t.bezug_tax.get(False, Decimal("0")))
     z399 = sum((r.tax for r in rows), Decimal("0")) + z383_tax + z382_tax
-    z400 = t.inputs.get("400", Decimal("0"))
-    z405 = t.inputs.get("405", Decimal("0"))
-    z410 = t.inputs.get("410", Decimal("0"))
-    z415 = t.inputs.get("415", Decimal("0"))
-    z420 = t.inputs.get("420", Decimal("0"))
+    z400, z405, z410, z415, z420 = (
+        ledger.rappen(t.inputs.get(k, Decimal("0"))) for k in ("400", "405", "410", "415", "420")
+    )
     z479 = z400 + z405 + z410 - z415 - z420
     z500 = z399 - z479
     return MwstReport(
         date_from=date_from,
         date_to=date_to,
-        z200=t.gross,
+        z200=z200,
         z205=z("205"),
         z220=z("220"),
         z221=z("221"),
@@ -1143,9 +1185,9 @@ def _assemble(
         z342_tax=row("342", 1),
         z343_net=row("343", 0),
         z343_tax=row("343", 1),
-        z382_net=t.bezug_net.get(False, Decimal("0")),
+        z382_net=ledger.rappen(t.bezug_net.get(False, Decimal("0"))),
         z382_tax=z382_tax,
-        z383_net=t.bezug_net.get(True, Decimal("0")),
+        z383_net=ledger.rappen(t.bezug_net.get(True, Decimal("0"))),
         z383_tax=z383_tax,
         z399=z399,
         z400=z400,
@@ -1155,16 +1197,16 @@ def _assemble(
         z420=z420,
         z479=z479,
         z500=z500,
-        z510=-z500 if z500 < 0 else Decimal("0"),
+        z510=-z500 if z500 < 0 else Decimal("0.00"),
         z322_net=row("322", 0),
         z322_tax=row("322", 1),
         z323_net=row("323", 0),
         z323_tax=row("323", 1),
-        z900=t.flows.get("900", Decimal("0")),
-        z910=t.flows.get("910", Decimal("0")),
+        z900=ledger.rappen(t.flows.get("900", Decimal("0"))),
+        z910=ledger.rappen(t.flows.get("910", Decimal("0"))),
         vat_method=cfg.vat_method,
         form=FORMS.get(cfg.vat_method, ""),
-        output_vat=t.output_vat,
+        output_vat=ledger.rappen(t.output_vat),
         rate_rows=rows,
         violations=detail.violations,
         vat_lines=detail.vat_lines,

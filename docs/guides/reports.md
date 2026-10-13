@@ -26,13 +26,49 @@ quints report erfolg --year 2026
 
 `bilanz` values non-CHF balances at the report-date rate (same method Fava
 uses, so totals tie out) and splits the balancing figure into
-Gewinnvortrag and the fiscal year's result. The fiscal year starts on
+Gewinnvortrag and the fiscal year's result. Part of that result is
+unrealised FX: the report-date value of the foreign balances less what they
+were booked at. `bilanz` prints it (`unrealized_fx` in `--json`) until the
+[revaluation](fx.md) books it. The fiscal year starts on
 1 January of the `--at` year; `--from` moves the start for an
 [extended first year](year-end.md#an-extended-first-year). `erfolg` converts
 flows at each transaction's date and takes `--from`/`--to` for any period.
 
 The equity section is labeled for your [legal form](../legal-forms.md):
 Eigenkapital, Stammkapital, or Aktienkapital.
+
+The rows follow the minimum structure the law sets, in its order.[^structure]
+They are filled from the KMU Kontenrahmen classes:[^kmu]
+
+| Rows | KMU codes |
+| --- | --- |
+| Nettoerlöse; Bestandesänderungen | 3000–3899; 3900–3999 |
+| Material, Personal, übriger betrieblicher Aufwand, Abschreibungen | 4, 5, 6000–6799, 6800–6899 |
+| Finanzaufwand / Finanzertrag | 6900–6949 / 6950–6999 |
+| Betrieblicher Nebenerfolg | 7000–7999 |
+| Betriebsfremder Aufwand / Ertrag | 8000–8099 / 8100–8199 |
+| Ausserordentlicher, einmaliger oder periodenfremder Aufwand / Ertrag | 8500–8509 / 8510–8599 |
+| Direkte Steuern | 8900–8999 |
+
+The income statement shows the rows after the financial result, with their
+subtotals, only when your books use them. On the balance sheet, Beteiligungen
+(1480–1499), nicht einbezahltes Kapital (1800–1899), the reserves (2900,
+2950, 2955 Aufwertungsreserve, 2960) and eigene Kapitalanteile (2965, as a
+minus item) each have their own row. Together they make the `reserves`
+subtotal (2900–2969, own shares included), the same figure the single
+reserves row showed before. In `--json` it stays the `reserves` row of
+`equity`, with the positions under `parts`. Totals count it once.
+
+Two checks keep the statements honest:
+
+- **A code in no row** (for example 8300, 1950 or 2750) is listed under
+  the statement with its amount, never dropped.
+- **The two results agree.** The balance sheet's result must equal the
+  income statement's result plus the unrealised FX, plus whatever
+  beancount's balancing tolerance left in the books (a conversion like
+  `100 EUR @ 0.93127 CHF` booked against 93.13 CHF). If it doesn't, the
+  balance sheet lists the gap. The usual cause is an account the income
+  statement can't see: one without a `kmu:` code, or with a code in no row.
 
 ## Auditor detail
 
@@ -74,4 +110,5 @@ Before the statements are final, run the year-end checklist:
 - **Profit appropriation** and the shareholders' approval (GmbH/AG).
 - **The tax return.** The statements are its input, not the return.
 
-[^structure]: Minimum structure of the balance sheet and income statement: Art. 959a and 959b OR, [SR 220](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_959_a). The account codes follow the Schweizer Kontenrahmen KMU, edition 2023 ([SwissAccounting](https://swissaccounting.org/kontenrahmen)).
+[^kmu]: Schweizer Kontenrahmen KMU, [Schulkontenrahmen KMU (SwissAccounting)](https://www.kmu.admin.ch/dam/de/sd-web/Q2HAXEngBfiW/schulkontenrahmen-kmu.pdf): classes 7 (Betrieblicher Nebenerfolg: 7000/7010, 7500/7510) and 8 (8000, 8100, 8500, 8510, 8900), and the Gesamtkostenverfahren layout on its last page.
+[^structure]: Minimum structure of the balance sheet and income statement: Art. 959a and 959b OR, [SR 220](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_959_a). Art. 959b Abs. 2 lists the income statement's positions, "8. betriebsfremder Aufwand und betriebsfremder Ertrag; 9. ausserordentlicher, einmaliger oder periodenfremder Aufwand und Ertrag; 10. direkte Steuern" among them. The Aufwertungsreserve is shown "unter der gesetzlichen Gewinnreserve gesondert" (Art. 725c Abs. 1 OR). The account codes follow the Schweizer Kontenrahmen KMU, edition 2023 ([SwissAccounting](https://swissaccounting.org/kontenrahmen)).

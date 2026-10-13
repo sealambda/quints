@@ -152,6 +152,15 @@ than filing it wrongly, and so does `--json` under `violations`. Typical
 causes are the old rate applied by habit, a missing VAT leg, or VAT on an
 exempt supply.
 
+A sale with legs at different rates (100.00 at 8.1 % and 1000.00 at 2.6 %,
+posting 34.10) is checked as a whole. When it matches, each rate row gets
+the tax its net owes (8.10 on 303, 26.00 on 313).
+
+Every Ziffer is rounded to the Rappen once, and the form's sums (289, 299,
+399, 479, 500) are taken over the rounded figures, as the ESTV portal adds
+them. A Rappen of rounding left between 299 and the rate rows goes to the
+largest row.
+
 ## Foreign currency
 
 An amount in another currency is valued at the rate in `prices.bean` for its
@@ -204,7 +213,8 @@ every Ziffer, so the report still renders and names what is missing.
 
 `quints vat report --json` returns:
 
-- **`zNNN`:** each Ziffer as a key, with a decimal string. `z500` is the
+- **`zNNN`:** each Ziffer as a key, with a decimal string rounded to the
+  Rappen, exactly as the text report prints it. `z500` is the
   *signed* net (the figure the settlement posts); `z510` carries a credit as
   a positive number.
 - **`rate_rows`:** the section-II lines, with their rate class, vintage and,
