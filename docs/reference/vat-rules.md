@@ -54,6 +54,7 @@ a space-separated list of tokens:
 | `diverses` | Ziffer 280 |
 | `subvention` | Ziffer 900 — Nicht-Entgelt, outside Ziffer 200 |
 | `donation` | Ziffer 910 — Spenden, Dividenden, Schadenersatz |
+| `not_entgelt` | outside the form: neither a supply nor a 900/910 flow (a released provision) |
 | `material` / `investment` | input VAT → Ziffer 400 / 405 |
 | `einlageentsteuerung` | Ziffer 410 (Art. 32; the switch to the effective method) |
 | `vorsteuerkorrektur` | Ziffer 415 (Art. 30/31; the switch to the Saldosteuersatz) |
@@ -77,7 +78,17 @@ table, so a typo can't quietly change a return.
   Skonto, a rebate or a Debitorenverlust booked there is deducted from
   turnover, and its OutputVAT reversal reduces the matching rate row.
 - **Income outside 3000–3899** isn't *Entgelt* and stays out of the return:
-  realised FX gains (6950), rounding, Bestandesänderungen (39xx).
+  realised FX gains (6950), rounding, Bestandesänderungen (39xx). The
+  exception is a transaction that charges OutputVAT with no 3000–3899 leg
+  beside it, such as a side-business sale on 7000. VAT was charged, so it
+  was a taxable supply,[^entgelt] and its net is counted with its tax.
+- **Income on 7000–8999 without a tag** (betrieblicher Nebenerfolg,
+  betriebsfremder or ausserordentlicher Ertrag) and without OutputVAT is
+  listed under *Prüfung* with its amount, and stays out of the figures. Its
+  code can't tell whether it is Entgelt: exempt rent belongs in 200 and 230,
+  Schadenersatz in 910. Tag it `exempt`, `taxable`, `donation`, `subvention`
+  or `not_entgelt` so Ziffer 200 is complete. Financial income (6950–6999)
+  and FX gains are not affected.
 - **Input VAT** is split into 400 or 405 by the **counter-leg's** code
   (below).
 
@@ -232,3 +243,4 @@ Keys are only ever added, never renamed or removed.
 [^periods]: Art. 35 Abs. 1 and 1bis MWSTG, [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_35).
 [^due]: Art. 71 Abs. 1 (the return) and Art. 86 Abs. 1 MWSTG (the payment): "Innert 60 Tagen nach Ablauf der Abrechnungsperiode". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_86).
 [^art41]: Art. 41 Abs. 2 MWSTG: "Wird das von der steuerpflichtigen Person aufgewendete Entgelt korrigiert, so ist im Zeitpunkt, in dem die Korrektur verbucht oder das korrigierte Entgelt bezahlt wird, eine Anpassung des Vorsteuerabzuges vorzunehmen." [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_41).
+[^entgelt]: Art. 18 Abs. 1 MWSTG: "Der Inlandsteuer unterliegen die im Inland durch steuerpflichtige Personen gegen Entgelt erbrachten Leistungen; sie sind steuerbar, soweit dieses Gesetz keine Ausnahme vorsieht." [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_18).

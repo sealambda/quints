@@ -114,6 +114,7 @@ def _turnover_by_year(
         first = e.date if first is None or e.date < first else first
         if any(p.account == cfg.payable_vat for p in e.postings):
             continue  # a VAT settlement, not a supply
+        bearing = mwst.vat_bearing(e, cfg, codes)
         for p in e.postings:
             if not p.account.startswith(cfg.income_prefix) or p.units is None:
                 continue
@@ -121,7 +122,7 @@ def _turnover_by_year(
             if number is None:
                 continue
             tokens = mwst.posting_tokens(p, e)
-            bucket = mwst.turnover_bucket(p.account, codes.get(p.account), tokens, cfg)
+            bucket = mwst.turnover_bucket(p.account, codes.get(p.account), tokens, cfg, bearing)
             if bucket is None or bucket in _NOT_COUNTED:
                 continue
             # A credit note or rebate (Ziffer 235) is a debit, so it subtracts.
