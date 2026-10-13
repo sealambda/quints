@@ -7,6 +7,8 @@ Parses Yapeal CSV exports into beancount transaction drafts following the
 - Every draft carries the bank's transaction ID as metadata (``bank_ref:`` by
   default). ``extract()`` skips references already present anywhere in the
   existing ledger, so re-running an import is always safe.
+- A row without a transaction ID or with an unreadable amount stops the
+  import with its line number — nothing is skipped silently.
 - ``payee_rules`` — an iterable of ``(regex, account, flag)`` — draft the
   counter leg when the payee/narration matches; anything unmatched is emitted
   with the review flag and the cash leg only, for a human (or agent) to
@@ -32,16 +34,23 @@ __all__ = ["Importer"]
 _IDENTIFY_HEADER = "Transaktions-ID,Belastung oder Gutschrift,Buchungs-Datum"
 
 
+def _amount(text: str) -> Decimal:
+    try:
+        return Decimal(text)
+    except InvalidOperation as e:
+        raise ValueError(f"unreadable amount {text!r}") from e
+
+
 class _YapealAmount(csvbase.Column):
     """Amount from either Gutschrift (credit), Belastung (debit), or Betrag+indicator."""
 
     def parse(self, gutschrift: str, belastung: str, betrag: str, indicator: str) -> Decimal:  # type: ignore[override] -- csvbase.Column.parse(*values) is untyped varargs
         if gutschrift:
-            return Decimal(gutschrift)
+            return _amount(gutschrift)
         if belastung:
-            return -Decimal(belastung)
+            return -_amount(belastung)
         if betrag:
-            amount = Decimal(betrag)
+            amount = _amount(betrag)
             if indicator == "DEBIT":
                 amount = -amount
             return amount
@@ -114,13 +123,15 @@ class Importer(csvbase.Importer):
                 continue
 
             ref = getattr(row, "ref", None)
-            if not ref or ref in seen:
+            if not ref:
+                raise ValueError(f"{filepath}:{lineno}: no Transaktions-ID to deduplicate on")
+            if ref in seen:
                 continue
 
             try:
                 amount_val = row.amount  # type: ignore[attr-defined] -- csvbase builds rows dynamically
-            except (ValueError, InvalidOperation):
-                continue
+            except ValueError as e:
+                raise ValueError(f"{filepath}:{lineno}: {e}") from e
 
             meta = self.metadata(filepath, lineno, row)
             payee = row.payee  # type: ignore[attr-defined] -- csvbase builds rows dynamically

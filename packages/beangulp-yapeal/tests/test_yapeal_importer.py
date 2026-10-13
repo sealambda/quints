@@ -4,6 +4,7 @@ from datetime import date as Date
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from beancount.core import data
 
 from beangulp_yapeal import Importer
@@ -178,3 +179,35 @@ def test_payee_rules_draft_counter_leg() -> None:
     assert len(matched) == 1
     assert matched[0].payee == "Client AG"
     assert matched[0].postings[1].account == "Assets:Receivable"
+
+
+SHORT_HEADER = (
+    "Transaktions-ID,Belastung oder Gutschrift,Buchungs-Datum,"
+    "Transaktions-Datum,Gegenpartei,Transaktions-Info,"
+    "Gutschrift (CHF),Belastung (CHF),Betrag\n"
+)
+
+
+def test_unreadable_amount_raises_with_its_line(tmp_path: Path) -> None:
+    csv = tmp_path / "apostrophe.csv"
+    csv.write_text(
+        SHORT_HEADER
+        + "R1,DEBIT,01.02.2026,01.02.2026,Vendor,Payment,,25.50,25.50\n"
+        + "R2,DEBIT,02.02.2026,02.02.2026,Landlord,Rent,,1'045.00,1'045.00\n"
+    )
+    with pytest.raises(ValueError, match=r"apostrophe\.csv:3: .*1'045\.00"):
+        _importer().extract(str(csv), existing=[])
+
+
+def test_row_without_an_amount_raises(tmp_path: Path) -> None:
+    csv = tmp_path / "blank.csv"
+    csv.write_text(SHORT_HEADER + "R1,DEBIT,01.02.2026,01.02.2026,Vendor,Payment,,,\n")
+    with pytest.raises(ValueError, match=r"blank\.csv:2: no amount"):
+        _importer().extract(str(csv), existing=[])
+
+
+def test_row_without_a_transaction_id_raises(tmp_path: Path) -> None:
+    csv = tmp_path / "noid.csv"
+    csv.write_text(SHORT_HEADER + ",DEBIT,01.02.2026,01.02.2026,Vendor,Payment,,25.50,25.50\n")
+    with pytest.raises(ValueError, match=r"noid\.csv:2: no Transaktions-ID"):
+        _importer().extract(str(csv), existing=[])
