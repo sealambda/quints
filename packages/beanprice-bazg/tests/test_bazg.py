@@ -61,6 +61,18 @@ def test_per_100_currency_is_divided(monkeypatch: pytest.MonkeyPatch):
     assert bazg.Source().get_latest_price("EGP").price == Decimal("0.0166619")
 
 
+@pytest.mark.parametrize(
+    "waehrung",
+    ["<waehrung>EGP 100</waehrung>", "<waehrung>100</waehrung>", "<waehrung>0 EGP</waehrung>", ""],
+)
+def test_unreadable_unit_raises(monkeypatch: pytest.MonkeyPatch, waehrung: str):
+    # A guessed multiplier of 1 would store the per-100 rate 100x too high.
+    xml = DAILY_XML.replace("<waehrung>100 EGP</waehrung>", waehrung)
+    monkeypatch.setattr(bazg, "_http_get", _fixed(xml))
+    with pytest.raises(bazg.BAZGError, match="EGP"):
+        bazg.Source().get_latest_price("EGP")
+
+
 def test_unknown_currency_raises(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(bazg, "_http_get", _fixed(DAILY_XML))
     with pytest.raises(bazg.BAZGError):
