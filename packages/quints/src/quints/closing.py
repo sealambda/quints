@@ -251,7 +251,7 @@ def compute_depreciation(
     problems: list[ledger.Violation] = []
     if entries is None:  # a caller passing entries reports their loader errors itself
         entries, problems = ledger.load(ledger_path)
-    year_start, year_end = Date(year, 1, 1), Date(year, 12, 31)
+    year_end = Date(year, 12, 31)
 
     assets: list[data.Open] = [
         e
@@ -265,23 +265,41 @@ def compute_depreciation(
     if not assets:
         return plan
 
-    accounts = {e.account for e in assets}
     contras = {
         e.account: _meta_str(e.meta, "depreciation_contra")
         for e in assets
         if _meta_str(e.meta, "depreciation_contra")
     }
-    watched = accounts | {c for c in contras.values() if c}
+    watched = {e.account for e in assets} | {c for c in contras.values() if c}
+    moves = _movements(entries, watched, year, cfg.depreciation_prorata)
+    for open_directive in sorted(assets, key=lambda e: e.account):
+        asset = _asset(open_directive, contras.get(open_directive.account), moves, cfg, plan)
+        if asset is not None:
+            plan.assets.append(asset)
+    return plan
 
-    # One pass over the books: what each account carried into the year, what
-    # was capitalised during it, and what this year's own entry already booked.
-    opening: dict[str, Decimal] = {}
-    additions: dict[str, Decimal] = {}
-    disposals: dict[str, Decimal] = {}
-    cost: dict[str, Decimal] = {}
-    booked: dict[str, Decimal] = {}
-    acquired: dict[str, Date] = {}
-    weighted: dict[str, Decimal] = {}
+
+@dataclass
+class _Movements:
+    """Per account: what it carried into the year, and what moved during it."""
+
+    opening: dict[str, Decimal] = field(default_factory=dict)
+    additions: dict[str, Decimal] = field(default_factory=dict)
+    disposals: dict[str, Decimal] = field(default_factory=dict)
+    cost: dict[str, Decimal] = field(default_factory=dict)
+    booked: dict[str, Decimal] = field(default_factory=dict)  # by this year's own entry
+    acquired: dict[str, Date] = field(default_factory=dict)
+    weighted: dict[str, Decimal] = field(default_factory=dict)  # additions × pro-rata
+
+    def get(self, table: dict[str, Decimal], account: str | None) -> Decimal:
+        return table.get(account, Decimal("0")) if account else Decimal("0")
+
+
+def _movements(entries: data.Directives, watched: set[str], year: int, prorata: str) -> _Movements:
+    """One pass over the books: what each account carried into the year, what
+    was capitalised during it, and what this year's own entry already booked."""
+    m = _Movements()
+    year_start, year_end = Date(year, 1, 1), Date(year, 12, 31)
     for e in entries:
         if not isinstance(e, data.Transaction) or e.date > year_end:
             continue
@@ -291,114 +309,128 @@ def compute_depreciation(
                 continue
             number = p.units.number
             if charge_entry:
-                booked[p.account] = booked.get(p.account, Decimal("0")) - number
+                m.booked[p.account] = m.get(m.booked, p.account) - number
                 continue
             if e.date < year_start:
-                opening[p.account] = opening.get(p.account, Decimal("0")) + number
+                m.opening[p.account] = m.get(m.opening, p.account) + number
             elif number >= 0:
-                additions[p.account] = additions.get(p.account, Decimal("0")) + number
-                weighted[p.account] = weighted.get(p.account, Decimal("0")) + number * _prorata(
-                    e.date, year, cfg.depreciation_prorata
-                )
+                m.additions[p.account] = m.get(m.additions, p.account) + number
+                weight = number * _prorata(e.date, year, prorata)
+                m.weighted[p.account] = m.get(m.weighted, p.account) + weight
             else:
-                disposals[p.account] = disposals.get(p.account, Decimal("0")) + number
+                m.disposals[p.account] = m.get(m.disposals, p.account) + number
             if number > 0:
-                cost[p.account] = cost.get(p.account, Decimal("0")) + number
-                if p.account not in acquired or e.date < acquired[p.account]:
-                    acquired[p.account] = e.date
+                m.cost[p.account] = m.get(m.cost, p.account) + number
+                if p.account not in m.acquired or e.date < m.acquired[p.account]:
+                    m.acquired[p.account] = e.date
+    return m
 
-    for open_directive in sorted(assets, key=lambda e: e.account):
-        account = open_directive.account
-        meta = open_directive.meta
-        method = (_meta_str(meta, "depreciation") or "").lower()
-        if method not in ("declining", "linear"):
-            plan.warnings.append(
-                f'{account}: depreciation: "{method}" is not a method — '
-                f'use "declining" or "linear".'
-            )
-            continue
-        rate = _meta_decimal(meta, "depreciation_rate")
-        life_text = _meta_str(meta, "useful_life_years")
-        life = int(Decimal(life_text)) if life_text else None
-        if rate is None and not life:
-            plan.warnings.append(
-                f"{account}: neither depreciation_rate: nor useful_life_years: is set — skipped."
-            )
-            continue
-        residual = _meta_decimal(meta, "residual") or Decimal("0")
-        contra = contras.get(account)
-        if contra is None and cfg.depreciation_method == "indirect":
-            plan.warnings.append(
-                f'{account}: [close] method = "indirect" needs a depreciation_contra: '
-                f"account (KMU 15x9 Wertberichtigungen) on the open directive — "
-                f"booked directly instead."
-            )
 
-        prior_contra = opening.get(contra, Decimal("0")) if contra else Decimal("0")
-        book_start = opening.get(account, Decimal("0")) + prior_contra
-        added = additions.get(account, Decimal("0"))
-        weighted_additions = weighted.get(account, Decimal("0"))
-        gone = disposals.get(account, Decimal("0"))
-        book_before = book_start + added + gone
-        if method == "declining":
-            # Rate on the book value carried into the year, plus this year's
-            # own purchases at their pro-rata weight (`full` = a whole year).
-            base = book_start + weighted_additions + gone
-            charge = base * (rate or Decimal("0")) / Decimal("100")
-        else:
-            # Linear runs off historical cost, not book value: prior years'
-            # cost in full, this year's additions at their pro-rata weight.
-            base = cost.get(account, Decimal("0")) - added + weighted_additions
-            charge = (
-                base / Decimal(life) if life else base * (rate or Decimal("0")) / Decimal("100")
-            )
-        charge = max(Decimal("0"), min(charge, book_before - residual))
-
-        max_rate: Decimal | None = None
-        category = _meta_str(meta, "depreciation_category")
-        if category and category in MERKBLATT_A1995:
-            ceiling, heading = MERKBLATT_A1995[category]
-            max_rate = ceiling if method == "declining" else ceiling / 2
-            applied = rate if rate is not None else (Decimal("100") / Decimal(life or 1))
-            if applied > max_rate:
-                plan.warnings.append(
-                    f"{account}: {applied:g}% exceeds the {max_rate:g}% Normalsatz for "
-                    f"{category} ({heading}) — ESTV Merkblatt A/1995; the excess needs a "
-                    f"reason the Steuerverwaltung accepts."
-                )
-        elif category:
-            plan.warnings.append(
-                f"{account}: unknown depreciation_category: {category!r} — "
-                f"no Merkblatt A/1995 ceiling checked."
-            )
-
-        plan.assets.append(
-            AssetDepreciation(
-                account=account,
-                method=method,
-                rate=rate,
-                useful_life_years=life,
-                category=category,
-                max_rate=max_rate,
-                exceeds_max=bool(
-                    max_rate is not None
-                    and (rate if rate is not None else Decimal("100") / Decimal(life or 1))
-                    > max_rate
-                ),
-                cost=ledger.rappen(cost.get(account, Decimal("0"))),
-                book_start=ledger.rappen(book_start),
-                additions=ledger.rappen(added),
-                base=ledger.rappen(base),
-                book_before=ledger.rappen(book_before),
-                residual=residual,
-                expected=ledger.rappen(charge),
-                booked=ledger.rappen(booked.get(contra or account, Decimal("0"))),
-                expense_account=_meta_str(meta, "depreciation_account") or cfg.depreciation_account,
-                contra_account=contra,
-                acquired=acquired.get(account),
-            )
+def _asset(
+    open_directive: data.Open,
+    contra: str | None,
+    m: _Movements,
+    cfg: config.Config,
+    plan: DepreciationPlan,
+) -> AssetDepreciation | None:
+    """One fixed asset's charge for the year; None (with a warning) if its
+    metadata can't say how to depreciate it."""
+    account, meta = open_directive.account, open_directive.meta
+    method = (_meta_str(meta, "depreciation") or "").lower()
+    if method not in ("declining", "linear"):
+        plan.warnings.append(
+            f'{account}: depreciation: "{method}" is not a method — use "declining" or "linear".'
         )
-    return plan
+        return None
+    rate = _meta_decimal(meta, "depreciation_rate")
+    life_text = _meta_str(meta, "useful_life_years")
+    life = int(Decimal(life_text)) if life_text else None
+    if rate is None and not life:
+        plan.warnings.append(
+            f"{account}: neither depreciation_rate: nor useful_life_years: is set — skipped."
+        )
+        return None
+    residual = _meta_decimal(meta, "residual") or Decimal("0")
+    if contra is None and cfg.depreciation_method == "indirect":
+        plan.warnings.append(
+            f'{account}: [close] method = "indirect" needs a depreciation_contra: '
+            f"account (KMU 15x9 Wertberichtigungen) on the open directive — "
+            f"booked directly instead."
+        )
+
+    book_start = m.get(m.opening, account) + m.get(m.opening, contra)
+    added = m.get(m.additions, account)
+    book_before = book_start + added + m.get(m.disposals, account)
+    base, charge = _charge(method, m, account, book_start, rate, life)
+    charge = max(Decimal("0"), min(charge, book_before - residual))
+
+    category = _meta_str(meta, "depreciation_category")
+    applied = rate if rate is not None else Decimal("100") / Decimal(life or 1)
+    max_rate = _ceiling(account, category, method, applied, plan)
+    return AssetDepreciation(
+        account=account,
+        method=method,
+        rate=rate,
+        useful_life_years=life,
+        category=category,
+        max_rate=max_rate,
+        exceeds_max=bool(max_rate is not None and applied > max_rate),
+        cost=ledger.rappen(m.get(m.cost, account)),
+        book_start=ledger.rappen(book_start),
+        additions=ledger.rappen(added),
+        base=ledger.rappen(base),
+        book_before=ledger.rappen(book_before),
+        residual=residual,
+        expected=ledger.rappen(charge),
+        booked=ledger.rappen(m.get(m.booked, contra or account)),
+        expense_account=_meta_str(meta, "depreciation_account") or cfg.depreciation_account,
+        contra_account=contra,
+        acquired=m.acquired.get(account),
+    )
+
+
+def _charge(
+    method: str,
+    m: _Movements,
+    account: str,
+    book_start: Decimal,
+    rate: Decimal | None,
+    life: int | None,
+) -> tuple[Decimal, Decimal]:
+    """(base, charge) before the residual floor."""
+    added, weighted = m.get(m.additions, account), m.get(m.weighted, account)
+    if method == "declining":
+        # Rate on the book value carried into the year, plus this year's
+        # own purchases at their pro-rata weight (`full` = a whole year).
+        base = book_start + weighted + m.get(m.disposals, account)
+        return base, base * (rate or Decimal("0")) / Decimal("100")
+    # Linear runs off historical cost, not book value: prior years'
+    # cost in full, this year's additions at their pro-rata weight.
+    base = m.get(m.cost, account) - added + weighted
+    return base, base / Decimal(life) if life else base * (rate or Decimal("0")) / Decimal("100")
+
+
+def _ceiling(
+    account: str, category: str | None, method: str, applied: Decimal, plan: DepreciationPlan
+) -> Decimal | None:
+    """The Merkblatt A/1995 Normalsatz for the asset's category, warning above it."""
+    if not category:
+        return None
+    if category not in MERKBLATT_A1995:
+        plan.warnings.append(
+            f"{account}: unknown depreciation_category: {category!r} — "
+            f"no Merkblatt A/1995 ceiling checked."
+        )
+        return None
+    ceiling, heading = MERKBLATT_A1995[category]
+    max_rate = ceiling if method == "declining" else ceiling / 2
+    if applied > max_rate:
+        plan.warnings.append(
+            f"{account}: {applied:g}% exceeds the {max_rate:g}% Normalsatz for "
+            f"{category} ({heading}) — ESTV Merkblatt A/1995; the excess needs a "
+            f"reason the Steuerverwaltung accepts."
+        )
+    return max_rate
 
 
 def depreciation_text(plan: DepreciationPlan, cfg: config.Config | None = None) -> str:

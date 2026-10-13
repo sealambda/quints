@@ -312,105 +312,132 @@ def compute(
     ref_idx = reference_index(opens)
     bill_idx = bill_reference_index(bills)
     by_number = {o.number: o for o in opens}
-
-    def inv_dict(o: receivables.OpenInvoice) -> dict[str, str | None]:
-        return {
-            "invoice": o.number,
-            "payee": o.payee,
-            "date": str(o.invoice_date),
-            "open": str(o.open_amount),
-            "currency": o.currency,
-        }
-
     for fname, t in drafts:
         units = t.postings[0].units
         if not isinstance(units, Amount) or units.number is None:
             continue  # draft's first posting has no explicit amount — nothing to score
         src = _txn_dict(fname, t)
-
         if units.number > 0:  # incoming → open invoice
-            hit = find_invoice(ref_idx, *payment_text(t))
-            if hit and hit.number:
-                matches.append(
-                    Match(
-                        "payment→invoice", 1.0, src, inv_dict(by_number[hit.number]), [hit.reason]
-                    )
-                )
-                continue
-            # An ambiguous reference is worth saying out loud: it rides along
-            # with every payee/amount candidate below, so the table explains
-            # why a payment that *does* quote a reference is still scored.
-            found = [hit.reason] if hit else []
-            for o in opens:
-                psim = similarity(t.payee, o.payee)
-                exact = o.currency == units.currency and abs(o.open_amount - units.number) <= _TOL
-                score = round(0.6 * psim + 0.4 * exact, 2)
-                if score >= THRESHOLD:
-                    matches.append(
-                        Match(
-                            "payment→invoice",
-                            score,
-                            src,
-                            inv_dict(o),
-                            [
-                                *found,
-                                f"payee ≈ {psim:.2f}",
-                                f"amount {'equals' if exact else 'differs from'} open "
-                                f"{o.open_amount} {o.currency}",
-                            ],
-                        )
-                    )
+            matches += _invoice_matches(
+                t, units.number, units.currency, src, opens, ref_idx, by_number
+            )
         else:  # outgoing → an open supplier bill, an inbox document, or both
             matches += payable_matches(t, src, bills, bill_idx)
-            for d in docs:
-                psim = similarity(t.payee, d.payee_hint or d.name)
-                if d.date_hint:
-                    dsc = date_score(t.date, Date.fromisoformat(d.date_hint), 14)
-                    score = round(0.7 * psim + 0.3 * dsc, 2)
-                    reasons = [f"payee ≈ {psim:.2f}", f"dated {d.date_hint} vs paid {t.date}"]
-                else:
-                    score = round(0.8 * psim, 2)
-                    reasons = [f"payee ≈ {psim:.2f}", "no date in filename"]
-                if score >= THRESHOLD:
-                    matches.append(Match("draft→inbox", score, src, {"document": d.name}, reasons))
-
-    # inbox document → booked transaction still missing its document link
-    dated_docs = [(d, Date.fromisoformat(d.date_hint)) for d in docs if d.date_hint]
-    if dated_docs:
-        for e in entries:
-            if not isinstance(e, data.Transaction):
-                continue
-            if any(k.startswith("document") for k in (e.meta or {})):
-                continue
-            # A booked supplier bill is reported as its own kind: what a
-            # payables line is missing is the bill document itself.
-            bill_key = payables.booked_bill(e, cfg)
-            if bill_key is None and not any(
-                p.account.startswith(("Expenses:", "Income:")) for p in e.postings
-            ):
-                continue
-            for d, d_date in dated_docs:
-                dsc = date_score(e.date, d_date, 7)
-                if dsc == 0.0:
-                    continue
-                psim = similarity(e.payee, d.payee_hint or d.name)
-                score = round(0.7 * psim + 0.3 * dsc, 2)
-                if score >= THRESHOLD:
-                    target = _txn_dict(None, e)
-                    if bill_key is not None:
-                        target["bill"] = bill_key
-                    matches.append(
-                        Match(
-                            "inbox→payable" if bill_key is not None else "inbox→booked",
-                            score,
-                            {"document": d.name},
-                            target,
-                            [f"payee ≈ {psim:.2f}", f"dated {d.date_hint} vs booked {e.date}"],
-                        )
-                    )
-
+            matches += _inbox_matches(t, src, docs)
+    matches += _unlinked_document_matches(entries, docs, cfg)
     matches.sort(key=lambda m: -m.score)
     return matches
+
+
+def _inv_dict(o: receivables.OpenInvoice) -> dict[str, str | None]:
+    return {
+        "invoice": o.number,
+        "payee": o.payee,
+        "date": str(o.invoice_date),
+        "open": str(o.open_amount),
+        "currency": o.currency,
+    }
+
+
+def _invoice_matches(
+    t: data.Transaction,
+    amount: Decimal,
+    currency: str,
+    src: dict[str, str | None],
+    opens: list[receivables.OpenInvoice],
+    ref_idx: ReferenceIndex,
+    by_number: dict[str, receivables.OpenInvoice],
+) -> list[Match]:
+    """An incoming payment against the open invoices: by reference, else scored."""
+    hit = find_invoice(ref_idx, *payment_text(t))
+    if hit and hit.number:
+        return [Match("payment→invoice", 1.0, src, _inv_dict(by_number[hit.number]), [hit.reason])]
+    # An ambiguous reference is worth saying out loud: it rides along
+    # with every payee/amount candidate below, so the table explains
+    # why a payment that *does* quote a reference is still scored.
+    found = [hit.reason] if hit else []
+    out: list[Match] = []
+    for o in opens:
+        psim = similarity(t.payee, o.payee)
+        exact = o.currency == currency and abs(o.open_amount - amount) <= _TOL
+        score = round(0.6 * psim + 0.4 * exact, 2)
+        if score >= THRESHOLD:
+            out.append(
+                Match(
+                    "payment→invoice",
+                    score,
+                    src,
+                    _inv_dict(o),
+                    [
+                        *found,
+                        f"payee ≈ {psim:.2f}",
+                        f"amount {'equals' if exact else 'differs from'} open "
+                        f"{o.open_amount} {o.currency}",
+                    ],
+                )
+            )
+    return out
+
+
+def _inbox_matches(
+    t: data.Transaction, src: dict[str, str | None], docs: list[inbox_mod.InboxDoc]
+) -> list[Match]:
+    """An outgoing payment against the unfiled inbox documents."""
+    out: list[Match] = []
+    for d in docs:
+        psim = similarity(t.payee, d.payee_hint or d.name)
+        if d.date_hint:
+            dsc = date_score(t.date, Date.fromisoformat(d.date_hint), 14)
+            score = round(0.7 * psim + 0.3 * dsc, 2)
+            reasons = [f"payee ≈ {psim:.2f}", f"dated {d.date_hint} vs paid {t.date}"]
+        else:
+            score = round(0.8 * psim, 2)
+            reasons = [f"payee ≈ {psim:.2f}", "no date in filename"]
+        if score >= THRESHOLD:
+            out.append(Match("draft→inbox", score, src, {"document": d.name}, reasons))
+    return out
+
+
+def _unlinked_document_matches(
+    entries: data.Directives, docs: list[inbox_mod.InboxDoc], cfg: config.Config
+) -> list[Match]:
+    """Inbox document → a booked transaction still missing its document link."""
+    dated_docs = [(d, Date.fromisoformat(d.date_hint)) for d in docs if d.date_hint]
+    out: list[Match] = []
+    if not dated_docs:
+        return out
+    for e in entries:
+        if not isinstance(e, data.Transaction):
+            continue
+        if any(k.startswith("document") for k in (e.meta or {})):
+            continue
+        # A booked supplier bill is reported as its own kind: what a
+        # payables line is missing is the bill document itself.
+        bill_key = payables.booked_bill(e, cfg)
+        if bill_key is None and not any(
+            p.account.startswith(("Expenses:", "Income:")) for p in e.postings
+        ):
+            continue
+        for d, d_date in dated_docs:
+            dsc = date_score(e.date, d_date, 7)
+            if dsc == 0.0:
+                continue
+            psim = similarity(e.payee, d.payee_hint or d.name)
+            score = round(0.7 * psim + 0.3 * dsc, 2)
+            if score >= THRESHOLD:
+                target = _txn_dict(None, e)
+                if bill_key is not None:
+                    target["bill"] = bill_key
+                out.append(
+                    Match(
+                        "inbox→payable" if bill_key is not None else "inbox→booked",
+                        score,
+                        {"document": d.name},
+                        target,
+                        [f"payee ≈ {psim:.2f}", f"dated {d.date_hint} vs booked {e.date}"],
+                    )
+                )
+    return out
 
 
 # ── render ────────────────────────────────────────────────────────────────────

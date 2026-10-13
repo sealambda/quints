@@ -48,6 +48,7 @@ from beangulp_stripe import (
     CHARGE_TYPES,
     CREATED_TOLERANCE_SECONDS,
     FEE_TYPES,
+    InvoiceMatch,
     StripeClient,
     StripeError,
     correlate_invoices,
@@ -305,27 +306,36 @@ def match_payables(
             if len(fits) != 1:
                 continue  # nothing, or nothing that tells two bills apart
             bill = fits[0]
-        postings = list(draft.postings)
-        if len(postings) == 1:
-            # Only the cash leg is known — add the elided payable clearing
-            # posting so the matched draft still balances.
-            postings.append(data.Posting(cfg.payable, None, None, None, None, None))
-        elif len(postings) == 2:
-            postings[1] = postings[1]._replace(account=cfg.payable)
-        else:
+        matched = _clear_bill(draft, bill, cfg)
+        if matched is None:
             continue  # ambiguous shape — leave the draft unmatched, still flagged
-        meta = dict(draft.meta or {})
-        meta["bill"] = bill.number
-        # A fallback key (`Google · 24.13`) is no valid ^link; `bill:` carries it.
-        link = set() if bill.keyed_by == payables.KEY_FALLBACK else {bill.number}
-        matched = draft._replace(
-            flag="*",
-            meta=meta,
-            links=frozenset(draft.links or ()) | link,
-            postings=postings,
-        )
         result.drafts[i] = matched
         result.payable_matches.append((bill.number, matched))
+
+
+def _clear_bill(
+    draft: data.Transaction, bill: payables.OpenBill, cfg: config.Config
+) -> data.Transaction | None:
+    """The draft as the payment clearing ``bill``; None if its shape is ambiguous."""
+    postings = list(draft.postings)
+    if len(postings) == 1:
+        # Only the cash leg is known — add the elided payable clearing
+        # posting so the matched draft still balances.
+        postings.append(data.Posting(cfg.payable, None, None, None, None, None))
+    elif len(postings) == 2:
+        postings[1] = postings[1]._replace(account=cfg.payable)
+    else:
+        return None
+    meta = dict(draft.meta or {})
+    meta["bill"] = bill.number
+    # A fallback key (`Google · 24.13`) is no valid ^link; `bill:` carries it.
+    link = set() if bill.keyed_by == payables.KEY_FALLBACK else {bill.number}
+    return draft._replace(
+        flag="*",
+        meta=meta,
+        links=frozenset(draft.links or ()) | link,
+        postings=postings,
+    )
 
 
 def match_vat(result: ImportResult, existing: Sequence[data.Directive], cfg: config.Config) -> None:
@@ -730,7 +740,6 @@ def fetch_stripe_invoices(
     hints. Anything already in ``inbox/`` or ``documents/`` is left alone, so
     re-runs download nothing.
     """
-    import datetime as dt
 
     stripe = _require((cfg or config.get()).import_stripe, "stripe", "account_id")
     transactions = _stripe_transactions(statements)
@@ -770,34 +779,32 @@ def fetch_stripe_invoices(
         )
 
     root = ledger_path.resolve().parent
-    docs: list[InvoiceDoc] = []
-    for match in matches:
-        date = dt.datetime.fromtimestamp(match.created, tz=dt.timezone.utc).date()
-        number = _FILENAME_SAFE.sub("-", match.number)
-        name = f"{date.isoformat()}.{slugify(match.customer)}.{number}.pdf"
-        filed = already_filed(root, name)
-        if filed is not None:
-            docs.append(
-                InvoiceDoc(
-                    name, filed, number, match.customer, match.txn_id, match.matched_by, True
-                )
-            )
-            continue
-        payload = client.document(match.pdf_url)
-        if not is_complete_pdf(payload):
-            raise StripeError(
-                f"invoice {match.number}: the download is not a complete PDF "
-                f"({len(payload)} bytes) — nothing filed for it; run the import again"
-            )
-        inbox_dir = root / "inbox"
-        inbox_dir.mkdir(exist_ok=True)
-        path = inbox_dir / name
-        ledger.atomic_write(path, payload)  # may replace a truncated earlier download
-        docs.append(
-            InvoiceDoc(name, path, number, match.customer, match.txn_id, match.matched_by, False)
-        )
+    docs = [_file_invoice(client, match, root) for match in matches]
     docs.sort(key=lambda d: d.name)  # the name leads with the date, so: chronological
     return docs
+
+
+def _file_invoice(client: StripeClient, match: InvoiceMatch, root: Path) -> InvoiceDoc:
+    """One invoice PDF into ``inbox/`` — unless a complete copy is filed already."""
+    import datetime as dt
+
+    date = dt.datetime.fromtimestamp(match.created, tz=dt.timezone.utc).date()
+    number = _FILENAME_SAFE.sub("-", match.number)
+    name = f"{date.isoformat()}.{slugify(match.customer)}.{number}.pdf"
+    filed = already_filed(root, name)
+    if filed is not None:
+        return InvoiceDoc(name, filed, number, match.customer, match.txn_id, match.matched_by, True)
+    payload = client.document(match.pdf_url)
+    if not is_complete_pdf(payload):
+        raise StripeError(
+            f"invoice {match.number}: the download is not a complete PDF "
+            f"({len(payload)} bytes) — nothing filed for it; run the import again"
+        )
+    inbox_dir = root / "inbox"
+    inbox_dir.mkdir(exist_ok=True)
+    path = inbox_dir / name
+    ledger.atomic_write(path, payload)  # may replace a truncated earlier download
+    return InvoiceDoc(name, path, number, match.customer, match.txn_id, match.matched_by, False)
 
 
 def _load_env(path: Path = Path(".env")) -> None:

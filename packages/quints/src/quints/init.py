@@ -416,41 +416,8 @@ def _sample_quarter(answers: Answers) -> str:
     year = _open_date(answers).year
     bank = _sub(_PRIMARY_BANK, c)
     registered = answers.vat_registered
-    # Not registered: the sale carries no VAT (Art. 27 MWSTG), and the foreign
-    # service is booked gross — Bezugsteuer only starts above CHF 10'000 of
-    # such purchases a year (Art. 45 Abs. 2 Bst. b MWSTG).
-    sale = (
-        [
-            (cfg.receivable, "1081.00", "CHF"),
-            (cfg.income_domestic, "-1000.00", "CHF"),
-            (cfg.output_vat, "-81.00", "CHF"),
-        ]
-        if registered
-        else [(cfg.receivable, "1000.00", "CHF"), (cfg.income_domestic, "-1000.00", "CHF")]
-    )
-    sale_total = "1081.00" if registered else "1000.00"
-    hosting = (
-        [
-            (_sub(_IT_HOSTING, c), "100.00", "EUR"),
-            # Under the SSS method the self-assessed tax is a cost, not a
-            # deduction (Art. 37 MWSTG) — see the VAT guide.
-            (
-                cfg.bezugsteuer_expense if answers.vat_method == "saldo" else cfg.input_vat,
-                "7.53",
-                "CHF @@ 8.10 EUR",
-            ),
-            (cfg.bezugsteuer, "-7.53", "CHF @@ 8.10 EUR"),
-            (_sub(_WISE_EUR, c), "-100.00", "EUR"),
-        ]
-        if registered
-        else [(_sub(_IT_HOSTING, c), "100.00", "EUR"), (_sub(_WISE_EUR, c), "-100.00", "EUR")]
-    )
-    if answers.legal_form == "einzelfirma":
-        opening_header = f'{year}-01-02 * "Owner" "Capital contribution"'
-        opening_equity = f"Equity:CH:{c}:Contributions"
-    else:
-        opening_header = f'{year}-01-02 * "Founders" "Share capital paid in"'
-        opening_equity = f"Equity:CH:{c}:Capital:Share"
+    sale, sale_total = _sample_sale(cfg, registered)
+    opening_header, opening_equity = _sample_opening(answers.legal_form, c, year)
     txns: list[tuple[str, list[tuple[str, str, str]]]] = [
         (
             opening_header,
@@ -480,7 +447,7 @@ def _sample_quarter(answers: Answers) -> str:
         (
             f'{year}-08-12 * "Foreign SaaS" "Cloud hosting'
             + (' (reverse charge)"' if registered else '"'),
-            hosting,
+            _sample_hosting(answers, cfg, c),
         ),
         (
             f'{year}-08-20 * "Treuhand Muster" "Bookkeeping — first half" ^TM-{year}-4711\n'
@@ -500,6 +467,49 @@ def _sample_quarter(answers: Answers) -> str:
         lines.append("")
         lines.extend(_txn(header, postings, width))
     return "\n".join(lines)
+
+
+Legs = list[tuple[str, str, str]]  # (account, amount, currency [+ price])
+
+
+def _sample_sale(cfg: config.Config, registered: bool) -> tuple[Legs, str]:
+    """The domestic sale and its total. Not registered: the sale carries no
+    VAT (Art. 27 MWSTG)."""
+    if not registered:
+        legs = [(cfg.receivable, "1000.00", "CHF"), (cfg.income_domestic, "-1000.00", "CHF")]
+        return legs, "1000.00"
+    legs = [
+        (cfg.receivable, "1081.00", "CHF"),
+        (cfg.income_domestic, "-1000.00", "CHF"),
+        (cfg.output_vat, "-81.00", "CHF"),
+    ]
+    return legs, "1081.00"
+
+
+def _sample_hosting(answers: Answers, cfg: config.Config, c: str) -> Legs:
+    """The foreign service. Not registered, it is booked gross: Bezugsteuer only
+    starts above CHF 10'000 of such purchases a year (Art. 45 Abs. 2 Bst. b MWSTG)."""
+    if not answers.vat_registered:
+        return [(_sub(_IT_HOSTING, c), "100.00", "EUR"), (_sub(_WISE_EUR, c), "-100.00", "EUR")]
+    return [
+        (_sub(_IT_HOSTING, c), "100.00", "EUR"),
+        # Under the SSS method the self-assessed tax is a cost, not a
+        # deduction (Art. 37 MWSTG) — see the VAT guide.
+        (
+            cfg.bezugsteuer_expense if answers.vat_method == "saldo" else cfg.input_vat,
+            "7.53",
+            "CHF @@ 8.10 EUR",
+        ),
+        (cfg.bezugsteuer, "-7.53", "CHF @@ 8.10 EUR"),
+        (_sub(_WISE_EUR, c), "-100.00", "EUR"),
+    ]
+
+
+def _sample_opening(legal_form: str, c: str, year: int) -> tuple[str, str]:
+    """The opening entry's header and its equity account, per legal form."""
+    if legal_form == "einzelfirma":
+        return f'{year}-01-02 * "Owner" "Capital contribution"', f"Equity:CH:{c}:Contributions"
+    return f'{year}-01-02 * "Founders" "Share capital paid in"', f"Equity:CH:{c}:Capital:Share"
 
 
 def _prices_bean(answers: Answers) -> str:
@@ -754,6 +764,7 @@ def _marker_lines(cfg: config.Config) -> list[str]:
     return [f"{assignment:<{width}}# {comment}" for assignment, comment in pairs]
 
 
+# p10: allow R4 -- a line-per-key template of quints.toml, top to bottom
 def _quints_toml(answers: Answers) -> str:
     cfg = _cfg(answers)
     since = answers.vat_registered_since
@@ -1103,6 +1114,7 @@ def _agents_sample_section(answers: Answers) -> str:
     return "\n".join(lines) + "\n"
 
 
+# p10: allow R4 -- one f-string template: AGENTS.md as the agent reads it
 def _agents_md(answers: Answers) -> str:
     cfg = _cfg(answers)
     marker = cfg.entity_marker
