@@ -10,6 +10,21 @@ from pathlib import Path
 from beancount import loader
 from beancount.core import data, prices
 
+
+class InvariantError(AssertionError):
+    """A state the code assumes can never happen: a quints bug, not bad books."""
+
+
+def invariant(condition: bool, message: str) -> None:
+    """Always-on assertion. Plain ``assert`` is stripped under ``python -O``.
+
+    For programmer errors only. Problems in the user's books or files are
+    reported (a violation, a ``ValueError``), never asserted.
+    """
+    if not condition:
+        raise InvariantError(message)
+
+
 DEFAULT_LEDGER = Path("main.bean")
 DEFAULT_PRICES = Path("prices.bean")
 
