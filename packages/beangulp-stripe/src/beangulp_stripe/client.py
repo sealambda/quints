@@ -18,6 +18,7 @@ only ever reads.
 
 from __future__ import annotations
 
+from typing import cast
 from urllib.parse import urljoin
 
 import requests
@@ -28,6 +29,26 @@ API_HOST = "https://api.stripe.com"
 # bounded so a redirect loop fails loudly instead of hanging.
 MAX_REDIRECTS = 5
 REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
+
+# Most objects one paginated listing may return. Stripe's own SDKs set no
+# page cap: stripe-python's auto_paging_iter loops ``while True``, and
+# stripe-node's iterators recurse while ``has_more``. The one bound Stripe
+# ships is stripe-node's ``autoPagingToArray``, which refuses a limit above
+# 10,000 items ("use autoPagingEach to iterate through longer lists"):
+# https://github.com/stripe/stripe-node/blob/master/src/autoPagination.ts
+# At the API maximum of 100 objects per page (``limit`` ranges 1–100, default
+# 10: https://docs.stripe.com/api/pagination) that is 100 requests. A window
+# with more than that is split by the caller (a narrower created range).
+MAX_ITEMS = 10_000
+
+# Largest invoice PDF ``document`` accepts. Stripe renders these itself: at
+# most 250 invoice items (https://docs.stripe.com/changelog/2016-02-22/
+# no-more-than-250-invoice-items) plus a branding logo and icon of < 512 KB
+# each (https://docs.stripe.com/invoicing/customize) — ~1 MiB of images. The
+# bytes per rendered line item and embedded fonts are not documented, so the
+# remaining 7 MiB of headroom is PENDING CONFIRMATION against real PDFs.
+MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
+_CHUNK_BYTES = 64 * 1024  # read buffer only; max_bytes is the bound
 
 
 class StripeError(RuntimeError):
@@ -41,6 +62,19 @@ def _created_key(txn: dict[str, object]) -> tuple[int, str]:
         created if isinstance(created, int) else 0,
         txn_id if isinstance(txn_id, str) else "",
     )
+
+
+def _read_capped(response: requests.Response, url: str, max_bytes: int) -> bytes:
+    """The streamed body, refusing more than ``max_bytes`` (declared or sent)."""
+    declared = response.headers.get("Content-Length", "")
+    if declared.isdigit() and int(declared) > max_bytes:
+        raise StripeError(f"GET {url}: larger than {max_bytes} bytes ({declared} declared)")
+    body = bytearray()
+    for chunk in response.iter_content(chunk_size=_CHUNK_BYTES):
+        body += chunk
+        if len(body) > max_bytes:
+            raise StripeError(f"GET {url}: larger than {max_bytes} bytes")
+    return bytes(body)
 
 
 class StripeClient:
@@ -78,6 +112,7 @@ class StripeClient:
         *,
         expand_source: bool = True,
         page_size: int = 100,
+        max_items: int = MAX_ITEMS,
     ) -> list[dict[str, object]]:
         """All balance transactions in the window, oldest first.
 
@@ -93,18 +128,7 @@ class StripeClient:
         if expand_source:
             params["expand[]"] = "data.source"
 
-        transactions: list[dict[str, object]] = []
-        while True:
-            page = self._get("/v1/balance_transactions", params)
-            batch = page.get("data")
-            if isinstance(batch, list):
-                transactions.extend(t for t in batch if isinstance(t, dict))
-            if not page.get("has_more"):
-                break
-            last_id = transactions[-1].get("id") if transactions else None
-            if not isinstance(last_id, str):
-                raise StripeError("balance transaction page without string ids")
-            params = dict(params, starting_after=last_id)
+        transactions = self._list("/v1/balance_transactions", params, page_size, max_items)
         transactions.sort(key=_created_key)
         return transactions
 
@@ -114,6 +138,7 @@ class StripeClient:
         created_lte: int | None = None,
         *,
         page_size: int = 100,
+        max_items: int = MAX_ITEMS,
     ) -> list[dict[str, object]]:
         """All invoices created in the window, oldest first.
 
@@ -127,22 +152,50 @@ class StripeClient:
         if created_lte is not None:
             params["created[lte]"] = created_lte
 
-        invoices: list[dict[str, object]] = []
-        while True:
-            page = self._get("/v1/invoices", params)
-            batch = page.get("data")
-            if isinstance(batch, list):
-                invoices.extend(i for i in batch if isinstance(i, dict))
-            if not page.get("has_more"):
-                break
-            last_id = invoices[-1].get("id") if invoices else None
-            if not isinstance(last_id, str):
-                raise StripeError("invoice page without string ids")
-            params = dict(params, starting_after=last_id)
+        invoices = self._list("/v1/invoices", params, page_size, max_items)
         invoices.sort(key=_created_key)
         return invoices
 
-    def document(self, url: str, *, max_redirects: int = MAX_REDIRECTS) -> bytes:
+    def _list(
+        self, path: str, params: dict[str, str | int], page_size: int, max_items: int
+    ) -> list[dict[str, object]]:
+        """Every object of a ``starting_after``-paginated listing, page order.
+
+        Each page's cursor is its own last id; a page that claims more but is
+        empty, or names the cursor it was asked for, would repeat forever.
+        """
+        objects: list[dict[str, object]] = []
+        cursor: str | None = None
+        for _ in range(-(-max_items // page_size)):  # ceil: pages to max_items
+            page = self._get(path, params)
+            batch = page.get("data")
+            if not isinstance(batch, list) or not all(isinstance(i, dict) for i in batch):
+                raise StripeError(f"GET {path}: data is not a list of objects")
+            items = cast("list[dict[str, object]]", batch)
+            objects.extend(items)
+            if not page.get("has_more"):
+                return objects
+            if not items:
+                raise StripeError(f"GET {path}: empty page with has_more after {cursor!r}")
+            last_id = items[-1].get("id")
+            if not isinstance(last_id, str):
+                raise StripeError(f"GET {path}: page without string ids")
+            if last_id == cursor:
+                raise StripeError(f"GET {path}: cursor did not advance past {cursor!r}")
+            cursor = last_id
+            params = dict(params, starting_after=cursor)
+        raise StripeError(
+            f"GET {path}: more than {max_items} objects in one listing; "
+            "narrow the window (created range)"
+        )
+
+    def document(
+        self,
+        url: str,
+        *,
+        max_redirects: int = MAX_REDIRECTS,
+        max_bytes: int = MAX_DOCUMENT_BYTES,
+    ) -> bytes:
         """Download the document behind a Stripe document URL, as bytes.
 
         ``invoice_pdf`` is a signed, short-lived URL that redirects to storage,
@@ -152,16 +205,16 @@ class StripeClient:
         the redirect names.
         """
         for _ in range(max_redirects + 1):
-            response = self._session.get(url, timeout=60, allow_redirects=False)
-            if response.status_code in REDIRECT_CODES:
-                location = response.headers.get("Location")
-                if not location:
-                    raise StripeError(f"GET {url} → {response.status_code} without a Location")
-                url = urljoin(url, location)
-                continue
-            if response.status_code != 200:
-                raise StripeError(f"GET {url} → {response.status_code}")
-            return response.content
+            with self._session.get(url, timeout=60, allow_redirects=False, stream=True) as response:
+                if response.status_code in REDIRECT_CODES:
+                    location = response.headers.get("Location")
+                    if not location:
+                        raise StripeError(f"GET {url} → {response.status_code} without a Location")
+                    url = urljoin(url, location)
+                    continue
+                if response.status_code != 200:
+                    raise StripeError(f"GET {url} → {response.status_code}")
+                return _read_capped(response, url, max_bytes)
         raise StripeError(f"more than {max_redirects} redirects fetching {url}")
 
     def balance(self) -> dict[str, object]:

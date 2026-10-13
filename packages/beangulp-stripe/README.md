@@ -24,7 +24,11 @@ response, a bare array, or a wrapper:
 - Minor units are converted per currency (zero- and three-decimal
   currencies included).
 - Cash leg books the **net**; a per-transaction `fee` is split out to the
-  fees account so the counter leg is the gross.
+  fees account so the counter leg is the gross. Without a fees account the
+  fee is not posted and the counter leg is the net.
+- Nothing is skipped silently: money in a currency missing from
+  `account_map` (a transaction, or a non-zero balance) and a transaction
+  without `id`, `created`, `net` or `fee` raise `ValueError`.
 - `stripe_fee` transactions (monthly-billed fees debited from the balance)
   go straight to the fees account, review-flagged: the monthly tax invoice
   drives the VAT split at review.
@@ -76,3 +80,7 @@ Read* for `invoices()`. No write scopes.
 `document()` follows the redirects itself, bounded, and sends no
 `Authorization` — the key stays on API requests and never travels to the host
 a redirect names.
+
+Every fetch is bounded: a listing stops with `StripeError` past 10,000 objects
+(`max_items`; narrow the created window) or when a page fails to advance the
+cursor, and `document()` refuses a file over 8 MiB (`max_bytes`).
