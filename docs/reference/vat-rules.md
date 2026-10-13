@@ -124,6 +124,16 @@ same either way, but the form asks for the split. A tag overrides it.
 
 479 = 400 + 405 + 410 − 415 − 420, exactly as the form computes it.
 
+**Credits to InputVAT.** A supplier's credit note credits InputVAT together
+with the expense or investment it reduces. That credit reduces 400 or 405 in
+the period it is booked.[^art41] A credit with no such leg, i.e. input VAT moved
+into cost, is ambiguous. Dated on `vat_registered_since`, it is read as the
+reversal of input VAT booked before you were liable: never deducted, so it
+stays out of the return. On any other day, tag it `vorsteuerkorrektur` or
+`vorsteuerkuerzung`. Untagged, it is listed under *Prüfung* and left out.
+A Bezugsteuer debit outside a settlement (a foreign supplier's credit note)
+reduces 383/382 the same way.
+
 ## What you owe, or are owed
 
 `399 − 479` is the period's result.
@@ -141,6 +151,15 @@ equal net × rate, within a few Rappen. The report lists any mismatch rather
 than filing it wrongly, and so does `--json` under `violations`. Typical
 causes are the old rate applied by habit, a missing VAT leg, or VAT on an
 exempt supply.
+
+## Foreign currency
+
+An amount in another currency is valued at the rate in `prices.bean` for its
+date, or the latest one before it. With no rate at all, the amount is left
+out of the return and listed. It is never counted as CHF 0: run
+`quints prices sync`. A VAT leg (OutputVAT, InputVAT, Bezugsteuer) booked in
+another currency is counted at its CHF value and listed, because the return
+and the settlement are in CHF. Book VAT legs in CHF with `quints vat convert`.
 
 The ledger's own loader errors are listed the same way, first. A file the
 loader couldn't read, or a transaction with a syntax error, is missing from
@@ -202,3 +221,4 @@ Keys are only ever added, never renamed or removed.
 [^sss-form]: The ESTV's sample returns: [effective method](https://www.estv2.admin.ch/mwst/formulare/mwst-form-abr-muster-effektiv-de.pdf), [Saldosteuersatz](https://www.estv2.admin.ch/mwst/formulare/mwst-form-abr-muster-sss-de.pdf). Since 2025, returns are filed online only.
 [^periods]: Art. 35 Abs. 1 and 1bis MWSTG, [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_35).
 [^due]: Art. 71 Abs. 1 (the return) and Art. 86 Abs. 1 MWSTG (the payment): "Innert 60 Tagen nach Ablauf der Abrechnungsperiode". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_86).
+[^art41]: Art. 41 Abs. 2 MWSTG: "Wird das von der steuerpflichtigen Person aufgewendete Entgelt korrigiert, so ist im Zeitpunkt, in dem die Korrektur verbucht oder das korrigierte Entgelt bezahlt wird, eine Anpassung des Vorsteuerabzuges vorzunehmen." [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_41).

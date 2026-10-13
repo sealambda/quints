@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from beancount.core import data
+from beancount.core.convert import get_weight
 
 from .. import config, ledger
 from .model import Invoice, Totals
@@ -46,10 +47,12 @@ def cross_check(
     booking = None  # the transaction that carries the income legs
     for e in matches:
         for p in e.postings:
-            if p.units.currency != inv.currency:
+            # The weight: a CHF OutputVAT leg on a EUR invoice is `@@`-priced in EUR.
+            weight = get_weight(p)
+            if weight.currency != inv.currency or weight.number is None:
                 continue
             if p.account.startswith(cfg.income_prefix) or p.account == cfg.output_vat:
-                expected += -p.units.number
+                expected += -weight.number
                 booking = booking or e
     booking = booking or matches[0]
     return CrossCheck(

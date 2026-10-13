@@ -159,7 +159,8 @@ class Liability:
 
 
 def _as_date(v: object) -> Date | None:
-    if isinstance(v, Date):
+    """A ``due:`` value as a date; None when absent or unreadable."""
+    if v is None or isinstance(v, Date):
         return v
     try:
         return Date.fromisoformat(str(v))
@@ -172,12 +173,15 @@ def outstanding(
     today: Date | None = None,
     cfg: config.Config | None = None,
     entries: data.Directives | None = None,
+    problems: list[ledger.Violation] | None = None,
 ) -> tuple[list[Liability], Decimal, Decimal, Date]:
     """Return (liabilities, unlinked_owed, total_owed, today).
 
     Groups PayableVAT movements by their ``^VAT-*`` link; a link nets to zero once
     its payment lands. Anything owed without such a link is reported separately.
-    Pass ``entries`` to reuse an already-loaded ledger (e.g. from Fava).
+    Pass ``entries`` to reuse an already-loaded ledger (e.g. from Fava). An
+    open period whose ``due:`` is not a date is listed without one, and added
+    to ``problems``.
     """
     cfg = cfg or config.get()
     if today is None:
@@ -186,7 +190,7 @@ def outstanding(
         entries, _ = ledger.load_entries(ledger_path)
 
     nets: dict[str, Decimal] = {}  # link -> net PayableVAT movement
-    dues: dict[str, object] = {}  # link -> due date (raw metadata value)
+    dues: dict[str, tuple[object, data.Transaction]] = {}  # link -> (raw due:, its entry)
     unlinked = Decimal("0")
     for e in entries:
         if not isinstance(e, data.Transaction):
@@ -202,7 +206,7 @@ def outstanding(
             if link:
                 nets[link] = nets.get(link, Decimal("0")) + number
                 if due is not None:
-                    dues[link] = due
+                    dues[link] = (due, e)
             else:
                 unlinked += number
 
@@ -210,7 +214,18 @@ def outstanding(
     for link, net in nets.items():
         if net == 0:
             continue  # fully paid
-        due_date = _as_date(dues.get(link))
+        raw, source = dues.get(link, (None, None))
+        due_date = _as_date(raw)
+        if due_date is None and source is not None and problems is not None:
+            problems.append(
+                ledger.Violation(
+                    str(source.date),
+                    source.payee or "",
+                    source.narration or "",
+                    f"unreadable due: {raw!r} on ^{link} — listed without a due date; "
+                    "write due: YYYY-MM-DD",
+                )
+            )
         liabilities.append(
             Liability(
                 period=link,

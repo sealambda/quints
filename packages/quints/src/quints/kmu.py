@@ -32,7 +32,6 @@ from pathlib import Path
 from beancount.core import convert as bc_convert
 from beancount.core import data
 from beancount.core import prices as bc_prices
-from beancount.core.amount import Amount
 from beancount.core.inventory import Inventory
 from rich import box
 from rich.console import Console
@@ -392,17 +391,6 @@ def kmu_map(entries: data.Entries, marker: str) -> dict[str, str]:
     return mapping
 
 
-def _to_chf(units: Amount, on: Date, price_map: bc_prices.PriceMap) -> Decimal:
-    if units.number is None:  # incomplete amount — cannot occur in a loaded ledger
-        return Decimal("0")
-    if units.currency == "CHF":
-        return units.number
-    conv = bc_convert.convert_amount(units, "CHF", price_map, date=on)
-    if conv.currency == "CHF" and conv.number is not None:
-        return conv.number
-    return Decimal("0")
-
-
 def _posting_chf(
     p: data.Posting, on: Date, fallback: Date, price_map: bc_prices.PriceMap
 ) -> Decimal:
@@ -410,21 +398,26 @@ def _posting_chf(
 
     The posting's own ``@``/``@@`` annotation wins (it is the booked rate);
     otherwise the price map at ``on``, then at ``fallback`` — old entries may
-    predate the BAZG price coverage, and silently valuing them at 0 would
-    corrupt totals.
+    predate the BAZG price coverage. Raises :class:`ledger.RateUnavailable`
+    when neither has a rate: valuing it at 0 would corrupt totals.
     """
     weight = bc_convert.get_weight(p)
-    if weight.number is None:  # incomplete posting — cannot occur in a loaded ledger
-        return Decimal("0")
-    if weight.currency == "CHF":
-        return weight.number
-    conv = bc_convert.convert_amount(weight, "CHF", price_map, date=on)
-    if conv.currency == "CHF" and conv.number is not None:
-        return conv.number
-    conv = bc_convert.convert_amount(weight, "CHF", price_map, date=fallback)
-    if conv.currency == "CHF" and conv.number is not None:
-        return conv.number
-    return Decimal("0")
+    try:
+        return ledger.to_chf(weight, on, price_map)
+    except ledger.RateUnavailable:
+        return ledger.to_chf(weight, fallback, price_map)
+
+
+def _left_out(
+    e: data.Transaction | None, what: str, exc: ledger.RateUnavailable
+) -> ledger.Violation:
+    """A figure with no rate to value it: listed, and left out of the totals."""
+    return ledger.Violation(
+        str(e.date) if e else "",
+        (e.payee or "") if e else "",
+        (e.narration or "") if e else "",
+        f"{exc} — {what} is left out; run `quints prices sync`",
+    )
 
 
 def _rows_from(
@@ -469,15 +462,21 @@ def compute_bilanz(
             if root in ("Assets", "Liabilities", "Equity"):
                 inventories.setdefault(p.account, Inventory()).add_position(p)
             elif e.date < fy_start:
-                prior_flows += _posting_chf(p, e.date, on, price_map)
+                try:
+                    prior_flows += _posting_chf(p, e.date, on, price_map)
+                except ledger.RateUnavailable as exc:
+                    problems.append(_left_out(e, f"{p.account} {p.units}", exc))
 
     per_code: dict[str, tuple[Decimal, set[str]]] = {}
     converted: dict[str, Decimal] = {}
     for account, inv in inventories.items():
         total = Decimal("0")
         for pos in inv:
-            chf = _to_chf(pos.units, on, price_map)
-            total += chf
+            try:
+                total += ledger.to_chf(pos.units, on, price_map)
+            except ledger.RateUnavailable as exc:
+                problems.append(_left_out(None, f"the {account} balance {pos.units}", exc))
+                continue
             if pos.units.currency != "CHF" and pos.units.number:
                 converted[pos.units.currency] = (
                     converted.get(pos.units.currency, Decimal("0")) + pos.units.number
@@ -541,7 +540,11 @@ def compute_erfolg(
                 continue
             if p.account.split(":", 1)[0] not in ("Income", "Expenses"):
                 continue
-            chf = _posting_chf(p, e.date, d1, price_map)
+            try:
+                chf = _posting_chf(p, e.date, d1, price_map)
+            except ledger.RateUnavailable as exc:
+                problems.append(_left_out(e, f"{p.account} {p.units}", exc))
+                continue
             code = mapping[p.account]
             amount, accounts = per_code.get(code, (Decimal("0"), set()))
             per_code[code] = (amount + chf, accounts | {p.account})
@@ -593,7 +596,11 @@ def compute_konten(
             code = mapping.get(p.account)
             if code is None or p.units is None or p.units.number is None:
                 continue
-            chf = _posting_chf(p, e.date, d1, price_map)
+            try:
+                chf = _posting_chf(p, e.date, d1, price_map)
+            except ledger.RateUnavailable as exc:
+                problems.append(_left_out(e, f"{p.account} {p.units}", exc))
+                continue
             konto = konten.setdefault(code, Konto(code, [], Decimal("0")))
             konto.lines.append(
                 KontoLine(

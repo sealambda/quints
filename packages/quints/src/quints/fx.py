@@ -52,10 +52,7 @@ class Revaluation:
         return self.market_chf - self.book_chf
 
 
-class RateUnavailable(RuntimeError):
-    def __init__(self, ccy: str, on: Date):
-        super().__init__(f"no {ccy}→CHF rate on or before {on}")
-        self.ccy, self.on = ccy, on
+RateUnavailable = ledger.RateUnavailable
 
 
 def compute(

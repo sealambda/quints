@@ -106,6 +106,42 @@ def compute_from_entries(
     return out
 
 
+def reconcile(
+    entries: Sequence[data.Directive], at: Date, cfg: config.Config
+) -> list[ledger.Violation]:
+    """What the receivable account holds that the open list can't show.
+
+    A posting without an invoice id (an opening balance, an unlinked
+    payment) is not grouped, so the open total would silently differ from
+    the account balance. Per currency, the untracked net is reported.
+    """
+    untracked: dict[str, tuple[Decimal, Date]] = {}
+    for e in entries:
+        if not isinstance(e, data.Transaction) or e.date > at:
+            continue
+        txn_number = invoice_id(e)
+        for p in e.postings:
+            if p.account != cfg.receivable or p.units is None or p.units.number is None:
+                continue
+            if (p.meta or {}).get("invoice") or txn_number:
+                continue
+            net, _ = untracked.get(p.units.currency, (Decimal("0"), e.date))
+            untracked[p.units.currency] = (net + p.units.number, e.date)
+    return [
+        ledger.Violation(
+            str(last),
+            "",
+            "",
+            f"{cfg.receivable} holds {net:.2f} {ccy} with no invoice id (`invoice:` or a "
+            "^link) — not in the open list",
+            Decimal("0"),
+            net,
+        )
+        for ccy, (net, last) in sorted(untracked.items())
+        if abs(net) > _TOL
+    ]
+
+
 class OpenItem(Protocol):
     """What the open-item machinery below needs of a row: a currency and an
     amount still open. :class:`OpenInvoice` satisfies it, and so does

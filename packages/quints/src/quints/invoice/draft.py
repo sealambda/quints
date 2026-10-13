@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from .. import config
 from .model import Invoice, Totals, document_path
 
@@ -12,8 +14,18 @@ def _quoted(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def build_draft(inv: Invoice, totals: Totals, cfg: config.Config | None = None) -> str:
-    """A balanced receivable booking matching what `verify.cross_check` expects."""
+def build_draft(
+    inv: Invoice,
+    totals: Totals,
+    cfg: config.Config | None = None,
+    vat_chf: Decimal | None = None,
+) -> str:
+    """A balanced receivable booking matching what `verify.cross_check` expects.
+
+    VAT is owed in CHF, so on a foreign-currency invoice the OutputVAT leg is
+    ``vat_chf`` CHF, priced ``@@`` at the invoice's VAT. Without a rate
+    (``vat_chf`` None) it stays in the invoice currency, marked to convert.
+    """
     cfg = cfg or config.get()
     customer = inv.resolved_customer
     ccy = inv.currency
@@ -23,8 +35,14 @@ def build_draft(inv: Invoice, totals: Totals, cfg: config.Config | None = None) 
 
     legs: list[tuple[str, str]] = [(income, f"{-totals.subtotal:>10.2f} {ccy}")]
     legs.append((cfg.receivable, f"{totals.grand_total:>10.2f} {ccy}"))
-    if totals.vat_amount:
+    if totals.vat_amount and ccy == "CHF":
         legs.append((cfg.output_vat, f"{-totals.vat_amount:>10.2f} {ccy}"))
+    elif totals.vat_amount and vat_chf is not None:
+        vat = f"{-vat_chf:>10.2f} CHF @@ {totals.vat_amount:.2f} {ccy}"
+        legs.append((cfg.output_vat, vat))
+    elif totals.vat_amount:
+        vat = f"{-totals.vat_amount:>10.2f} {ccy}  ; TODO in CHF: quints vat convert"
+        legs.append((cfg.output_vat, vat))
     if totals.rounding:
         legs.append((cfg.rounding_income, f"{-totals.rounding:>10.2f} {ccy}"))
 

@@ -143,7 +143,9 @@ A supplier bill is booked when it arrives, not when it is paid: the expense
 
 `bill:` is the supplier's own invoice number; `due:` is what the aging is
 measured against. Both are optional. Without `due:`, the payment terms run
-from the bill date — 30 days, or `[payables] default_terms_days`. Without
+from the bill date — 30 days, or `[payables] default_terms_days`. A `due:`
+that isn't a date (`due: end of month`) is listed as a problem, and the
+bill shows without a due date rather than a guessed one. Without
 `bill:`, a lone `^link` names the bill; with neither, the bill is grouped by
 payee and amount, which nets against a payment for the same payee and the
 same amount and nothing else.

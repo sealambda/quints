@@ -56,3 +56,21 @@ def test_dashboard_renders(tmp_path: Path):
     assert "VAT-2026-Q2" in html and "123.45" in html  # VAT outstanding
     assert "2026-07-12-ubs.bean" in html  # staging queue
     assert "2026-07-12.receipt.pdf" in html  # inbox backlog
+
+
+def test_dashboard_renders_with_unreadable_dues(tmp_path: Path):
+    """A `due:` that isn't a date is bad books, not a crash: the bill and the
+    VAT period still show, without a due date."""
+    led = tmp_path / "main.bean"
+    led.write_text(
+        LEDGER.replace("due: 2026-08-03", 'due: "end of month"').replace(
+            "due: 2026-08-31", 'due: "soon"'
+        )
+    )
+    app = create_app([str(led)], load=True)
+    client = app.test_client()
+    slug = client.get("/").headers["Location"].strip("/").split("/")[0]
+    page = client.get(f"/{slug}/extension/QuintDashboard/")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert "TM-2026-4711" in html and "VAT-2026-Q2" in html

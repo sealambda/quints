@@ -19,6 +19,8 @@ from typer.core import TyperGroup
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
 
+    from .invoice.model import Invoice, Totals
+
 from . import (
     closing as closing_mod,
 )
@@ -234,6 +236,25 @@ def _problems(violations: list[ledger.Violation], *, err: bool = False) -> None:
     if violations:
         console = ui.err_console if err else ui.console
         console.print(ui.violations_table(violations, "Problems in the books"))
+
+
+def _vat_chf(file: Path, totals: Totals, inv: Invoice) -> Decimal | None:
+    """An invoice's VAT in CHF at its issue date, for the ledger draft — None
+    when it is CHF already or the books hold no rate (the draft says so)."""
+    from beancount.core.amount import Amount
+
+    if inv.currency == "CHF" or not totals.vat_amount:
+        return None
+    entries, _ = ledger.load_entries(file)  # its errors were listed by the cross-check
+    try:
+        chf = ledger.to_chf(
+            Amount(totals.vat_amount, inv.currency),
+            inv.issue_date,
+            bc_prices.build_price_map(entries),
+        )
+    except ledger.RateUnavailable:
+        return None
+    return ledger.rappen(chf)
 
 
 def _require_ledger(file: Path) -> None:
@@ -630,7 +651,9 @@ def vat_status(
     _require_ledger(file)
     cfg = config_mod.get()
     entries, problems = ledger.load(file)
-    liabilities, unlinked, total, today = settle_mod.outstanding(file, entries=entries)
+    liabilities, unlinked, total, today = settle_mod.outstanding(
+        file, entries=entries, problems=problems
+    )
     # How the entity files *today* — a planned [[vat.change]] only counts once it
     # is in force; "none" when not registered (yet, or any more).
     phase = cfg.phase_at(today)
@@ -806,7 +829,7 @@ def invoice(
     if verify and file.exists():
         cc = v.cross_check(file, inv, totals)
         if not cc.found:
-            ledger_draft = dr.build_draft(inv, totals)
+            ledger_draft = dr.build_draft(inv, totals, vat_chf=_vat_chf(file, totals, inv))
         if not as_json:
             _problems(cc.violations)
             if not cc.found:
@@ -879,6 +902,7 @@ def receivables(
     open_invoices, consolidation, ref = recv_mod.compute(
         file, _parse_date(at) if at else None, currency=consolidate, entries=entries
     )
+    problems += recv_mod.reconcile(entries, ref, config_mod.get())
     if as_json:
         import dataclasses
 
@@ -919,11 +943,15 @@ def payables(
     _require_ledger(file)
     entries, problems = ledger.load(file)
     open_bills, consolidation, ref = pay_mod.compute(
-        file, _parse_date(at) if at else None, currency=consolidate, entries=entries
+        file,
+        _parse_date(at) if at else None,
+        currency=consolidate,
+        entries=entries,
+        problems=problems,
     )
     # Filed-but-unpaid VAT sits on PayableVAT, not the payables account: footed, not listed.
     as_of = [e for e in entries if e.date <= ref]
-    _, _, vat_owed, _ = settle_mod.outstanding(file, ref, entries=as_of)
+    _, _, vat_owed, _ = settle_mod.outstanding(file, ref, entries=as_of, problems=problems)
     if as_json:
         import dataclasses
 

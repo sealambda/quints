@@ -26,7 +26,9 @@ Writes a Swiss QR-bill PDF (domestic, or export/reverse-charge without QR
 part) and cross-checks the total against your ledger: if the invoice is
 already booked at a different amount, you get a conflict, not a silent
 divergence. If it isn't booked yet, quints prints the draft transaction to
-paste into `books/<year>.bean`.
+paste into `books/<year>.bean`. On a EUR invoice the draft's VAT leg is in
+CHF at the issue date's rate (`-75.33 CHF @@ 81.00 EUR`), because the VAT
+return is in CHF.
 
 The PDF is filed the way beancount documents are filed — under the income
 account's folder, date-prefixed, so `option "documents"` and Fava pick it up:
@@ -93,6 +95,15 @@ relies on it.
 Free text is refused. `supply: Juli 2026` fails at load, and the error names
 the value to write instead (`supply: 2026-07`), so older invoice files are a
 one-line fix. The ledger draft still reads `Juli 2026 invoiced`.
+
+The supply period also sets the VAT rate: the rate in force when the supply
+was made applies, not the invoice date's.[^rate-change] Without `vat.rate`, the
+invoice charges the standard rate for the supply: 8.1 % from 2024, 7.7 % for
+a 2023 supply invoiced later. Write `vat: {rate: 2.6}` or `{rate: 3.8}` for
+the reduced or lodging rate. A rate the law doesn't set for that period is
+refused at load, because VAT shown on an invoice is owed even when it is too
+high.[^too-high] A supply period that spans a rate change is refused too:
+invoice the part before and the part after separately.
 
 ## Bank details
 
@@ -350,7 +361,9 @@ quints receivables
 
 Open invoices against `Receivable:Trade`, grouped by invoice id, aged by due
 date. An invoice disappears from the list when the payment leg is booked with
-the same `^invoice-id` link.
+the same `^invoice-id` link. A receivable posting with no invoice id (an
+opening balance, a payment booked without the link) is listed below the
+table, so the open total never quietly differs from the account balance.
 
 Each invoice shows in its own currency; below the per-currency totals a
 consolidated total converts everything at the latest rate in your price file
@@ -371,6 +384,8 @@ consolidated total converts everything at the latest rate in your price file
 
 [^supply-ch]: Art. 26 Abs. 2 Bst. c MWSTG, [SR 641.20](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_26).
 [^supply-eu]: Art. 226 point (7) of the VAT Directive 2006/112/EC: "the date on which the supply … was made or completed … in so far as that date can be determined and differs from the date of issue". [EUR-Lex](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02006L0112-20250414).
+[^rate-change]: Art. 115 Abs. 1 MWSTG applies Art. 112 to a rate change: "Für Leistungen, die vor Inkrafttreten … erbracht worden sind, … gilt das bisherige Recht", and a supply made partly before and partly after is taxed "für diesen Teil" under each. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_115). The rates themselves: Art. 25 MWSTG.
+[^too-high]: Art. 27 Abs. 2 MWSTG: whoever "für eine Leistung eine zu hohe Steuer ausweist, schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^art27]: Art. 27 Abs. 1 and 2 MWSTG: "Wer nicht im Register der steuerpflichtigen Personen eingetragen ist …, darf in Rechnungen nicht auf die Steuer hinweisen"; who shows it anyway "schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^vat-id]: Art. 26 Abs. 2 Bst. a MWSTG: the invoice names the issuer "sowie die Nummer, unter der er oder sie eingetragen ist". The `MWST` suffix format is the one in [MWST-Info 16, Ziff. 2.2](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/cipherDisplay.xhtml?publicationId=1002536&componentId=1002626).
 [^place]: Art. 8 Abs. 1 MWSTG (place of supply of services: where the recipient has its seat), [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_8).

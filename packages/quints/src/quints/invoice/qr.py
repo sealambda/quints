@@ -24,6 +24,12 @@ def _structured(name: str, lines: Sequence[str], country: str) -> dict[str, str 
         if m:
             pcode, city, postal_idx = m.group(1), m.group(2), i
             break
+    if postal_idx is None:
+        # The QR-bill requires both; a made-up "0" would be printed and paid against.
+        raise ValueError(
+            f"{name}: the QR-bill needs a postcode and town — add an address line "
+            f"like '8000 Zürich' (got {lines})"
+        )
     street_lines = [ln for i, ln in enumerate(lines) if i != postal_idx]
     if street_lines:
         m = re.match(r"^(.*?)[\s,]+(\d+\w*)$", street_lines[0])  # split trailing house no
@@ -32,8 +38,8 @@ def _structured(name: str, lines: Sequence[str], country: str) -> dict[str, str 
         "name": name,
         "street": street or None,
         "house_num": house or None,
-        "pcode": pcode or "0",
-        "city": city or name,
+        "pcode": pcode,
+        "city": city,
         "country": country,
     }
 

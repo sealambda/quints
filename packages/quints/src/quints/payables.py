@@ -58,10 +58,10 @@ class OpenBill:
     keyed_by: str  # KEY_BILL | KEY_LINK | KEY_FALLBACK
     payee: str  # the supplier
     bill_date: Date
-    due_date: Date
+    due_date: Date | None  # None: its `due:` is unreadable (reported, never guessed)
     currency: str
     open_amount: Decimal  # positive = still owed
-    days_overdue: int  # at − due date; negative = not due yet
+    days_overdue: int | None  # at − due date; negative = not due yet
 
 
 def bill_id(e: data.Transaction) -> tuple[str, str] | None:
@@ -99,17 +99,33 @@ def fallback_key(payee: str | None, amount: Decimal) -> str:
     return f"{payee or '?'} · {abs(amount):.2f}"
 
 
-def due_date(e: data.Transaction, cfg: config.Config) -> Date:
-    """A bill's due date: ``due:`` metadata, else date + default terms."""
+def due_date(
+    e: data.Transaction, cfg: config.Config, problems: list[ledger.Violation] | None = None
+) -> Date | None:
+    """A bill's due date: ``due:`` metadata, else date + default terms.
+
+    None for a ``due:`` that isn't a date — added to ``problems``, never
+    replaced by the terms: an invented due date would age the bill wrong.
+    """
     raw = (e.meta or {}).get("due")
     if isinstance(raw, Date):
         return raw
-    if raw is not None:
-        try:
-            return Date.fromisoformat(str(raw))
-        except ValueError:
-            pass  # unparseable `due:` — fall through to the configured terms
-    return e.date + timedelta(days=cfg.payables_default_terms_days)
+    if raw is None:
+        return e.date + timedelta(days=cfg.payables_default_terms_days)
+    try:
+        return Date.fromisoformat(str(raw))
+    except ValueError:
+        if problems is not None:
+            problems.append(
+                ledger.Violation(
+                    str(e.date),
+                    e.payee or "",
+                    e.narration or "",
+                    f"unreadable due: {raw!r} — the bill is listed without a due date; "
+                    "write due: YYYY-MM-DD",
+                )
+            )
+        return None
 
 
 def _key_for(e: data.Transaction, p: data.Posting, amount: Decimal) -> tuple[str, str]:
@@ -152,7 +168,10 @@ class _Group:
 
 
 def compute_from_entries(
-    entries: Sequence[data.Directive], at: Date, cfg: config.Config
+    entries: Sequence[data.Directive],
+    at: Date,
+    cfg: config.Config,
+    problems: list[ledger.Violation] | None = None,
 ) -> list[OpenBill]:
     groups: dict[tuple[str, str], _Group] = {}
     for e in entries:
@@ -167,14 +186,15 @@ def compute_from_entries(
             g.net += p.units.number
             if p.units.number < 0 and g.bill_date is None:  # the billing leg (a credit)
                 g.bill_date, g.payee = e.date, e.payee or ""
-                g.due, g.keyed_by = due_date(e, cfg), keyed_by
+                g.due, g.keyed_by = due_date(e, cfg, problems), keyed_by
 
     out: list[OpenBill] = []
     for (key, currency), g in groups.items():
         if abs(g.net) <= _TOL:
             continue
         billed = g.bill_date or at
-        due = g.due or billed + timedelta(days=cfg.payables_default_terms_days)
+        # No billing leg (only payments so far): the terms run from `at`.
+        due = g.due if g.bill_date else billed + timedelta(days=cfg.payables_default_terms_days)
         out.append(
             OpenBill(
                 number=key,
@@ -184,10 +204,10 @@ def compute_from_entries(
                 due_date=due,
                 currency=currency,
                 open_amount=-g.net,
-                days_overdue=(at - due).days,
+                days_overdue=(at - due).days if due else None,
             )
         )
-    out.sort(key=lambda b: (b.due_date, b.number))
+    out.sort(key=lambda b: (b.due_date or Date.max, b.number))
     return out
 
 
@@ -197,14 +217,15 @@ def compute(
     cfg: config.Config | None = None,
     currency: str | None = None,
     entries: data.Directives | None = None,
+    problems: list[ledger.Violation] | None = None,
 ) -> tuple[list[OpenBill], receivables.Consolidation, Date]:
     """Open supplier bills at ``at``. Pass ``entries`` from :func:`ledger.load`
-    to report its loader errors — this function has no channel for them."""
+    to report its loader errors, and ``problems`` to collect unreadable dues."""
     cfg = cfg or config.get()
     at = at or datetime.now(timezone.utc).date()
     if entries is None:
         entries, _ = ledger.load_entries(ledger_path)
-    open_bills = compute_from_entries(entries, at, cfg)
+    open_bills = compute_from_entries(entries, at, cfg, problems)
     price_map = bc_prices.build_price_map(entries)
     consolidation = receivables.consolidate(
         open_bills, price_map, at, currency or cfg.operating_currency
@@ -215,7 +236,9 @@ def compute(
 # ── render ────────────────────────────────────────────────────────────────────
 
 
-def _overdue(days: int) -> str:
+def _overdue(days: int | None) -> str:
+    if days is None:
+        return "[warn]—[/]"
     if days > 0:
         return f"[owe]{days} d[/]"
     if days == 0:
@@ -254,7 +277,7 @@ def render(
         t.add_row(
             b.number,
             b.payee,
-            str(b.due_date),
+            str(b.due_date) if b.due_date else "—",
             _overdue(b.days_overdue),
             f"{ui.money(b.open_amount)} {b.currency}",
         )
