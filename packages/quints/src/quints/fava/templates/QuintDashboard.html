@@ -71,8 +71,8 @@
         <tr>
           <td>{{ b.number }}</td>
           <td>{{ b.payee }}</td>
-          <td>{{ b.due_date }}</td>
-          <td class="num"{% if b.days_overdue > 0 %} style="color: var(--budget-negative)"{% endif %}>{{ b.days_overdue }}</td>
+          <td>{{ b.due_date or "—" }}</td>
+          <td class="num"{% if b.days_overdue and b.days_overdue > 0 %} style="color: var(--budget-negative)"{% endif %}>{{ "—" if b.days_overdue is none else b.days_overdue }}</td>
           <td class="num">{{ b.open_amount }} {{ b.currency }}</td>
         </tr>
         {% endfor %}

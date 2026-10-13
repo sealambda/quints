@@ -31,6 +31,7 @@ from pydantic import (
     model_validator,
 )
 
+from .. import ledger
 from . import bank
 
 if sys.version_info >= (3, 11):
@@ -260,6 +261,11 @@ Supply = Annotated[
 ]
 
 
+def _percent(rate: Decimal) -> Decimal:
+    """0.081 → 8.1, as written in an invoice file and printed on it."""
+    return (rate * 100).normalize()
+
+
 class LineItem(BaseModel):
     description: str
     quantity: Decimal
@@ -272,7 +278,14 @@ class LineItem(BaseModel):
 
 
 class VatBlock(BaseModel):
-    rate: Decimal = Decimal("8.1")
+    rate: Decimal | None = Field(
+        default=None,
+        description=(
+            "VAT rate in per cent. Unset: the standard rate in force for the supply "
+            "(8.1 from 2024). Set it for the reduced (2.6) or lodging (3.8) rate; it "
+            "must be a Swiss rate in force for the supply (Art. 25 MWSTG)."
+        ),
+    )
 
 
 class Invoice(BaseModel):
@@ -331,6 +344,28 @@ class Invoice(BaseModel):
     # The registry key the customer was resolved from (set by `load_invoice`);
     # private so it never appears in the published authoring-file schema.
     _customer_key: str | None = PrivateAttr(default=None)
+
+    @model_validator(mode="after")
+    def _vat_rate_in_force(self) -> Invoice:
+        """The VAT an invoice shows is owed, even when too high (Art. 27 Abs. 2
+        MWSTG): the rate must be one the law sets for the supply's dates."""
+        if self.kind == "export":
+            return self  # no Swiss VAT charged
+        start, end = self.supply.start, self.supply.end
+        in_force = {_percent(ledger.vat_rate(start, c)) for c in ledger.VAT_RATE_CLASSES}
+        if in_force != {_percent(ledger.vat_rate(end, c)) for c in ledger.VAT_RATE_CLASSES}:
+            raise ValueError(
+                f"supply {start} – {end} spans a Swiss VAT rate change — invoice the "
+                "parts before and after it separately"
+            )
+        if self.vat.rate is not None and self.vat.rate not in in_force:
+            rates = " / ".join(str(r) for r in sorted(in_force, reverse=True))
+            raise ValueError(
+                f"vat.rate {self.vat.rate} is not a Swiss VAT rate for a supply on {start} "
+                f"— in force: {rates} % (Art. 25 MWSTG); VAT shown is owed even when "
+                "too high (Art. 27 Abs. 2 MWSTG)"
+            )
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -435,7 +470,10 @@ class Invoice(BaseModel):
 
     @property
     def vat_rate(self) -> Decimal:
-        return self.vat.rate
+        """Per cent: the explicit rate, else the standard rate for the supply."""
+        if self.vat.rate is not None:
+            return self.vat.rate
+        return _percent(ledger.vat_rate(self.supply.start))
 
     @property
     def rounds_to_5(self) -> bool:

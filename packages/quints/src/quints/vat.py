@@ -10,14 +10,7 @@ from beancount.core import prices as bc_prices
 
 from . import config, ledger
 
-
-class RateUnavailable(Exception):
-    """No <ccy>→CHF rate on or before the requested date."""
-
-    def __init__(self, ccy: str, on: Date):
-        self.ccy = ccy
-        self.on = on
-        super().__init__(f"no {ccy}→CHF rate on or before {on}")
+RateUnavailable = ledger.RateUnavailable
 
 
 @dataclass

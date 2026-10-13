@@ -10,7 +10,8 @@ from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from beancount import loader
-from beancount.core import data, prices
+from beancount.core import convert, data, prices
+from beancount.core.amount import Amount
 
 
 class InvariantError(AssertionError):
@@ -178,6 +179,31 @@ def load(ledger: Path) -> tuple[data.Directives, list[Violation]]:
     # beancount names files by os.path.abspath — symlinks unresolved — so the
     # root must be spelled the same way for relative_to to match.
     return entries, violations(errors, Path(os.path.abspath(ledger)).parent)
+
+
+class RateUnavailable(Exception):
+    """No <ccy>→CHF rate on or before the requested date."""
+
+    def __init__(self, ccy: str, on: Date):
+        self.ccy = ccy
+        self.on = on
+        super().__init__(f"no {ccy}→CHF rate on or before {on}")
+
+
+def to_chf(units: Amount, on: Date, price_map: prices.PriceMap) -> Decimal:
+    """``units`` in CHF at ``on`` (the price map's latest rate on/before it).
+
+    Raises :class:`RateUnavailable` rather than valuing the amount at 0.
+    """
+    number = units.number
+    if number is None:  # the loader interpolates every amount
+        raise InvariantError(f"incomplete amount {units} in a loaded ledger")
+    if units.currency == "CHF":
+        return number
+    conv = convert.convert_amount(units, "CHF", price_map, date=on)
+    if conv.currency != "CHF" or conv.number is None:
+        raise RateUnavailable(units.currency, on)
+    return conv.number
 
 
 def rate(

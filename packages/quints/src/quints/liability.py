@@ -100,8 +100,10 @@ def months_active(first: Date, last: Date) -> Decimal:
 
 
 def _turnover_by_year(
-    entries: data.Directives, cfg: config.Config
+    entries: data.Directives, cfg: config.Config, problems: list[ledger.Violation]
 ) -> tuple[dict[int, Decimal], Date | None]:
+    """CHF turnover per year; a supply with no rate to value it is left out
+    and added to ``problems``."""
     price_map = bc_prices.build_price_map(entries)
     codes = kmu.kmu_map(entries, cfg.entity_marker)
     totals: dict[int, Decimal] = {}
@@ -123,7 +125,18 @@ def _turnover_by_year(
             if bucket is None or bucket in _NOT_COUNTED:
                 continue
             # A credit note or rebate (Ziffer 235) is a debit, so it subtracts.
-            chf = mwst.to_chf(Amount(-number, p.units.currency), e.date, price_map)
+            try:
+                chf = ledger.to_chf(Amount(-number, p.units.currency), e.date, price_map)
+            except ledger.RateUnavailable as exc:
+                problems.append(
+                    ledger.Violation(
+                        str(e.date),
+                        e.payee or "",
+                        e.narration or "",
+                        f"{exc} — {p.account} {p.units} is left out of the turnover",
+                    )
+                )
+                continue
             totals[e.date.year] = totals.get(e.date.year, Decimal(0)) + chf
     return totals, first
 
@@ -136,7 +149,7 @@ def compute(ledger_path: Path, at: Date, cfg: config.Config | None = None) -> Li
     """
     cfg = cfg or config.get()
     entries, problems = ledger.load(ledger_path)
-    totals, first = _turnover_by_year(entries, cfg)
+    totals, first = _turnover_by_year(entries, cfg, problems)
     start = min(first, at) if first else Date(at.year, 1, 1)
     result = Liability(
         activity_since=str(start), registered=cfg.liable_on(at), at=str(at), violations=problems

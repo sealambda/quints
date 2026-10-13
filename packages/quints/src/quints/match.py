@@ -186,10 +186,19 @@ def date_score(a: Date, b: Date, window: int) -> float:
 
 
 def load_staging(staging_dir: Path) -> list[tuple[str, data.Transaction]]:
-    """Raw-parse staging drafts (no booking — accounts aren't opened there)."""
+    """Raw-parse staging drafts (no booking — accounts aren't opened there).
+
+    A draft that doesn't parse is refused: dropping it would hide a payment
+    from matching.
+    """
     out = []
     for f in sorted(staging_dir.glob("*.bean")):
-        entries, _errors, _ = raw_parser.parse_file(str(f))
+        entries, errors, _ = raw_parser.parse_file(str(f))
+        if errors:
+            where = [
+                f"{f.name}:{(err.source or {}).get('lineno')}: {err.message}" for err in errors
+            ]
+            raise ValueError("staging draft does not parse — " + "; ".join(where))
         out += [(f.name, e) for e in entries if isinstance(e, data.Transaction)]
     return out
 
@@ -214,7 +223,7 @@ def _bill_dict(b: payables.OpenBill) -> dict[str, str | None]:
         "keyed_by": b.keyed_by,
         "payee": b.payee,
         "date": str(b.bill_date),
-        "due": str(b.due_date),
+        "due": str(b.due_date) if b.due_date else None,
         "open": str(b.open_amount),
         "currency": b.currency,
     }

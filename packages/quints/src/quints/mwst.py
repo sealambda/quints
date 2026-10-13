@@ -59,13 +59,20 @@ the vintage from the transaction date, or from an explicit ``mwst: "old_rate"``.
 
 VAT is computed on an **accrual** basis directly from ledger entries: output
 VAT from OutputVAT movements (credits accrue, a credit note's debit reverses),
-input VAT from debits to InputVAT, Bezugsteuer from credits to the Bezugsteuer
-liability (Art. 45 ff.; the matching InputVAT debit is deducted on its own, so
-the pair is cash-neutral). A settlement transaction — one touching
-``payable_vat``, or carrying a ``^VAT-*`` link — is skipped wholesale, so the
-quarterly flush never re-enters the return. InputVAT *credits* count only when
-tagged 415/420, which leaves the one-off pre-liability reversal ignored as
-before.
+input VAT from InputVAT movements, Bezugsteuer from Bezugsteuer movements
+(Art. 45 ff.; the matching InputVAT debit is deducted on its own, so the pair
+is cash-neutral; a reversal's debit reduces it). A settlement transaction — one
+touching ``payable_vat`` — is skipped wholesale, so the quarterly flush never
+re-enters the return. An InputVAT *credit* outside a settlement reduces the
+input VAT when it comes with a credited expense or investment leg (a supplier
+credit note, Art. 41 Abs. 2); tagged 415/420 it is a correction. Input VAT
+moved into cost on the day liability starts is the reversal of input VAT booked
+before registering, and stays out like a settlement; on any other day it is a
+violation, since quints can't tell it from an untagged Vorsteuerkorrektur.
+
+A VAT leg booked in a foreign currency is counted at its CHF value and
+flagged (the return is in CHF). An amount quints cannot value — no rate on or
+before its date — is left out and listed, never counted as CHF 0.
 
 Every transaction with turnover is checked: the output VAT it posts must equal
 net × rate within :func:`_tolerance`. Mismatches are listed as
@@ -343,29 +350,48 @@ class MwstReport:
 # ── compute ───────────────────────────────────────────────────────────────────
 
 
-def to_chf(units: Amount, date: Date, price_map: bc_prices.PriceMap) -> Decimal:
-    """Value an amount in CHF at ``date`` (prior-date fallback via price map)."""
-    if units.number is None:  # incomplete amount — cannot occur in a loaded ledger
-        return Decimal("0")
-    if units.currency == "CHF":
-        return units.number
-    conv = bc_convert.convert_amount(units, "CHF", price_map, date=date)
-    if conv.currency == "CHF" and conv.number is not None:
-        return conv.number
-    return Decimal("0")
-
-
 def _weight_chf(p: data.Posting, on: Date, price_map: bc_prices.PriceMap) -> Decimal:
-    """CHF weight of a posting — its own @/@@ rate wins, then the price map."""
-    weight = bc_convert.get_weight(p)
-    if weight.number is None:  # incomplete posting — cannot occur in a loaded ledger
-        return Decimal("0")
-    if weight.currency == "CHF":
-        return weight.number
-    conv = bc_convert.convert_amount(weight, "CHF", price_map, date=on)
-    if conv.currency == "CHF" and conv.number is not None:
-        return conv.number
-    return Decimal("0")
+    """CHF weight of a posting — its own @/@@ rate wins, then the price map.
+
+    Raises :class:`ledger.RateUnavailable`.
+    """
+    return ledger.to_chf(bc_convert.get_weight(p), on, price_map)
+
+
+def _missing_rate(e: data.Transaction, p: data.Posting, exc: ledger.RateUnavailable) -> Violation:
+    return Violation(
+        str(e.date),
+        e.payee or "",
+        e.narration or "",
+        f"{exc} — {p.account} {p.units} is left out of the return; run `quints prices sync`",
+    )
+
+
+def _vat_leg_chf(
+    e: data.Transaction, p: data.Posting, price_map: bc_prices.PriceMap, detail: _Detail
+) -> Decimal | None:
+    """A VAT leg booked in a foreign currency, in CHF — and flagged.
+
+    The return and the settlement are in CHF, and a foreign balance left on a
+    VAT account never flushes. None when there is no rate to value it at.
+    """
+    try:
+        chf = ledger.rappen(_weight_chf(p, e.date, price_map))
+    except ledger.RateUnavailable as exc:
+        detail.violations.append(_missing_rate(e, p, exc))
+        return None
+    detail.violations.append(
+        Violation(
+            str(e.date),
+            e.payee or "",
+            e.narration or "",
+            f"{p.account} booked in {p.units.currency if p.units else '?'} — counted at "
+            f"its CHF value; book VAT legs in CHF (`quints vat convert`)",
+            Decimal("0"),
+            chf,
+        )
+    )
+    return chf
 
 
 def _parse_tokens(raw: object) -> frozenset[str]:
@@ -557,6 +583,29 @@ def _is_settlement(e: data.Transaction, cfg: config.Config) -> bool:
     return any(p.account == cfg.payable_vat for p in e.postings)
 
 
+def _is_pre_liability_reversal(
+    e: data.Transaction, cfg: config.Config, registered_from: Date | None
+) -> bool:
+    """Input VAT booked before registering, moved into cost on the day
+    liability starts: untagged InputVAT credits against expense debits, and
+    nothing else. It was never deducted in any return, so it corrects none.
+    On any other day the same shape could be a Vorsteuerkorrektur, and is
+    flagged by :func:`_input_vat`.
+    """
+    if registered_from is None or e.date != registered_from:
+        return False
+    moved = False
+    for p in e.postings:
+        n = p.units.number if p.units is not None else None
+        if n is None:
+            return False
+        if p.account == cfg.input_vat and n < 0 and not set(INPUT_ZIFFERN) & posting_tokens(p, e):
+            moved = True
+        elif not (p.account.startswith("Expenses:") and n > 0):
+            return False
+    return moved
+
+
 @dataclass
 class _Totals:
     """Accumulators for one :func:`compute` pass."""
@@ -615,10 +664,12 @@ def compute(
     codes = kmu.kmu_map(entries, cfg.entity_marker)
 
     t, detail = _Totals(), _Detail(violations=problems)
+    # The day liability starts — the registration, not a later method change.
+    registered_from = base.vat_phases[0].start if base.vat_phases else None
     for e in entries:
         if not isinstance(e, data.Transaction) or not (d0 <= e.date <= d1):
             continue
-        if _is_settlement(e, cfg):
+        if _is_settlement(e, cfg) or _is_pre_liability_reversal(e, cfg, registered_from):
             continue
         _transaction(e, cfg, codes, price_map, t, detail)
     report = _assemble(date_from, date_to, d0, d1, t, detail, cfg)
@@ -716,19 +767,28 @@ def _transaction(
     for p in e.postings:
         if p.units is None or p.units.number is None:
             continue  # incomplete posting — cannot occur in a loaded ledger
-        n = p.units.number
+        n: Decimal | None = p.units.number
         acct = p.account
         tokens = posting_tokens(p, e)
         unknown |= _unknown_tokens(tokens, cfg)
+        vat_leg = acct in (cfg.output_vat, cfg.bezugsteuer, cfg.input_vat)
+        if vat_leg and p.units.currency != "CHF":
+            n = _vat_leg_chf(e, p, price_map, detail)
+            if n is None:
+                continue
 
-        if acct == cfg.output_vat:
-            state.posted_tax += -n  # credits accrue, a credit note's debit reverses
-        elif acct == cfg.bezugsteuer and n < 0:
-            _bezugsteuer(e, p, -n, tokens, cfg, state.current, t, detail)
-        elif acct == cfg.input_vat:
-            _input_vat(e, p, n, tokens, codes, price_map, cfg, t, detail)
-        elif acct.startswith(cfg.income_prefix):
-            _turnover(e, p, n, tokens, codes, price_map, cfg, state, t, detail)
+        try:
+            if acct == cfg.output_vat:
+                state.posted_tax += -n  # credits accrue, a credit note's debit reverses
+            elif acct == cfg.bezugsteuer:
+                # Credits accrue; a debit outside a settlement reverses one.
+                _bezugsteuer(e, p, -n, tokens, cfg, state.current, t, detail)
+            elif acct == cfg.input_vat:
+                _input_vat(e, p, n, tokens, codes, price_map, cfg, t, detail)
+            elif acct.startswith(cfg.income_prefix):
+                _turnover(e, p, n, tokens, codes, price_map, cfg, state, t, detail)
+        except ledger.RateUnavailable as exc:  # raised before anything accrues
+            detail.violations.append(_missing_rate(e, p, exc))
 
     if cfg.vat_method == "saldo":
         _saldo_gross(e, state, t, detail)
@@ -756,7 +816,9 @@ def _bezugsteuer(
 ) -> None:
     """Reverse charge on a foreign supply (Art. 45 ff. MWSTG) — Ziffer 383/382."""
     rate_class = _rate_class(p.account, tokens, cfg)
-    net = ledger.rappen(tax / ledger.vat_rate(e.date, rate_class))
+    # The vintage decides the rate, as for turnover: an `old_rate` supply
+    # booked in 2024+ files under 382 at the old rate.
+    net = ledger.rappen(tax / _rate_on(current, rate_class))
     t.bezug_tax[current] = t.bezug_tax.get(current, Decimal("0")) + tax
     t.bezug_net[current] = t.bezug_net.get(current, Decimal("0")) + net
     original, currency, rate = _original(p, tax)
@@ -801,16 +863,48 @@ def _input_vat(
         )
         return
     ziffer = _input_ziffer(e, p, tokens, codes, price_map, cfg)
+    tagged = any(name in tokens for name in INPUT_ZIFFERN)
     if ziffer in MINUS_ZIFFERN:
         _acc(t.inputs, ziffer, -n)  # a credit becomes a positive magnitude
-    elif n <= 0:
-        return  # settlement flush or the one-off pre-liability reversal
+    elif n == 0:
+        return
+    elif n < 0 and not tagged and not _is_credit_note(e, p, codes):
+        detail.violations.append(
+            Violation(
+                str(e.date),
+                e.payee or "",
+                e.narration or "",
+                "InputVAT credited without a credit note — tag it "
+                'mwst: "vorsteuerkorrektur" (415) or "vorsteuerkuerzung" (420); '
+                "input VAT booked before VAT liability is reversed on the day "
+                "liability starts (vat_registered_since)",
+                Decimal("0"),
+                n,
+            )
+        )
+        return
     else:
+        # A supplier credit note's credit reduces it, in the period it is
+        # booked (Art. 41 Abs. 2 MWSTG).
         _acc(t.inputs, ziffer, n)
     original, currency, rate = _original(p, abs(n))
     detail.vat_lines.append(
         VatLine(str(e.date), e.payee or "", e.narration or "", original, currency, rate, n, ziffer)
     )
+
+
+def _is_credit_note(e: data.Transaction, p: data.Posting, codes: dict[str, str]) -> bool:
+    """An InputVAT credit that reduces a purchase: an expense or investment
+    leg is credited alongside it. (Input VAT moved *into* cost debits one.)"""
+    for q in e.postings:
+        if q is p or q.units is None or q.units.number is None or q.units.number >= 0:
+            continue
+        code = codes.get(q.account)
+        if q.account.startswith("Expenses:") or (
+            code is not None and any(_in(code, lo, hi) for lo, hi in INPUT_COUNTER_CODES)
+        ):
+            return True
+    return False
 
 
 def _turnover(
@@ -831,7 +925,7 @@ def _turnover(
     if bucket is None:
         return  # income, but not Entgelt — outside the return
     currency = p.units.currency if p.units is not None else "CHF"
-    chf = to_chf(Amount(-n, currency), e.date, price_map)
+    chf = ledger.to_chf(Amount(-n, currency), e.date, price_map)
     line = RevenueLine(str(e.date), e.payee or "", -n, currency, chf)
 
     if bucket in FLOW_ZIFFERN:  # Nicht-Entgelte: section III, not Ziffer 200
