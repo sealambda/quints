@@ -52,6 +52,11 @@ JSON files as arguments. Wise conversions are merged into one transaction;
 Stripe fees and payouts are split out, with the VAT inside Stripe's own fees
 drafted against InputVAT.
 
+Each import writes a new file in `staging/`, never over an earlier one: a
+second import the same day goes to `<date>-<source>-2.bean`. If its
+drafts are already in an earlier staging file, the import says so; move
+each to `books/` once.
+
 Imports are idempotent — each transaction carries its source id
 (`mt940_ref:`, `wise_id:`, `stripe_id:`), so re-importing a statement never
 duplicates a booking. That holds only for what the ledger actually loads:

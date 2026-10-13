@@ -1384,7 +1384,7 @@ def write(target: Path, files: list[ScaffoldFile], *, force: bool = False) -> Wr
             result.skipped.append(dest)
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(f.content)
+        ledger.atomic_write(dest, f.content)
         result.written.append(dest)
     return result
 
@@ -1396,14 +1396,22 @@ class GitResult:
     detail: str = ""  # why a step was skipped or failed, for the caller to show
 
 
-def init_git(target: Path) -> GitResult:
-    """``git init`` + an initial commit of the pristine scaffold.
+# Local git steps on a fresh scaffold take well under a second; the bound is
+# for a hang — a signing prompt, a hook waiting on input. PENDING CONFIRMATION.
+GIT_TIMEOUT_SECONDS = 60
+_INITIAL_COMMIT = "Scaffold books with quints init"
+
+
+def init_git(target: Path, paths: list[Path]) -> GitResult:
+    """``git init`` + an initial commit of the scaffold files ``paths``.
 
     The repository is what makes agent edits reviewable — diff before drafts
     move into ``books/``, revert when a change was wrong — and the initial
-    commit makes "what did the agent change" answerable from day one. A
-    ``target`` already inside a work tree (e.g. scaffolding a subdirectory of
-    an existing repo) is left alone.
+    commit makes "what did the agent change" answerable from day one. Only
+    the files ``quints init`` wrote are committed: anything already in the
+    directory (a .env, a spreadsheet) stays untracked. A ``target`` already
+    inside a work tree (e.g. scaffolding a subdirectory of an existing repo)
+    is left alone.
     """
     import shutil
     import subprocess
@@ -1411,24 +1419,42 @@ def init_git(target: Path) -> GitResult:
     git = shutil.which("git")
     if git is None:
         return GitResult(False, False, "git not installed")
-    inside = subprocess.run(  # noqa: S603 — fixed argv, git resolved via shutil.which
-        [git, "-C", str(target), "rev-parse", "--is-inside-work-tree"],
-        capture_output=True,
-        text=True,
-    )
+
+    def run(*args: str) -> subprocess.CompletedProcess[str] | str:
+        """The finished step, or why it didn't finish."""
+        try:
+            return subprocess.run(  # noqa: S603 — fixed argv, git resolved via shutil.which
+                [git, "-C", str(target), *args],
+                capture_output=True,
+                text=True,
+                timeout=GIT_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            return f"git {args[0]} timed out after {GIT_TIMEOUT_SECONDS} s"
+
+    inside = run("rev-parse", "--is-inside-work-tree")
+    if isinstance(inside, str):
+        return GitResult(False, False, inside)
     if inside.returncode == 0 and inside.stdout.strip() == "true":
         return GitResult(False, False, "already inside a git repository")
-    for argv in ([git, "init", "--quiet"], [git, "add", "--all"]):
-        step = subprocess.run(argv, cwd=target, capture_output=True, text=True)  # noqa: S603 — fixed argv
-        if step.returncode != 0:
-            return GitResult(True, False, step.stderr.strip() or f"git {argv[1]} failed")
-    commit = subprocess.run(  # noqa: S603 — fixed argv
-        [git, "commit", "--quiet", "-m", "Scaffold books with quints init"],
-        cwd=target,
-        capture_output=True,
-        text=True,
-    )
-    if commit.returncode != 0:
-        # Most likely no git identity — leave the repo with everything staged.
-        return GitResult(True, False, commit.stderr.strip() or "git commit failed")
+    created = run("init", "--quiet")
+    if isinstance(created, str) or created.returncode != 0:
+        failed = created if isinstance(created, str) else created.stderr.strip()
+        return GitResult(False, False, failed or "git init failed")
+    relative = [str(p.relative_to(target)) for p in paths]
+    # The scaffold's own .gitignore excludes some of what it wrote (staging/):
+    # ask git which of the files are committable instead of guessing.
+    listed = run("ls-files", "-z", "--others", "--exclude-standard", "--", *relative)
+    if isinstance(listed, str) or listed.returncode != 0:
+        failed = listed if isinstance(listed, str) else listed.stderr.strip()
+        return GitResult(True, False, failed or "git ls-files failed")
+    committable = [name for name in listed.stdout.split("\0") if name]
+    for step in (("add", "--", *committable), ("commit", "--quiet", "-m", _INITIAL_COMMIT)):
+        done = run(*step)
+        if isinstance(done, str):
+            return GitResult(True, False, done)
+        if done.returncode != 0:
+            # A failed commit is most likely a missing git identity: the
+            # scaffold stays staged for the user to commit.
+            return GitResult(True, False, done.stderr.strip() or f"git {step[0]} failed")
     return GitResult(True, True)

@@ -155,6 +155,8 @@ class ImportResult:
     fee_tax_periods: list[str] = field(default_factory=list)  # YYYY-MM, see _fee_tax_periods
     # The ledger's loader errors: entries it dropped can't dedup, so drafts may repeat them.
     violations: list[ledger.Violation] = field(default_factory=list)
+    # Source refs of drafts an earlier import already left in staging/.
+    already_staged: list[str] = field(default_factory=list)
 
 
 def _cash_pool(
@@ -357,19 +359,49 @@ def match_vat(result: ImportResult, existing: Sequence[data.Directive], cfg: con
         result.vat_matches.append((fits[0].period, matched))
 
 
+# The source-reference metadata each importer stamps on its drafts.
+_REF_KEYS = ("ubs_ref", "bank_ref", "wise_id", "stripe_id")
+
+
+def _already_staged(drafts: Sequence[data.Transaction], out_dir: Path) -> list[str]:
+    """Refs of ``drafts`` already sitting in a staging file from an earlier run."""
+    staged = "\n".join(f.read_text(encoding="utf-8") for f in sorted(out_dir.glob("*.bean")))
+    refs = [
+        f'{key}: "{value}"'
+        for d in drafts
+        for key in _REF_KEYS
+        if (value := (d.meta or {}).get(key)) is not None
+    ]
+    return [ref for ref in refs if ref in staged]  # as printer.format_entry writes it
+
+
 def _write_staging(result: ImportResult, out_dir: Path, source: str) -> None:
+    """Write the drafts to a new staging file — never over an earlier one.
+
+    staging/ is git-ignored, so an overwritten draft file is gone for good.
+    """
     if not (result.drafts or result.balances):
         return
     out_dir.mkdir(exist_ok=True)
-    out = out_dir / f"{TodayDate.today().isoformat()}-{source}.bean"
-    with open(out, "w", encoding="utf-8") as f:
-        f.write(f"; drafts from {result.source} — review, complete, move to books/, delete\n")
-        f.write("; legs to fill: counter account, VAT (InputVAT/Bezugsteuer/none), document:\n\n")
-        for entry in result.drafts:
-            f.write(printer.format_entry(entry) + "\n")
-        for balance in result.balances:
-            f.write(printer.format_entry(balance))
-    result.out_path = out
+    result.already_staged = _already_staged(result.drafts, out_dir)
+    lines = [
+        f"; drafts from {result.source} — review, complete, move to books/, delete\n",
+        "; legs to fill: counter account, VAT (InputVAT/Bezugsteuer/none), document:\n\n",
+        *(printer.format_entry(entry) + "\n" for entry in result.drafts),
+        *(printer.format_entry(balance) for balance in result.balances),
+    ]
+    stem = f"{TodayDate.today().isoformat()}-{source}"
+    # Every taken name matches the glob, so among one more candidate than
+    # there are matches, one is free.
+    for n in range(len(list(out_dir.glob(f"{stem}*.bean"))) + 1):
+        out = out_dir / (f"{stem}.bean" if n == 0 else f"{stem}-{n + 1}.bean")
+        try:
+            ledger.atomic_write(out, "".join(lines), overwrite=False)
+        except FileExistsError:
+            continue
+        result.out_path = out
+        return
+    raise ValueError(f"{out_dir}: another process keeps taking the staging file names")
 
 
 def run_yapeal(
@@ -534,7 +566,7 @@ def fetch_wise(
             f"{interval_end}T23:59:59.999Z",
         )
         path = out_dir / f"wise-{currency.lower()}-{interval_start}-{interval_end}.json"
-        path.write_text(json.dumps(statement, indent=1))
+        ledger.atomic_write(path, json.dumps(statement, indent=1))
         paths.append(path)
     return paths
 
@@ -589,7 +621,7 @@ def fetch_stripe(
 
     out_dir.mkdir(exist_ok=True)
     path = out_dir / f"stripe-{interval_start}-{interval_end}.json"
-    path.write_text(json.dumps(wrapper, indent=1))
+    ledger.atomic_write(path, json.dumps(wrapper, indent=1))
     return [path]
 
 
@@ -647,20 +679,29 @@ def _fee_tax_periods(statements: Sequence[Path]) -> list[str]:
     return sorted(periods)
 
 
-def _already_filed(root: Path, name: str) -> Path | None:
-    """Where ``name`` is already filed, if it is — inbox/ or documents/.
+def is_complete_pdf(payload: bytes) -> bool:
+    """A PDF header up front and its ``%%EOF`` marker at the end.
+
+    Readers look for the marker within the last 1024 bytes (PDF 1.7
+    reference, Implementation note 18), so that is where a complete file has it.
+    """
+    return payload.startswith(b"%PDF-") and b"%%EOF" in payload[-1024:]
+
+
+def already_filed(root: Path, name: str) -> Path | None:
+    """Where ``name`` is already filed as a complete PDF — inbox/ or documents/.
 
     Documents move from ``inbox/`` to ``documents/`` once booked, so checking
-    the inbox alone would re-download every invoice that has been filed.
+    the inbox alone would re-download every invoice that has been filed. A
+    truncated file (an interrupted download) doesn't count: it is fetched again.
     """
-    candidate = root / "inbox" / name
-    if candidate.exists():
-        return candidate
+    candidates = [root / "inbox" / name]
     documents = root / "documents"
     if documents.is_dir():
-        for path in documents.rglob(name):
-            if path.is_file():
-                return path
+        candidates += sorted(documents.rglob(name))
+    for path in candidates:
+        if path.is_file() and is_complete_pdf(path.read_bytes()):
+            return path
     return None
 
 
@@ -734,7 +775,7 @@ def fetch_stripe_invoices(
         date = dt.datetime.fromtimestamp(match.created, tz=dt.timezone.utc).date()
         number = _FILENAME_SAFE.sub("-", match.number)
         name = f"{date.isoformat()}.{slugify(match.customer)}.{number}.pdf"
-        filed = _already_filed(root, name)
+        filed = already_filed(root, name)
         if filed is not None:
             docs.append(
                 InvoiceDoc(
@@ -743,10 +784,15 @@ def fetch_stripe_invoices(
             )
             continue
         payload = client.document(match.pdf_url)
+        if not is_complete_pdf(payload):
+            raise StripeError(
+                f"invoice {match.number}: the download is not a complete PDF "
+                f"({len(payload)} bytes) — nothing filed for it; run the import again"
+            )
         inbox_dir = root / "inbox"
         inbox_dir.mkdir(exist_ok=True)
         path = inbox_dir / name
-        path.write_bytes(payload)
+        ledger.atomic_write(path, payload)  # may replace a truncated earlier download
         docs.append(
             InvoiceDoc(name, path, number, match.customer, match.txn_id, match.matched_by, False)
         )
