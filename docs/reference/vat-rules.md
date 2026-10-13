@@ -142,6 +142,10 @@ than filing it wrongly, and so does `--json` under `violations`. Typical
 causes are the old rate applied by habit, a missing VAT leg, or VAT on an
 exempt supply.
 
+The ledger's own loader errors are listed the same way, first. A file the
+loader couldn't read, or a transaction with a syntax error, is missing from
+every Ziffer, so the report still renders and names what is missing.
+
 ## Under the Saldosteuersatz
 
 - **Section I** has the same Ziffern 200–299, but every figure **includes

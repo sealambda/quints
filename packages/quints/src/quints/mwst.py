@@ -253,16 +253,8 @@ class RateRow:
     label: str = ""  # the granted Saldosteuersatz this row is for, e.g. "6.2"
 
 
-@dataclass
-class Violation:
-    """A booking the form cannot represent — listed, never silently filed."""
-
-    date: str
-    payee: str
-    narration: str
-    message: str
-    expected: Decimal = Decimal("0")
-    posted: Decimal = Decimal("0")
+# Shared with every report since loader errors became violations too.
+Violation = ledger.Violation
 
 
 @dataclass
@@ -618,11 +610,11 @@ def compute(
     # range is clamped to it; and the method, period and rates are the ones in
     # force for it (a return never spans a change — `for_period` refuses).
     cfg, d0, d1 = base.for_period(Date.fromisoformat(date_from), Date.fromisoformat(date_to))
-    entries, _errors = ledger.load_entries(ledger_path)
+    entries, problems = ledger.load(ledger_path)
     price_map = bc_prices.build_price_map(entries)
     codes = kmu.kmu_map(entries, cfg.entity_marker)
 
-    t, detail = _Totals(), _Detail()
+    t, detail = _Totals(), _Detail(violations=problems)
     for e in entries:
         if not isinstance(e, data.Transaction) or not (d0 <= e.date <= d1):
             continue
@@ -1139,7 +1131,13 @@ def render(
 
     if report.violations:
         console.print()
-        console.print(_violations_table(report.violations))
+        console.print(
+            ui.violations_table(
+                report.violations,
+                "Prüfung — Buchungen, die so nicht ins Formular passen",
+                lang="de",
+            )
+        )
     if report.vat_lines:
         console.print()
         console.print(
@@ -1253,31 +1251,6 @@ def _main_table(report: MwstReport) -> Table:
         if report.z910:
             row("910", "Spenden, Dividenden, Schadenersatz (Art. 18 II d–l)", report.z910)
     return main
-
-
-def _violations_table(violations: list[Violation]) -> Table:
-    t = Table(
-        box=box.SIMPLE,
-        title="Prüfung — Buchungen, die so nicht ins Formular passen",
-        title_justify="left",
-        title_style="warn",
-    )
-    t.add_column("Datum", style="muted", no_wrap=True)
-    t.add_column("Payee")
-    t.add_column("Narration")
-    t.add_column("Problem")
-    t.add_column("Erwartet", justify="right", no_wrap=True)
-    t.add_column("Gebucht", justify="right", no_wrap=True)
-    for v in violations:
-        t.add_row(
-            v.date,
-            v.payee,
-            v.narration,
-            f"[warn]{v.message}[/]",
-            ui.money(v.expected),
-            ui.money(v.posted),
-        )
-    return t
 
 
 def _vat_table(lines: list[VatLine], total: Decimal, title: str) -> Table:

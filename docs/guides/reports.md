@@ -58,6 +58,12 @@ the path. Both statements cover the same fiscal year: `--from` (default
 
 All report commands take `--lang` and `--json`.
 
+If the ledger doesn't load cleanly (a mistyped `include`, a syntax error, a
+failing `balance` assertion), every report still renders and lists the
+errors under its figures, and in `--json` under `violations`. The PDF lists
+them in a box at the top of the first page. The statements are incomplete
+until you fix them.
+
 Before the statements are final, run the year-end checklist:
 [Close the year](year-end.md).
 

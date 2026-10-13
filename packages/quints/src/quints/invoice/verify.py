@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
 
@@ -20,6 +20,8 @@ class CrossCheck:
     invoice_total: Decimal | None = None
     ok: bool = False
     date_ok: bool = True  # booking date equals the invoice issue date
+    # Loader errors: an entry the ledger failed to load may be the booking itself.
+    violations: list[ledger.Violation] = field(default_factory=list)
 
 
 def cross_check(
@@ -30,7 +32,7 @@ def cross_check(
     transactions (the payment-clearing entry may carry the same link — its
     lack of income legs makes it contribute zero)."""
     cfg = config.get()
-    entries, _ = ledger.load_entries(ledger_path)
+    entries, problems = ledger.load(ledger_path)
     matches = []
     for e in entries:
         if not isinstance(e, data.Transaction):
@@ -38,7 +40,7 @@ def cross_check(
         if inv.number == (e.meta or {}).get("invoice") or inv.number in (e.links or set()):
             matches.append(e)
     if not matches:
-        return CrossCheck(found=False)
+        return CrossCheck(found=False, violations=problems)
 
     expected = Decimal("0")
     booking = None  # the transaction that carries the income legs
@@ -57,4 +59,5 @@ def cross_check(
         invoice_total=totals.grand_total,
         ok=abs(expected - totals.grand_total) <= tol,
         date_ok=booking.date == inv.issue_date,
+        violations=problems,
     )

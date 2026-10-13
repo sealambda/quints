@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date as Date
 from decimal import ROUND_HALF_UP, Decimal
@@ -118,15 +120,64 @@ def rappen(value: Decimal) -> Decimal:
 
 
 def load_entries(ledger: Path):
-    """Load a ledger; returns (entries, errors)."""
+    """Load a ledger; returns (entries, errors).
+
+    Raw beancount errors, for ``quints check``. A report loads with
+    :func:`load` instead, so the errors become its violations.
+    """
     entries, errors, _ = loader.load_file(str(ledger))
     return entries, errors
 
 
-def build_price_map(ledger: Path):
-    """Load a ledger and build its price map; returns (price_map, errors)."""
+@dataclass
+class Violation:
+    """A problem in the books a report cannot represent — listed, never silently dropped."""
+
+    date: str
+    payee: str
+    narration: str
+    message: str
+    expected: Decimal = Decimal("0")
+    posted: Decimal = Decimal("0")
+
+
+def violations(errors: Sequence[object], root: Path) -> list[Violation]:
+    """Beancount loader errors as report violations, ``file:line`` relative to ``root``.
+
+    The loader drops what it cannot read (a missing include, a syntax error)
+    and keeps the rest, so a report computed from it is short: it must say so.
+    """
+    out: list[Violation] = []
+    for err in errors:
+        source = getattr(err, "source", None) or {}
+        filename, lineno = source.get("filename"), source.get("lineno")
+        where = ""
+        if filename and not str(filename).startswith("<"):  # "<load>": no file to point at
+            name = Path(str(filename))
+            where = str(name.relative_to(root) if name.is_relative_to(root) else name)
+            where += f":{lineno}" if lineno is not None else ""
+        entry = getattr(err, "entry", None)
+        on = getattr(entry, "date", None)
+        txn = entry if isinstance(entry, data.Transaction) else None
+        out.append(
+            Violation(
+                str(on) if on is not None else "",
+                (txn.payee or "") if txn else "",
+                (txn.narration or "") if txn else "",
+                f"ledger error ({where}): {getattr(err, 'message', err)}"
+                if where
+                else f"ledger error: {getattr(err, 'message', err)}",
+            )
+        )
+    return out
+
+
+def load(ledger: Path) -> tuple[data.Directives, list[Violation]]:
+    """Load a ledger for a report: (entries, its loader errors as violations)."""
     entries, errors = load_entries(ledger)
-    return prices.build_price_map(entries), errors
+    # beancount names files by os.path.abspath — symlinks unresolved — so the
+    # root must be spelled the same way for relative_to to match.
+    return entries, violations(errors, Path(os.path.abspath(ledger)).parent)
 
 
 def rate(

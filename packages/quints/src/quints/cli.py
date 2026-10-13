@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
 import typer
+from beancount.core import prices as bc_prices
 from pydantic import ValidationError
 from typer.core import TyperGroup
 
@@ -223,6 +224,16 @@ def _relative(path: Path) -> str:
         return str(path.relative_to(Path.cwd()))
     except ValueError:
         return str(path)
+
+
+def _problems(violations: list[ledger.Violation], *, err: bool = False) -> None:
+    """List what a command found wrong in the books (loader errors and the like).
+
+    ``err``: on stderr, for commands whose stdout is text to paste.
+    """
+    if violations:
+        console = ui.err_console if err else ui.console
+        console.print(ui.violations_table(violations, "Problems in the books"))
 
 
 def _require_ledger(file: Path) -> None:
@@ -618,7 +629,8 @@ def vat_status(
     """Outstanding VAT owed to the ESTV (filed but unpaid), with due dates."""
     _require_ledger(file)
     cfg = config_mod.get()
-    liabilities, unlinked, total, today = settle_mod.outstanding(file)
+    entries, problems = ledger.load(file)
+    liabilities, unlinked, total, today = settle_mod.outstanding(file, entries=entries)
     # How the entity files *today* — a planned [[vat.change]] only counts once it
     # is in force; "none" when not registered (yet, or any more).
     phase = cfg.phase_at(today)
@@ -635,10 +647,12 @@ def vat_status(
                 "liabilities": [dataclasses.asdict(liab) for liab in liabilities],
                 "unlinked_owed": str(unlinked),
                 "total_owed": str(total),
+                "violations": [dataclasses.asdict(v) for v in problems],
             }
         )
         return
     settle_mod.render_status(liabilities, unlinked, total, today, period_kind=period_kind)
+    _problems(problems)
 
 
 @vat_app.command("convert")
@@ -679,9 +693,9 @@ def vat_convert(
         raise typer.Exit(1) from None
     _require_ledger(file)
 
-    price_map, errors = ledger.build_price_map(file)
-    if errors:
-        typer.secho(f"WARNING: {len(errors)} loader error(s) in {file.name}", fg="yellow", err=True)
+    entries, problems = ledger.load(file)
+    price_map = bc_prices.build_price_map(entries)
+    _problems(problems, err=True)  # a dropped `price` line can change the rate
     try:
         posting = vat_mod.convert(amt, currency, on, price_map, net=net, rate_class=rate)
     except ValueError as e:
@@ -699,7 +713,14 @@ def vat_convert(
     if as_json:
         import dataclasses
 
-        _json_out({**dataclasses.asdict(posting), "bezugsteuer": bezugsteuer, "posting_text": text})
+        _json_out(
+            {
+                **dataclasses.asdict(posting),
+                "bezugsteuer": bezugsteuer,
+                "posting_text": text,
+                "violations": [dataclasses.asdict(v) for v in problems],
+            }
+        )
         return
     typer.echo(text)
 
@@ -787,6 +808,7 @@ def invoice(
         if not cc.found:
             ledger_draft = dr.build_draft(inv, totals)
         if not as_json:
+            _problems(cc.violations)
             if not cc.found:
                 ui.console.print(
                     f"[warn]No ledger txn for {inv.number}[/] — paste this draft "
@@ -853,8 +875,9 @@ def receivables(
 ):
     """Open invoices (aging) in their original currency, plus a consolidated total."""
     _require_ledger(file)
+    entries, problems = ledger.load(file)
     open_invoices, consolidation, ref = recv_mod.compute(
-        file, _parse_date(at) if at else None, currency=consolidate
+        file, _parse_date(at) if at else None, currency=consolidate, entries=entries
     )
     if as_json:
         import dataclasses
@@ -869,10 +892,12 @@ def receivables(
                     "total": str(consolidation.grand_total),
                     "missing_rates": consolidation.missing,
                 },
+                "violations": [dataclasses.asdict(v) for v in problems],
             }
         )
         return
     recv_mod.render(open_invoices, ref, consolidation)
+    _problems(problems)
 
 
 @app.command(rich_help_panel=PANEL_INVOICING)
@@ -892,11 +917,11 @@ def payables(
 ):
     """Open supplier bills (aging by due date), plus a consolidated total."""
     _require_ledger(file)
+    entries, problems = ledger.load(file)
     open_bills, consolidation, ref = pay_mod.compute(
-        file, _parse_date(at) if at else None, currency=consolidate
+        file, _parse_date(at) if at else None, currency=consolidate, entries=entries
     )
     # Filed-but-unpaid VAT sits on PayableVAT, not the payables account: footed, not listed.
-    entries, _ = ledger.load_entries(file)
     as_of = [e for e in entries if e.date <= ref]
     _, _, vat_owed, _ = settle_mod.outstanding(file, ref, entries=as_of)
     if as_json:
@@ -913,10 +938,12 @@ def payables(
                     "total": str(consolidation.grand_total),
                     "missing_rates": consolidation.missing,
                 },
+                "violations": [dataclasses.asdict(v) for v in problems],
             }
         )
         return
     pay_mod.render(open_bills, ref, consolidation, vat_owed=vat_owed)
+    _problems(problems)
 
 
 # ── banking & reconciliation ──────────────────────────────────────────────────
@@ -1119,6 +1146,7 @@ def _report_import(
                 "payable_matches": [{**txn(t), "bill": n} for n, t in result.payable_matches],
                 "vat_matches": [{**txn(t), "period": n} for n, t in result.vat_matches],
                 "fee_tax_periods": result.fee_tax_periods,
+                "violations": [dataclasses.asdict(v) for v in result.violations],
                 "invoices": [dataclasses.asdict(d) for d in invoices or []],
                 "balances": [
                     {
@@ -1132,6 +1160,13 @@ def _report_import(
             }
         )
         return
+    if result.violations:
+        typer.secho(
+            f"WARNING: {len(result.violations)} ledger error(s) — dedup against the books is "
+            "unreliable: a draft may repeat an entry the ledger failed to load.",
+            fg="yellow",
+        )
+        _problems(result.violations)
     if result.skipped_ref:
         typer.echo(f"{result.skipped_ref} entr(ies) already imported (reference match) — skipped.")
     if result.legacy_matches:
@@ -1394,6 +1429,9 @@ def statements(
     out = out or Path(f"statements-{year}-{lang}.pdf")
     path = report_pdf.render_pdf(bilanz_report, erfolg_report, lang, out)
     typer.secho(f"Wrote {path}", fg="green")
+    if bilanz_report.violations:
+        typer.secho("The statements list these problems in the books at the top:", fg="yellow")
+        _problems(bilanz_report.violations)
 
 
 close_app = typer.Typer(
@@ -1526,15 +1564,24 @@ def prices_sync(
     # bean-price mode: commodity `price:` metadata declares what to fetch.
     # --source forces config mode; a metadata-less ledger falls back to it too.
     jobs = None
+    warnings: list[str] = []  # listed, and in --json; a bad `price:` spec also fails the run
+    unusable: list[str] = []
     if source is None and cfg.ledger_main.exists():
-        entries, _errors = ledger.load_entries(cfg.ledger_main)
+        entries, loaded = ledger.load(cfg.ledger_main)
+        warnings += [v.message for v in loaded]
 
         def bad_meta(ccy: str, message: str) -> None:
-            typer.secho(
-                f"{ccy}: skipping unusable price metadata — {message}", fg="yellow", err=True
-            )
+            unusable.append(f"{ccy}: unusable price metadata, not synced — {message}")
 
         jobs = prices_mod.jobs_from_ledger(entries, on_error=bad_meta) or None
+        warnings += unusable
+        if loaded and jobs is None:
+            warnings.append(
+                f"{cfg.ledger_main.name} has loader errors and no usable `price:` metadata — "
+                "syncing the [prices] currencies from quints.toml instead"
+            )
+    for warning in warnings:
+        typer.secho(f"WARNING: {warning}", fg="yellow", err=True)
     # Sources without a bulk endpoint fetch one request per day per currency,
     # so a backfill takes a while: show a live per-currency bar (stderr,
     # transient) unless the caller asked for machine-readable output.
@@ -1580,8 +1627,11 @@ def prices_sync(
                     }
                     for ccy, s in result.per_currency.items()
                 },
+                "warnings": warnings,
             }
         )
+        if unusable:
+            raise typer.Exit(1)
         return
     for ccy, s in result.per_currency.items():
         where = f"had through {s.last}" if s.last else "was empty"
@@ -1597,6 +1647,8 @@ def prices_sync(
         typer.secho(f"Wrote {result.added} new price(s) to {out.name} (sorted).", fg="green")
     else:
         typer.echo(f"{out.name} already current.")
+    if unusable:
+        _fail(f"{len(unusable)} commodit(ies) with unusable `price:` metadata were not synced.")
 
 
 @fx_app.command("revalue")
@@ -1610,8 +1662,11 @@ def fx_revalue(
     """Print the year-end FX revaluation transaction(s) to paste (Art. 960 OR)."""
     _parse_date(at)
     _require_ledger(file)
+    entries, problems = ledger.load(file)
+    # First: a dropped `price` line is the likeliest cause of RateUnavailable.
+    _problems(problems, err=True)  # stderr — stdout is the transaction to paste
     try:
-        revaluations = fx_mod.compute(file, at)
+        revaluations = fx_mod.compute(file, at, entries=entries)
     except fx_mod.RateUnavailable as e:
         typer.secho(
             f"ERROR: {e}.\n       Fetch rates:  uv run quints prices sync", fg="red", err=True
@@ -1624,6 +1679,7 @@ def fx_revalue(
             {
                 "at": at,
                 "revaluations": [{**dataclasses.asdict(r), "delta": r.delta} for r in revaluations],
+                "violations": [dataclasses.asdict(v) for v in problems],
             }
         )
         return

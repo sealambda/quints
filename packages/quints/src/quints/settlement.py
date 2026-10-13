@@ -81,6 +81,8 @@ def build_settlement(
     label = label or f"{report.date_from}..{report.date_to}"
     link = "VAT-" + label.replace(" ", "")
     cfg = cfg or config.get()
+    # Its loader errors are already the report's violations: mwst.compute
+    # loaded the same books.
     entries, _ = ledger.load_entries(ledger_path)
     payable_before = _payable_balance(entries, d1, cfg)  # excludes the (unbooked) settlement
     return Settlement(
@@ -180,7 +182,7 @@ def outstanding(
     cfg = cfg or config.get()
     if today is None:
         today = datetime.now(timezone.utc).date()
-    if entries is None:
+    if entries is None:  # the CLI passes entries from ledger.load and lists their errors
         entries, _ = ledger.load_entries(ledger_path)
 
     nets: dict[str, Decimal] = {}  # link -> net PayableVAT movement

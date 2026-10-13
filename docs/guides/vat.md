@@ -66,7 +66,10 @@ Two lists appear below the Ziffern when there is something to act on:
 - **Prüfung** is the list of bookings the form can't represent. Examples: a
   sale whose VAT doesn't match net × rate (the old rate applied by habit, a
   missing VAT leg), an unknown `mwst:` tag, or InputVAT under the
-  Saldosteuersatz. Fix each one in the books, then run the report again.
+  Saldosteuersatz. A **ledger error** is listed too: a mistyped `include`,
+  a syntax error or a failing `balance` assertion. Beancount drops what it
+  can't read, so the Ziffern are short until you fix it (`quints check`
+  shows each error). Fix each one in the books, then run the report again.
 - **!** marks a notice from the VAT timeline: the first return after
   registering, the last one before a switch of method, the final one before
   deregistering. Each names the correction the law asks for, its article,

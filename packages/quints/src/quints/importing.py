@@ -153,6 +153,8 @@ class ImportResult:
         default_factory=list
     )  # (VAT-<period> link, draft)
     fee_tax_periods: list[str] = field(default_factory=list)  # YYYY-MM, see _fee_tax_periods
+    # The ledger's loader errors: entries it dropped can't dedup, so drafts may repeat them.
+    violations: list[ledger.Violation] = field(default_factory=list)
 
 
 def _cash_pool(
@@ -382,11 +384,11 @@ def run_yapeal(
     if not importer.identify(str(statement)):
         raise ValueError(f"{statement} is not a Yapeal CSV statement for {yapeal.account}")
 
-    existing, _ = ledger.load_entries(ledger_path)
+    existing, problems = ledger.load(ledger_path)
     total = len(importer.extract(str(statement), existing=[]))
     extracted = importer.extract(str(statement), existing=existing)
 
-    result = ImportResult(source=str(statement))
+    result = ImportResult(source=str(statement), violations=problems)
     result.skipped_ref = total - len(extracted)
     _split(result, extracted, _cash_pool(existing, {yapeal.account}))
     match_receivables(result, existing, cfg)
@@ -408,11 +410,11 @@ def run_ubs(
     if not importer.identify(str(statement)):
         raise ValueError(f"{statement} is not an MT940 statement for {ubs.iban}")
 
-    existing, _ = ledger.load_entries(ledger_path)
+    existing, problems = ledger.load(ledger_path)
     total = len(importer.extract(str(statement), existing=[]))
     extracted = importer.extract(str(statement), existing=existing)
 
-    result = ImportResult(source=str(statement))
+    result = ImportResult(source=str(statement), violations=problems)
     result.skipped_ref = total - len(extracted)
     _split(result, extracted, _cash_pool(existing, {ubs.account}))
     match_receivables(result, existing, cfg)
@@ -438,14 +440,14 @@ def run_wise(
                 f"in {sorted(wise.account_map)}"
             )
 
-    existing, _ = ledger.load_entries(ledger_path)
+    existing, problems = ledger.load(ledger_path)
     raw: data.Directives = []  # without ledger dedup, to count reference skips
     deduped: data.Directives = []
     for statement in statements:
         raw += importer.extract(str(statement), existing=[])
         deduped += importer.extract(str(statement), existing=existing)
 
-    result = ImportResult(source=", ".join(str(s) for s in statements))
+    result = ImportResult(source=", ".join(str(s) for s in statements), violations=problems)
     result.skipped_ref = _txn_count(raw) - _txn_count(deduped)
     _split(result, merge_conversions(deduped), _cash_pool(existing, set(wise.account_map.values())))
     match_receivables(result, existing, cfg)
@@ -471,14 +473,14 @@ def run_stripe(
                 f"{stripe.account_id} in {sorted(stripe.account_map)}"
             )
 
-    existing, _ = ledger.load_entries(ledger_path)
+    existing, problems = ledger.load(ledger_path)
     raw: data.Directives = []  # without ledger dedup, to count reference skips
     deduped: data.Directives = []
     for statement in statements:
         raw += importer.extract(str(statement), existing=[])
         deduped += importer.extract(str(statement), existing=existing)
 
-    result = ImportResult(source=", ".join(str(s) for s in statements))
+    result = ImportResult(source=", ".join(str(s) for s in statements), violations=problems)
     result.skipped_ref = _txn_count(raw) - _txn_count(deduped)
     _split(result, deduped, _cash_pool(existing, set(stripe.account_map.values())))
     match_receivables(result, existing, cfg)

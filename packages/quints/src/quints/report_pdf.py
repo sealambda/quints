@@ -148,6 +148,12 @@ def _load_issuer(path: Path) -> dict[str, object]:
     }
 
 
+_PROBLEMS_TITLE = {
+    "en": "Problems in the books — these statements may be incomplete",
+    "de": "Prüfung — Probleme in der Buchhaltung, die Abschlüsse sind evtl. unvollständig",
+}
+
+
 def build_context(
     bilanz: BilanzReport, erfolg: ErfolgReport, lang: str, issuer_path: Path = DEFAULT_ISSUER
 ) -> dict[str, object]:
@@ -158,9 +164,17 @@ def build_context(
             "en": f"Non-CHF balances valued at the {bilanz.at} rate: {parts}.",
             "de": f"Fremdwährungsbestände zum Kurs per {bilanz.at} bewertet: {parts}.",
         }.get(lang, "")
+    # Both statements load the same books: list each problem once.
+    problems: list[dict[str, str]] = []
+    for v in bilanz.violations + erfolg.violations:
+        item = {"date": v.date, "message": v.message}
+        if item not in problems:
+            problems.append(item)
     return {
         "lang": lang,
         "issuer": _load_issuer(issuer_path),
+        "violations": problems,
+        "violations_title": _PROBLEMS_TITLE.get(lang, _PROBLEMS_TITLE["en"]),
         "bilanz": {
             "title": label("bilanz_title", lang),
             "subtitle": f"{label('as_at', lang)} {bilanz.at} · OR Art. 959a · CHF",
