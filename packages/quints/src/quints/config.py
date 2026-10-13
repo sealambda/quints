@@ -6,8 +6,9 @@ the ``CH:GmbH`` namespacing works out of the box; everything entity-specific
 ``quints.toml`` — a stranger with their own beancount file and a
 ``quints.toml`` gets correct reports without touching this package.
 
-Precedence: an explicit ``--config`` path > ``./quints.toml`` > built-in
-defaults. VAT *rates* are deliberately not configurable — they are law and
+Precedence: an explicit ``--config`` path > the ``quints.toml`` beside the
+ledger (``-f``), or in the nearest directory above it > ``./quints.toml`` >
+built-in defaults. VAT *rates* are deliberately not configurable — they are law and
 live in :data:`quints.ledger.VAT_RATES`.
 
 Modules take a ``cfg`` parameter (tests construct :class:`Config` inline) and
@@ -16,11 +17,12 @@ fall back to :func:`get`, the process-wide config the CLI resolves once.
 
 from __future__ import annotations
 
+import difflib
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import date as Date
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from itertools import pairwise
 from pathlib import Path
@@ -419,6 +421,165 @@ def _import_sections(raw: dict[str, object]) -> dict[str, object]:
     return updates
 
 
+# Every key quints.toml may hold, and what kind of value it takes. Decision D
+# ("a sane default"): an unknown key or section, or a value of the wrong kind,
+# is an error naming the closest known key — a typo must never fall back to
+# a default silently (`vat_methd = "saldo"` filing as effective).
+_ACCOUNT_KEYS = (
+    "input_vat",
+    "output_vat",
+    "bezugsteuer",
+    "payable_vat",
+    "income_prefix",
+    "export_marker",
+    "export_goods_marker",
+    "exempt_marker",
+    "optioned_marker",
+    "reduced_marker",
+    "lodging_marker",
+    "entity_marker",
+    "fx_gain",
+    "fx_loss",
+    "receivable",
+    "payable",
+    "rounding_income",
+    "income_domestic",
+    "income_export",
+    "saldo_difference",
+    "bezugsteuer_expense",
+)
+_BANK_IMPORT = {"account": "str", "iban": "str", "currency": "str", "rules": "rules"}
+_SCHEMA: dict[str, dict[str, str]] = {
+    "entity": {
+        "name": "str",
+        "legal_form": "str",
+        "vat_registered": "bool",
+        "vat_method": "str",
+        "vat_registered_since": "date",
+        "vat_registered_until": "date",
+        "operating_currency": "str",
+    },
+    "ledger": {"main": "str", "prices": "str"},
+    "accounts": dict.fromkeys(_ACCOUNT_KEYS, "str"),
+    "payables": {"default_terms_days": "int"},
+    "prices": {"source": "str", "currencies": "strs", "tickers": "map"},
+    "report": {"language": "str"},
+    "vat": {"period": "str", "saldo": "entries", "change": "entries"},
+    "close": {
+        "depreciation_account": "str",
+        "method": "str",
+        "prorata": "str",
+        "receivable_review_days": "int",
+    },
+    "import": {"ubs": "table", "yapeal": "table", "wise": "table", "stripe": "table"},
+    "import.ubs": _BANK_IMPORT,
+    "import.yapeal": _BANK_IMPORT,
+    "import.wise": {"accounts": "map", "fees_account": "str", "holder": "str", "rules": "rules"},
+    "import.stripe": {
+        "accounts": "map",
+        "fees_account": "str",
+        "tax_account": "str",
+        "account_id": "str",
+        "rules": "rules",
+    },
+    "[[vat.saldo]]": {"rate": "number", "marker": "str", "label": "str"},
+    "[[vat.change]]": {"from": "date", "method": "str", "period": "str", "saldo": "entries"},
+}
+_KINDS = {
+    "str": "a string",
+    "bool": "true or false",
+    "int": "a whole number",
+    "date": "a date (YYYY-MM-DD)",
+    "number": "a number",
+    "table": "a table",
+    "map": "a table of strings",
+    "strs": "a list of strings",
+    "entries": "a list of tables",
+    "rules": 'a list of [payee regex, account, flag] triples, e.g. ["acme", "Assets:…", "*"]',
+}
+
+
+def _fits(kind: str, value: object) -> bool:
+    if kind == "bool":
+        return isinstance(value, bool)
+    if isinstance(value, bool):  # TOML true is not a number or a string
+        return False
+    if kind == "int":
+        return isinstance(value, int)
+    if kind == "date":
+        return isinstance(value, Date) and not isinstance(value, datetime)
+    if kind == "number":
+        return isinstance(value, int | float | str)
+    if kind in ("table", "map"):
+        ok = isinstance(value, dict)
+        return ok and (kind == "table" or all(isinstance(v, str) for v in value.values()))
+    if kind in ("strs", "entries", "rules"):
+        if not isinstance(value, list):
+            return False
+        if kind == "strs":
+            return all(isinstance(v, str) for v in value)
+        if kind == "entries":
+            return all(isinstance(v, dict) for v in value)
+        return all(
+            isinstance(r, list) and len(r) == 3 and all(isinstance(x, str) for x in r)
+            for r in value
+        )
+    return isinstance(value, str)
+
+
+def _unknown(name: str, known: Iterable[str], fmt: str) -> str:
+    close = difflib.get_close_matches(name, list(known), n=1, cutoff=0.6)
+    hint = f" — did you mean {fmt.format(close[0])}?" if close else ""
+    return f"{fmt.format(name)} is not a quints.toml {'section' if fmt != '{}' else 'key'}{hint}"
+
+
+def _check_table(
+    where: str, table: dict[str, object], problems: list[str]
+) -> list[tuple[str, dict[str, object]]]:
+    """One table's keys and value kinds; returns its nested tables to check next."""
+    nested: list[tuple[str, dict[str, object]]] = []
+    schema = _SCHEMA[where]
+    label = where if where.startswith("[[") else f"[{where}]"
+    for key, value in table.items():
+        kind = schema.get(key)
+        if kind is None:
+            problems.append(f"{label} {_unknown(key, schema, '{}')}")
+            continue
+        if not _fits(kind, value):
+            problems.append(f"{label} {key} = {value!r} must be {_KINDS[kind]}")
+            continue
+        sub = f"{where}.{key}"
+        if kind == "table" and sub in _SCHEMA and isinstance(value, dict):
+            nested.append((sub, value))
+        if kind == "entries" and isinstance(value, list):
+            entry = f"[[vat.{key}]]"  # vat.saldo, vat.change, and a change's saldo
+            nested += [(entry, item) for item in value if isinstance(item, dict)]
+    return nested
+
+
+def check_keys(raw: dict[str, object]) -> None:
+    """Every section, key and value kind of a quints.toml, all problems at once."""
+    sections = [k for k in _SCHEMA if "." not in k and not k.startswith("[")]
+    problems: list[str] = []
+    for name, value in raw.items():
+        home = next((sec for sec, keys in _SCHEMA.items() if name in keys), None)
+        if name not in sections and home is not None and not isinstance(value, dict):
+            problems.append(f"{name} belongs under [{home.strip('[]')}]")
+        elif name not in sections:
+            problems.append(_unknown(name, sections, "[{}]"))
+        elif not isinstance(value, dict):
+            problems.append(f"[{name}] must be a table")
+        else:
+            # Each table checked once; the schema nests at most three deep, so
+            # the queue drains (the document is finite).
+            queue = [(name, value)]
+            while queue:
+                where, table = queue.pop()
+                queue += _check_table(where, table, problems)
+    if problems:
+        raise ConfigError("\n".join(["quints.toml:", *(f"  {p}" for p in problems)]))
+
+
 def _from_mapping(raw: dict[str, object]) -> Config:
     def section(key: str) -> dict[str, object]:
         value = raw.get(key)
@@ -446,29 +607,7 @@ def _from_mapping(raw: dict[str, object]) -> Config:
         updates["ledger_main"] = Path(str(ledger_["main"]))
     if "prices" in ledger_:
         updates["ledger_prices"] = Path(str(ledger_["prices"]))
-    for key in (
-        "input_vat",
-        "output_vat",
-        "bezugsteuer",
-        "payable_vat",
-        "income_prefix",
-        "export_marker",
-        "export_goods_marker",
-        "exempt_marker",
-        "optioned_marker",
-        "reduced_marker",
-        "lodging_marker",
-        "entity_marker",
-        "fx_gain",
-        "fx_loss",
-        "receivable",
-        "payable",
-        "rounding_income",
-        "income_domestic",
-        "income_export",
-        "saldo_difference",
-        "bezugsteuer_expense",
-    ):
+    for key in _ACCOUNT_KEYS:
         take(accounts, key, key)
     payables_ = section("payables")
     take(payables_, "default_terms_days", "payables_default_terms_days")
@@ -663,23 +802,49 @@ def load(path: Path | None = None) -> Config:
     if path is None:
         return validate(Config())
     with open(path, "rb") as f:
-        return validate(_from_mapping(tomllib.load(f)))
+        raw = tomllib.load(f)
+    check_keys(raw)
+    return validate(_from_mapping(raw))
 
 
-_current: Config | None = None
+# The CLI's two hints: an explicit --config, and the ledger the command reads.
+# No cache: quints.toml is a few lines, and re-reading it per call means a
+# config always matches the ledger it is used for.
 _path: Path | None = None
+_ledger: Path | None = None
 
 
 def set_path(path: Path | None) -> None:
-    """CLI hook: remember --config and invalidate the cached config."""
-    global _path, _current
+    """CLI hook: remember --config (None: look it up)."""
+    global _path
     _path = path
-    _current = None
+
+
+def use_ledger(ledger: Path | None) -> None:
+    """CLI hook: the ledger this command reads, so its quints.toml is the one used."""
+    global _ledger
+    _ledger = ledger
+
+
+def find(ledger: Path) -> Path | None:
+    """The quints.toml beside ``ledger``, or in the nearest directory above it."""
+    for directory in ledger.resolve().parents:  # finite: up to the filesystem root
+        candidate = directory / DEFAULT_PATH.name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def resolve() -> Path | None:
+    """--config, else the ledger's quints.toml, else ./quints.toml, else none."""
+    if _path is not None:
+        return _path
+    near = find(_ledger) if _ledger is not None else None
+    if near is not None:
+        return near
+    return DEFAULT_PATH if DEFAULT_PATH.exists() else None
 
 
 def get() -> Config:
-    """The process-wide config (cached; honors a previous :func:`set_path`)."""
-    global _current
-    if _current is None:
-        _current = load(_path)
-    return _current
+    """The config for this command (see :func:`resolve`)."""
+    return load(resolve())
