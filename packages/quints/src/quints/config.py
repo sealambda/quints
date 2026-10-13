@@ -816,13 +816,13 @@ _ledger: Path | None = None
 
 def set_path(path: Path | None) -> None:
     """CLI hook: remember --config (None: look it up)."""
-    global _path
+    global _path  # p10: allow R6 -- per-invocation CLI hint, reset by the root callback
     _path = path
 
 
 def use_ledger(ledger: Path | None) -> None:
     """CLI hook: the ledger this command reads, so its quints.toml is the one used."""
-    global _ledger
+    global _ledger  # p10: allow R6 -- per-invocation CLI hint, reset by the root callback
     _ledger = ledger
 
 

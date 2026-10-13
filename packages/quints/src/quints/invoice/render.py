@@ -173,7 +173,7 @@ def _compile(
     ]
     for i, opts in enumerate(attempts):
         try:
-            typst.compile(str(main), **opts)  # type: ignore[arg-type] -- stub types the kwargs, not **dict
+            typst.compile(str(main), **opts)  # type: ignore[arg-type] -- stub lacks **dict
             return
         except (TypeError, ValueError):
             if i == len(attempts) - 1:
