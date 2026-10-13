@@ -54,7 +54,9 @@ drafted against InputVAT.
 
 Imports are idempotent — each transaction carries its source id
 (`mt940_ref:`, `wise_id:`, `stripe_id:`), so re-importing a statement never
-duplicates a booking.
+duplicates a booking. That holds only for what the ledger actually loads:
+if it has loader errors, the import lists them and warns that a draft may
+repeat an entry the ledger dropped. Run `quints check` and fix them first.
 
 ## Complete a draft
 

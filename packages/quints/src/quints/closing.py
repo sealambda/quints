@@ -248,8 +248,9 @@ def compute_depreciation(
     floored so the book value never falls below ``residual:``.
     """
     cfg = cfg or config.get()
-    if entries is None:
-        entries, _ = ledger.load_entries(ledger_path)
+    problems: list[ledger.Violation] = []
+    if entries is None:  # a caller passing entries reports their loader errors itself
+        entries, problems = ledger.load(ledger_path)
     year_start, year_end = Date(year, 1, 1), Date(year, 12, 31)
 
     assets: list[data.Open] = [
@@ -260,6 +261,7 @@ def compute_depreciation(
         and _meta_str(e.meta, "depreciation") is not None
     ]
     plan = DepreciationPlan(year=year, at=str(year_end))
+    plan.warnings += [p.message for p in problems]
     if not assets:
         return plan
 
@@ -967,6 +969,8 @@ def render_depreciation(plan: DepreciationPlan, console: Console | None = None) 
             "fixed-asset open directive (see the year-end guide).",
             style="muted",
         )
+        for warning in plan.warnings:
+            console.print(f"[warn]{warning}[/]")
         console.print()
         return
 

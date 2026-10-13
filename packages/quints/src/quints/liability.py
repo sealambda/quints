@@ -73,6 +73,7 @@ class Liability:
     liable_from: str | None = None  # when registration became mandatory
     register_by: str | None = None
     advice: list[str] = field(default_factory=list)
+    violations: list[ledger.Violation] = field(default_factory=list)
 
 
 def _days_in_month(year: int, month: int) -> int:
@@ -134,10 +135,12 @@ def compute(ledger_path: Path, at: Date, cfg: config.Config | None = None) -> Li
     marked incomplete: the rule looks at the business year once it has ended.
     """
     cfg = cfg or config.get()
-    entries, _errors = ledger.load_entries(ledger_path)
+    entries, problems = ledger.load(ledger_path)
     totals, first = _turnover_by_year(entries, cfg)
     start = min(first, at) if first else Date(at.year, 1, 1)
-    result = Liability(activity_since=str(start), registered=cfg.liable_on(at), at=str(at))
+    result = Liability(
+        activity_since=str(start), registered=cfg.liable_on(at), at=str(at), violations=problems
+    )
     for y in range(start.year, at.year + 1):
         complete = y < at.year or at == Date(y, 12, 31)
         span_end = Date(y, 12, 31) if complete else at
@@ -249,3 +252,6 @@ def render(result: Liability, console: Console | None = None) -> None:
     for line in result.advice:
         console.print(f"[warn]![/] {line}")
     console.print()
+    if result.violations:
+        console.print(ui.violations_table(result.violations, "Problems in the books"))
+        console.print()

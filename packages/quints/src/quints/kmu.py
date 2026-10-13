@@ -336,6 +336,7 @@ class BilanzReport:
         default_factory=dict
     )  # ccy → units valued at report-date rate
     legal_form: str = "gmbh"  # picks the Klasse-28 label variant when rendering
+    violations: list[ledger.Violation] = field(default_factory=list)
 
 
 @dataclass
@@ -348,6 +349,7 @@ class ErfolgReport:
     financial_expenses: list[RowLine]
     financial_income: list[RowLine]
     result: Decimal
+    violations: list[ledger.Violation] = field(default_factory=list)
 
 
 @dataclass
@@ -373,6 +375,7 @@ class KontenReport:
     date_from: str
     date_to: str
     konten: list[Konto]
+    violations: list[ledger.Violation] = field(default_factory=list)
 
 
 # ── compute ──────────────────────────────────────────────────────────────────
@@ -451,7 +454,7 @@ def compute_bilanz(
     fy_start = Date.fromisoformat(date_from) if date_from else Date(on.year, 1, 1)
     if fy_start > on:
         raise ValueError(f"fiscal year start {fy_start} is after the balance-sheet date {on}")
-    entries, _ = ledger.load_entries(ledger_path)
+    entries, problems = ledger.load(ledger_path)
     price_map = bc_prices.build_price_map(entries)
     mapping = kmu_map(entries, cfg.entity_marker)
     inventories: dict[str, Inventory] = {}
@@ -516,6 +519,7 @@ def compute_bilanz(
         total_liabilities_equity=ledger.rappen(liabilities_and_equity) + retained_prior + result,
         converted={c: ledger.rappen(v) for c, v in converted.items()},
         legal_form=cfg.legal_form,
+        violations=problems,
     )
 
 
@@ -524,7 +528,7 @@ def compute_erfolg(
 ) -> ErfolgReport:
     cfg = cfg or config.get()
     d0, d1 = Date.fromisoformat(date_from), Date.fromisoformat(date_to)
-    entries, _ = ledger.load_entries(ledger_path)
+    entries, problems = ledger.load(ledger_path)
     price_map = bc_prices.build_price_map(entries)
     mapping = kmu_map(entries, cfg.entity_marker)
 
@@ -568,6 +572,7 @@ def compute_erfolg(
         financial_expenses=fin_exp,
         financial_income=fin_inc,
         result=result,
+        violations=problems,
     )
 
 
@@ -576,7 +581,7 @@ def compute_konten(
 ) -> KontenReport:
     cfg = cfg or config.get()
     d0, d1 = Date.fromisoformat(date_from), Date.fromisoformat(date_to)
-    entries, _ = ledger.load_entries(ledger_path)
+    entries, problems = ledger.load(ledger_path)
     price_map = bc_prices.build_price_map(entries)
     mapping = kmu_map(entries, cfg.entity_marker)
 
@@ -602,10 +607,20 @@ def compute_konten(
                 )
             )
             konto.flow += chf
-    return KontenReport(date_from, date_to, [konten[c] for c in sorted(konten)])
+    return KontenReport(date_from, date_to, [konten[c] for c in sorted(konten)], problems)
 
 
 # ── render ───────────────────────────────────────────────────────────────────
+
+
+_PROBLEMS_TITLE = {"en": "Problems in the books", "de": "Prüfung — Probleme in der Buchhaltung"}
+
+
+def _render_violations(console: Console, violations: list[ledger.Violation], lang: str) -> None:
+    if violations:
+        title = _PROBLEMS_TITLE.get(lang, _PROBLEMS_TITLE["en"])
+        console.print(ui.violations_table(violations, title, lang))
+        console.print()
 
 
 def _statement_table(lang: str) -> Table:
@@ -694,6 +709,7 @@ def render_bilanz(
         }
         console.print(note.get(lang, note["en"]), style="muted")
     console.print()
+    _render_violations(console, report.violations, lang)
 
 
 def render_erfolg(
@@ -748,6 +764,7 @@ def render_erfolg(
     )
     console.print(t)
     console.print()
+    _render_violations(console, report.violations, lang)
 
 
 def render_konten(report: KontenReport, lang: str = "en", console: Console | None = None) -> None:
@@ -785,3 +802,4 @@ def render_konten(report: KontenReport, lang: str = "en", console: Console | Non
         t.add_row("", "", "[bold]Total[/]", "", "", f"[bold]{ui.money(konto.flow)}[/]")
         console.print(t)
     console.print()
+    _render_violations(console, report.violations, lang)

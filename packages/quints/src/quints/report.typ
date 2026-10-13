@@ -50,6 +50,17 @@
   }
 }
 
+// Loader errors and other problems in the books, once, before any figure.
+#if d.violations.len() > 0 {
+  block(width: 100%, inset: 3mm, stroke: 0.7pt + rgb("#b45309"))[
+    #text(size: 9pt, weight: "bold", fill: rgb("#b45309"))[#d.violations_title]
+    #for v in d.violations [
+      #linebreak()#text(size: 8pt)[#if v.date != "" [#v.date · ]#v.message]
+    ]
+  ]
+  v(4mm)
+}
+
 #statement(d.bilanz)
 #pagebreak()
 #statement(d.erfolg)

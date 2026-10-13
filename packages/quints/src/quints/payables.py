@@ -196,10 +196,14 @@ def compute(
     at: Date | None = None,
     cfg: config.Config | None = None,
     currency: str | None = None,
+    entries: data.Directives | None = None,
 ) -> tuple[list[OpenBill], receivables.Consolidation, Date]:
+    """Open supplier bills at ``at``. Pass ``entries`` from :func:`ledger.load`
+    to report its loader errors — this function has no channel for them."""
     cfg = cfg or config.get()
     at = at or datetime.now(timezone.utc).date()
-    entries, _ = ledger.load_entries(ledger_path)
+    if entries is None:
+        entries, _ = ledger.load_entries(ledger_path)
     open_bills = compute_from_entries(entries, at, cfg)
     price_map = bc_prices.build_price_map(entries)
     consolidation = receivables.consolidate(

@@ -58,10 +58,18 @@ class RateUnavailable(RuntimeError):
         self.ccy, self.on = ccy, on
 
 
-def compute(ledger_path: Path, at: str, cfg: config.Config | None = None) -> list[Revaluation]:
+def compute(
+    ledger_path: Path,
+    at: str,
+    cfg: config.Config | None = None,
+    entries: data.Directives | None = None,
+) -> list[Revaluation]:
+    """Year-end revaluations at ``at``. Pass ``entries`` from :func:`ledger.load`
+    to report its loader errors — this function has no channel for them."""
     cfg = cfg or config.get()
     on = Date.fromisoformat(at)
-    entries, _ = ledger.load_entries(ledger_path)
+    if entries is None:
+        entries, _ = ledger.load_entries(ledger_path)
     price_map = bc_prices.build_price_map(entries)
 
     inventories: dict[str, Inventory] = {}

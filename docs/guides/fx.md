@@ -54,6 +54,8 @@ answers wins), inverted pairs (`^` prefix stores the reciprocal rate),
 several quote currencies separated by spaces, and `price: ""` to opt a
 commodity out. quints additionally refuses rates quoted in the wrong
 currency, so a wrong ticker fails loudly instead of corrupting the file.
+A `price:` value quints can't parse is listed, the other currencies still
+sync, and the run then exits 1, so a currency never goes unfetched quietly.
 
 When the ledger declares no priced commodities (or you run outside a
 ledger), a `[prices]` section in `quints.toml` supplies the plan instead —
