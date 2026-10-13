@@ -26,14 +26,22 @@ Needs network. Every run extends each currency forward to today **and**
 fills interior gaps — days missing anywhere in the file's history are
 fetched too. Days the source has no rate for (weekends, holidays) are
 checked once and recorded in a `; quints: verified …` comment in the file
-header, so they are never re-fetched. The file is written as rates arrive:
+header, so they are never re-fetched. A day only counts as checked once a
+newer rate is in the file: today, before the source publishes, is asked
+again next time. The scan never reaches back more than ten years, the time
+books are kept,[^keep] so a mistyped year in an old line can't start a
+century of requests. The file is written as rates arrive:
 interrupt a long backfill and the next run resumes where it left off.
 `--from` ignores the verified record and re-checks the whole range.
 
 The BAZG API has no bulk endpoint — the fetch is one request per calendar
 day per currency, so a first backfill takes a while; a live per-currency
 progress bar shows how far along it is. Rates already in the file are never
-touched — manual overrides survive a sync.
+touched — manual overrides survive a sync, with any `; comment` on their
+line. The file is replaced in one step, so a crash mid-write leaves the
+old file. A line below the first price that isn't a price (another
+directive, a stray note) is refused before anything is fetched, because
+the rewrite would drop it.
 
 Which currencies to fetch, and from which source, comes from the ledger —
 the same commodity `price:` metadata `bean-price` reads, with the same
@@ -113,3 +121,4 @@ instead of manual conversion.
 
 [^fx]: Art. 45 MWSTV, [SR 641.201](https://www.fedlex.admin.ch/eli/cc/2009/828/de#art_45). Abs. 3: "nach dem von der ESTV veröffentlichten Wechselkurs, wobei wahlweise der Monatsmittelkurs oder der Tageskurs für den Verkauf von Devisen verwendet werden kann"; Abs. 5: the choice is kept "während mindestens einer Steuerperiode". Input tax follows the same rule (Art. 58 MWSTV). [MWST-Info 07 *Steuerbemessung und Steuersätze*, Ziff. 1.3.2](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/tableOfContent.xhtml?publicationId=1007607&lang=de); [ESTV, Fremdwährungskurse](https://www.estv.admin.ch/de/mwst-fremdwaehrungskurse); the daily rates: [BAZG](https://www.rates.bazg.admin.ch/home).
 [^960]: Valuation: Art. 960 ff. OR; the currency of the accounts and the disclosure of the rates used: Art. 958d Abs. 3 OR. [SR 220](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_958_d).
+[^keep]: Art. 958f Abs. 1 OR: "Die Geschäftsbücher und die Buchungsbelege … sind während zehn Jahren aufzubewahren." [fedlex](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_958_f).

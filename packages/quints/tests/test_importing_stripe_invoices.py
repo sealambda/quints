@@ -79,7 +79,7 @@ INVOICE: dict[str, object] = {
     "paid": None,
 }
 
-PDF = b"%PDF-1.7 stub invoice"
+PDF = b"%PDF-1.7 stub invoice\n%%EOF\n"
 FILED_NAME = "2026-05-15.acme-labs-gmbh.ABCD1234-0002.pdf"
 
 CFG = config.Config(

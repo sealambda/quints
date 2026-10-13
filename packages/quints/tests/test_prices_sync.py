@@ -232,7 +232,9 @@ def test_interrupted_sync_keeps_progress_and_resumes(tmp_path: Path) -> None:
         )
     # The three fetched days were written before the crash.
     assert _eur_dates(out) == ["2026-01-01", "2026-01-02"]  # Jan 3 is a Saturday echo
-    assert "; quints: verified EUR/CHF 2026-01-01..2026-01-03" in out.read_text()
+    # Jan 3 answered with Friday's rate: nothing newer had landed yet, so it
+    # isn't verified — a crash there means it is asked once more.
+    assert "; quints: verified EUR/CHF 2026-01-01..2026-01-02" in out.read_text()
     # Resume: only the unfetched tail is requested.
     src2 = HistoricalOnlySource()
     r = prices.sync(
@@ -242,7 +244,7 @@ def test_interrupted_sync_keeps_progress_and_resumes(tmp_path: Path) -> None:
         currencies=("EUR",),
         source=src2,
     )
-    assert src2.days_fetched == [date(2026, 1, d) for d in (4, 5, 6, 7)]
+    assert src2.days_fetched == [date(2026, 1, d) for d in (3, 4, 5, 6, 7)]
     assert r.per_currency["EUR"].added == 3  # Mon 5, Tue 6, Wed 7
 
 

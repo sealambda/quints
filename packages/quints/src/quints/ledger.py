@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date as Date
@@ -118,6 +119,30 @@ def vat_rate(on: Date, rate_class: str = "standard") -> Decimal:
 def rappen(value: Decimal) -> Decimal:
     """Round to 0.01 CHF, half-up (Swiss Rappen rounding)."""
     return value.quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+
+def atomic_write(path: Path, content: str | bytes, *, overwrite: bool = True) -> None:
+    """Write ``path`` whole or not at all: a crash leaves the old file or the new one.
+
+    The bytes go to a temporary file in the same directory (same filesystem,
+    so the final step is a rename), are fsynced, then moved into place.
+    ``overwrite=False`` never replaces an existing file: it raises
+    :class:`FileExistsError` instead, atomically (a hard link fails if the name
+    is taken), and leaves nothing behind.
+    """
+    payload = content.encode() if isinstance(content, str) else content
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        if overwrite:
+            os.replace(tmp, path)
+        else:
+            os.link(tmp, path)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
 
 
 def load_entries(ledger: Path):

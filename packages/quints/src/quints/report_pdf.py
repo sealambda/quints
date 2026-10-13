@@ -68,10 +68,12 @@ def _section(
     rows: list[RowLine], lang: str, *, sign: int = 1, form: str | None = None
 ) -> list[Line]:
     lines: list[Line] = []
-    for row in rows:
+    # A subtotal (`reserves`) lists its positions, each with its codes; the
+    # positions are plain rows, so one level of flattening reaches every code.
+    flat = [r for row in rows for r in (row, *row.parts)]
+    for row in flat:
         lines.append(_line(label(row.key, lang, form), _money(sign * row.amount, lang)))
-        if row.parts:  # a subtotal (`reserves`): list its positions, not its codes twice
-            lines += _section(row.parts, lang, sign=sign, form=form)
+        if row.parts:
             continue
         for cl in row.codes:
             lines.append(

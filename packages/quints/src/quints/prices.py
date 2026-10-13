@@ -58,11 +58,17 @@ from typing import Protocol
 
 from beancount.core import amount, data
 
+from . import ledger
+
 DEFAULT_PRICES = Path("prices.bean")
 DEFAULT_SOURCE = "beanprice_bazg"
 DEFAULT_CURRENCIES = ("USD", "EUR")
 DEFAULT_QUOTE = "CHF"
 DEFAULT_BACKFILL_START = Date(2024, 1, 1)
+# Books and vouchers are kept ten years from the end of their fiscal year
+# (Art. 958f Abs. 1 OR), so no rate older than 1 January ten years back is
+# ever needed: a scan never starts before it.
+RETENTION_YEARS = 10
 _WINDOW_DAYS = 30  # max days per get_prices_series call — bounds loss on interrupt
 
 ProgressFn = Callable[[str, int, int], None]
@@ -98,7 +104,11 @@ PriceSource = HistoricalSource | SeriesSource
 """A beanprice source instance — must support at least one fetch method."""
 
 
-_PRICE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2}) price (\w+)\s+(\S+) (\w+)\s*$")
+# beancount's currency syntax: dotted tickers (VBTLX.US), ' _ - inside.
+_CCY = r"[A-Z](?:[A-Z0-9'._-]{0,22}[A-Z0-9])?"
+_PRICE_RE = re.compile(
+    rf"^(\d{{4}})-(\d{{2}})-(\d{{2}})\s+price\s+({_CCY})\s+(\S+)\s+({_CCY})\s*(;.*)?$"
+)
 _VERIFIED_RE = re.compile(r"^; quints: verified (\w+)/(\w+) (.*)$")
 _RANGE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$")
 # bean-price's source syntax, verbatim (beanprice.price.parse_single_source).
@@ -260,6 +270,10 @@ class _PriceFile:
     # (ccy, quote) -> merged checked ranges
     entries: dict[tuple[str, Date, str], str] = field(default_factory=dict)
     # (ccy, date, quote) -> price string, kept verbatim
+    comments: dict[tuple[str, Date, str], str] = field(default_factory=dict)
+    # (ccy, date, quote) -> its trailing `; comment`, kept verbatim
+    pending: dict[tuple[str, str], list[Range]] = field(default_factory=dict)
+    # checked this sync, but after the newest rate so far — verified once one lands
 
     @classmethod
     def read(cls, out: Path, currencies: Sequence[str]) -> _PriceFile:
@@ -267,12 +281,15 @@ class _PriceFile:
         if not out.exists():
             return pf
         seen_price = False
-        for line in out.read_text().splitlines():
+        for lineno, line in enumerate(out.read_text().splitlines(), start=1):
             m = _PRICE_RE.match(line)
             if m:
                 seen_price = True
-                y, mo, d, ccy, price, quote = m.groups()
-                pf.entries[(ccy, Date(int(y), int(mo), int(d)), quote)] = price
+                y, mo, d, ccy, price, quote, comment = m.groups()
+                key = (ccy, Date(int(y), int(mo), int(d)), quote)
+                pf.entries[key] = price
+                if comment:
+                    pf.comments[key] = comment
                 continue
             v = _VERIFIED_RE.match(line)
             if v:
@@ -286,6 +303,13 @@ class _PriceFile:
                 continue
             if not seen_price:
                 pf.header.append(line)
+            elif line.strip():
+                # The rewrite regenerates everything after the header; a line
+                # it can't place would be lost. Refuse before fetching anything.
+                raise ValueError(
+                    f"{out}:{lineno}: not a price line — the sync rewrites this file and "
+                    f"would drop it; move it above the first price line: {line.strip()!r}"
+                )
         return pf
 
     def dates(self, ccy: str, quote: str) -> set[Date]:
@@ -312,8 +336,33 @@ class _PriceFile:
             if not rows:
                 continue
             lines.append("")
-            lines.extend(f"{d:%Y-%m-%d} price {ccy:<3} {p} {q}" for d, q, p in rows)
-        self.out.write_text("\n".join(lines) + "\n")
+            for d, q, p in rows:
+                comment = self.comments.get((ccy, d, q))
+                line = f"{d:%Y-%m-%d} price {ccy:<3} {p} {q}"
+                lines.append(f"{line}  {comment}" if comment else line)
+        ledger.atomic_write(self.out, "\n".join(lines) + "\n")
+
+    def newest(self, ccy: str, quote: str) -> Date | None:
+        return max(self.dates(ccy, quote), default=None)
+
+    def mark_checked(self, ccy: str, quote: str, spans: Iterable[Range]) -> None:
+        """Verify ``spans`` only up to the newest rate the file holds.
+
+        A source answering with an older rate (today's not published yet, a
+        window it doesn't cover) proves nothing about the days after it: they
+        stay unverified and are fetched again next sync.
+        """
+        key = (ccy, quote)
+        checked = _merge([*self.pending.get(key, []), *spans])
+        newest = self.newest(ccy, quote)
+        if newest is None:
+            self.pending[key] = checked
+            return
+        self.mark_verified(
+            ccy, quote, ((lo, min(hi, newest)) for lo, hi in checked if lo <= newest)
+        )
+        later = newest + timedelta(days=1)
+        self.pending[key] = [(max(lo, later), hi) for lo, hi in checked if hi > newest]
 
 
 def _fetch_plan(
@@ -403,10 +452,18 @@ def sync(
         stat = CurrencySync(last=max(present) if present else None)
         result.per_currency[label] = stat
         verified = pf.verified.get((job.commodity, job.quote), [])
+        floor = Date(today.year - RETENTION_YEARS, 1, 1)
         if repair_from is not None:
+            if repair_from < floor:
+                raise ValueError(
+                    f"--from {repair_from} is before {floor}: books are kept ten years "
+                    "(Art. 958f OR), so no rate older is needed"
+                )
             start = repair_from
         else:
-            start = min([backfill_start, *present, *(lo for lo, _ in verified[:1])])
+            # A price line dated before the floor (a mistyped year) must not
+            # turn into decades of requests.
+            start = max(floor, min([backfill_start, *present, *(lo for lo, _ in verified[:1])]))
         plan = _fetch_plan(present, verified, start, today, recheck=repair_from is not None)
         if plan:
             _sync_job(pf, job, label, present, plan, stat, progress)
@@ -459,9 +516,9 @@ def _sync_job(
                     tick((hi - lo).days + 1)
                 used = f
                 break
-        if points is not None and used is not None:  # whole window answered
+        if points is not None and used is not None:  # the window answered
             _absorb(pf, points, job, used.invert, stat)
-            pf.mark_verified(ccy, quote, [(lo, hi)])
+            pf.mark_checked(ccy, quote, [(lo, hi)])
             pf.write()
             continue
         if all(f.hist is None for f in fetchers):  # series-only chain that failed
@@ -477,7 +534,7 @@ def _sync_job(
                 sp = f.hist(f.symbol, _utc(day) + timedelta(hours=12))
                 if sp is not None:
                     _absorb(pf, [sp], job, f.invert, stat)
-                    pf.mark_verified(ccy, quote, [(day, day)])
+                    pf.mark_checked(ccy, quote, [(day, day)])
                     break
             if sp is None:
                 stat.unavailable += 1

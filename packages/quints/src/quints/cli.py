@@ -445,7 +445,9 @@ def init(
         typer.secho(f"ERROR: {e}", fg="red", err=True)
         raise typer.Exit(1) from None
     result = init_mod.write(directory, files, force=force)
-    git_result = init_mod.init_git(directory) if use_git and result.written else None
+    git_result = (
+        init_mod.init_git(directory, result.written) if use_git and result.written else None
+    )
 
     if as_json:
         import dataclasses
@@ -1175,6 +1177,7 @@ def _report_import(
                 "vat_matches": [{**txn(t), "period": n} for n, t in result.vat_matches],
                 "fee_tax_periods": result.fee_tax_periods,
                 "violations": [dataclasses.asdict(v) for v in result.violations],
+                "already_staged": result.already_staged,
                 "invoices": [dataclasses.asdict(d) for d in invoices or []],
                 "balances": [
                     {
@@ -1197,6 +1200,12 @@ def _report_import(
         _problems(result.violations)
     if result.skipped_ref:
         typer.echo(f"{result.skipped_ref} entr(ies) already imported (reference match) — skipped.")
+    if result.already_staged:
+        typer.secho(
+            f"WARNING: {len(result.already_staged)} draft(s) already in staging from an "
+            "earlier import — move each to books/ once (no staging file was overwritten).",
+            fg="yellow",
+        )
     if result.legacy_matches:
         typer.echo(
             f"{len(result.legacy_matches)} entr(ies) matched already-booked postings "

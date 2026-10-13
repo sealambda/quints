@@ -85,7 +85,9 @@ toolchain (`bean-check main.bean`, `fava main.bean`) works, not only
 `quints`.
 
 It is also a git repository. `quints init` commits the untouched scaffold,
-so every later change, yours or an agent's, is a reviewable diff. `--no-git`
+so every later change, yours or an agent's, is a reviewable diff. Only the
+files it wrote are committed: anything already in the directory stays
+untracked. `--no-git`
 opts out. Scaffolding inside an existing repository never creates a nested
 one.
 
