@@ -15,11 +15,15 @@ One beancount transaction is drafted per balance transaction:
 
 - the ``txn_...`` id becomes metadata (``stripe_id:`` by default) and is the
   idempotency key — ``extract()`` skips ids already present anywhere in the
-  existing ledger.
+  existing ledger. A transaction without ``id``, ``created``, ``net`` or
+  ``fee`` stops the import, as does money in a currency missing from
+  ``account_map``.
 - Stripe amounts are **minor units**; conversion honours zero- and
   three-decimal currencies (:func:`major_units`).
 - the cash leg books the **net**; a non-zero per-transaction ``fee`` becomes
   an explicit posting to ``fees_account`` so the counter leg is the gross.
+  Without ``fees_account`` the fee is not posted and the counter leg is the
+  net.
   ``fee_details`` of type ``tax`` (VAT Stripe charges on its own fees) are
   split out to ``tax_account`` when configured.
 - ``stripe_fee`` transactions (separately billed fees, debited from the
@@ -47,7 +51,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import TypedDict, TypeGuard, cast
@@ -168,6 +172,26 @@ def major_units(amount: int, currency: str) -> Decimal:
     return Decimal(amount).scaleb(-exponent)
 
 
+def _required(obj: Mapping[str, object], key: str, kind: type, where: str) -> object:
+    value = obj.get(key)
+    if not isinstance(value, kind) or isinstance(value, bool):
+        raise ValueError(
+            f"{where}: no {kind.__name__} {key!r} — not a Stripe balance-transaction export"
+        )
+    return value
+
+
+def _required_int(obj: Mapping[str, object], key: str, where: str) -> int:
+    return cast("int", _required(obj, key, int, where))
+
+
+def _unmapped(where: str, currency: str) -> ValueError:
+    return ValueError(
+        f"{where}: {currency or 'no currency'} is not in account_map — "
+        f'map it (e.g. {{"{currency}": "Assets:Stripe:{currency}"}}) so the money is booked'
+    )
+
+
 def _payee(txn: _Txn) -> str:
     if txn.get("type") in FEE_TYPES:
         return "Stripe"
@@ -266,48 +290,27 @@ class Importer(beangulp.Importer):
 
         entries: data.Entries = []
         for index, txn in enumerate(document.get("data") or []):
+            where = f"{filepath}: balance transaction {txn.get('id') or f'#{index}'}"
             currency = (txn.get("currency") or "").upper()
-            cash_account = self._accounts.get(currency)
-            if cash_account is None:
-                continue
-            net = major_units(txn.get("net") or 0, currency)
-            fee = major_units(txn.get("fee") or 0, currency)
+            net = major_units(_required_int(txn, "net", where), currency)
+            fee = major_units(_required_int(txn, "fee", where), currency)
             if not net and not fee:
                 continue
-            ref = txn.get("id") or ""
-            if ref and ref in seen:
+            cash_account = self._accounts.get(currency)
+            if cash_account is None:
+                raise _unmapped(where, currency)
+            ref = cast("str", _required(txn, "id", str, where))
+            created = _required_int(txn, "created", where)
+            if ref in seen:
                 continue
 
             meta = data.new_metadata(filepath, index)
-            if ref:
-                meta[self._meta_key] = ref
+            meta[self._meta_key] = ref
 
             postings = [data.Posting(cash_account, Amount(net, currency), None, None, None, None)]
-            if fee and self._fees_account:
-                # ``fee_details`` of type "tax" (VAT Stripe charges on its own
-                # fees) go to ``tax_account`` when configured; the rest is fees.
-                tax = major_units(
-                    sum(
-                        d.get("amount") or 0
-                        for d in txn.get("fee_details") or []
-                        if d.get("type") == "tax"
-                    ),
-                    currency,
-                )
-                if not self._tax_account:
-                    tax = Decimal(0)
-                if fee - tax:
-                    postings.append(
-                        data.Posting(
-                            self._fees_account, Amount(fee - tax, currency), None, None, None, None
-                        )
-                    )
-                if tax and self._tax_account:
-                    postings.append(
-                        data.Posting(
-                            self._tax_account, Amount(tax, currency), None, None, None, None
-                        )
-                    )
+            postings.extend(self._fee_postings(txn, fee, currency))
+            # Only a posted fee comes off the counter leg, or it won't balance.
+            posted_fee = fee if self._fees_account else Decimal(0)
 
             payee = _payee(txn)
             narration = (txn.get("description") or "").strip()
@@ -317,7 +320,12 @@ class Importer(beangulp.Importer):
                 # split-out tax; the VAT conversion still needs review.
                 postings.append(
                     data.Posting(
-                        self._fees_account, Amount(-net - fee, currency), None, None, None, None
+                        self._fees_account,
+                        Amount(-net - posted_fee, currency),
+                        None,
+                        None,
+                        None,
+                        None,
                     )
                 )
             else:
@@ -326,13 +334,18 @@ class Importer(beangulp.Importer):
                     if pattern.search(haystack):
                         postings.append(
                             data.Posting(
-                                counter, Amount(-net - fee, currency), None, None, None, None
+                                counter,
+                                Amount(-net - posted_fee, currency),
+                                None,
+                                None,
+                                None,
+                                None,
                             )
                         )
                         flag = rule_flag
                         break
 
-            date = dt.datetime.fromtimestamp(txn.get("created") or 0, tz=dt.timezone.utc).date()
+            date = dt.datetime.fromtimestamp(created, tz=dt.timezone.utc).date()
             entries.append(
                 data.Transaction(
                     meta,
@@ -350,6 +363,37 @@ class Importer(beangulp.Importer):
         entries.extend(self._balance_assertions(document, filepath, len(entries)))
         return entries
 
+    def _fee_postings(self, txn: _Txn, fee: Decimal, currency: str) -> list[data.Posting]:
+        """The fee legs, when a fee is due and ``fees_account`` is set.
+
+        ``fee_details`` of type "tax" (VAT Stripe charges on its own fees) go
+        to ``tax_account`` when configured; the rest is fees.
+        """
+        if not fee or not self._fees_account:
+            return []
+        tax = Decimal(0)
+        if self._tax_account:
+            tax = major_units(
+                sum(
+                    d.get("amount") or 0
+                    for d in txn.get("fee_details") or []
+                    if d.get("type") == "tax"
+                ),
+                currency,
+            )
+        postings: list[data.Posting] = []
+        if fee - tax:
+            postings.append(
+                data.Posting(
+                    self._fees_account, Amount(fee - tax, currency), None, None, None, None
+                )
+            )
+        if tax and self._tax_account:
+            postings.append(
+                data.Posting(self._tax_account, Amount(tax, currency), None, None, None, None)
+            )
+        return postings
+
     def _balance_assertions(self, document: _Document, filepath: str, offset: int) -> data.Entries:
         snapshot: _BalanceSnapshot = document.get("balance") or {}
         as_of = snapshot.get("as_of")
@@ -360,10 +404,12 @@ class Importer(beangulp.Importer):
         for parts in (snapshot.get("available"), snapshot.get("pending")):
             for part in parts or []:
                 currency = (part.get("currency") or "").upper()
+                where = f"{filepath}: balance {currency}"
+                amount = major_units(_required_int(part, "amount", where), currency)
                 if currency in self._accounts:
-                    totals[currency] = totals.get(currency, Decimal(0)) + major_units(
-                        part.get("amount") or 0, currency
-                    )
+                    totals[currency] = totals.get(currency, Decimal(0)) + amount
+                elif amount:
+                    raise _unmapped(where, currency)
         return [
             data.Balance(
                 data.new_metadata(filepath, offset + i),

@@ -4,7 +4,7 @@
     "as_of": "2026-07-10",
     "available": [
       {"amount": 28658, "currency": "eur"},
-      {"amount": 123, "currency": "usd"}
+      {"amount": 0, "currency": "usd"}
     ],
     "pending": [{"amount": 0, "currency": "eur"}]
   },
@@ -95,20 +95,6 @@
       "description": "Zero adjustment",
       "reporting_category": "adjustment",
       "type": "adjustment",
-      "status": "available",
-      "source": null
-    },
-    {
-      "id": "txn_usd_unmapped",
-      "object": "balance_transaction",
-      "amount": 500,
-      "fee": 0,
-      "net": 500,
-      "currency": "usd",
-      "created": 1782777600,
-      "description": "USD charge on an unmapped balance",
-      "reporting_category": "charge",
-      "type": "charge",
       "status": "available",
       "source": null
     }

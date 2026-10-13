@@ -23,12 +23,10 @@ class StubResponse(requests.Response):
         super().__init__()
         self.status_code = status_code
         self._payload = payload
-        self._body = body
+        # Pre-consumed body: ``.content`` and ``iter_content`` both replay it.
+        self._content = body
+        self._content_consumed = True
         self.headers.update(headers or {})
-
-    @property
-    def content(self) -> bytes:
-        return self._body
 
     def json(self, **kwargs: object) -> object:
         return self._payload
@@ -174,3 +172,51 @@ def test_document_reports_a_failed_download() -> None:
 
     with pytest.raises(StripeError, match="404"):
         client.document("https://pay.stripe.test/invoice/gone/pdf")
+
+
+def _page(ids: list[str], *, has_more: bool) -> StubResponse:
+    return StubResponse(
+        200,
+        {"object": "list", "data": [{"id": i, "created": 1} for i in ids], "has_more": has_more},
+    )
+
+
+def test_pagination_refuses_an_empty_page_that_claims_more() -> None:
+    """The old loop re-sent the previous cursor forever on such a page."""
+    session = StubSession([_page(["txn_2"], has_more=True), _page([], has_more=True)])
+    client = StripeClient("rk_test_x", session=session)
+    with pytest.raises(StripeError, match="empty page with has_more"):
+        client.balance_transactions()
+    assert len(session.calls) == 2
+
+
+def test_pagination_refuses_a_cursor_that_does_not_advance() -> None:
+    session = StubSession([_page(["in_2"], has_more=True), _page(["in_2"], has_more=True)])
+    client = StripeClient("rk_test_x", session=session)
+    with pytest.raises(StripeError, match="cursor did not advance"):
+        client.invoices()
+
+
+def test_pagination_stops_at_the_item_cap() -> None:
+    session = StubSession([_page([f"txn_{n}"], has_more=True) for n in range(3)])
+    client = StripeClient("rk_test_x", session=session)
+    with pytest.raises(StripeError, match=r"more than 2 .*narrow the window"):
+        client.balance_transactions(page_size=1, max_items=2)
+    assert len(session.calls) == 2
+
+
+def test_pagination_refuses_non_objects_in_data() -> None:
+    bad = StubResponse(200, {"object": "list", "data": ["txn_1"], "has_more": False})
+    client = StripeClient("rk_test_x", session=StubSession([bad]))
+    with pytest.raises(StripeError, match="not a list of objects"):
+        client.balance_transactions()
+
+
+def test_document_refuses_an_oversized_download() -> None:
+    declared = StubResponse(200, body=b"%PDF", headers={"Content-Length": "11"})
+    chunked = StubResponse(200, body=b"%PDF-1.7 too big")
+    client = StripeClient("rk_test_x", session=StubSession([declared, chunked]))
+    with pytest.raises(StripeError, match="larger than 10 bytes"):
+        client.document("https://pay.stripe.test/invoice/x/pdf", max_bytes=10)
+    with pytest.raises(StripeError, match="larger than 10 bytes"):
+        client.document("https://pay.stripe.test/invoice/x/pdf", max_bytes=10)

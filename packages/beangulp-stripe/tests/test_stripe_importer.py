@@ -1,9 +1,11 @@
 """Tests for the Stripe balance-transaction importer."""
 
+import json
 from datetime import date as Date
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from beancount.core import data
 
 from beangulp_stripe import Importer, major_units
@@ -57,7 +59,7 @@ def test_extract_charge_fee_payment_payout_and_balance() -> None:
     entries = _importer().extract(FIXTURE, existing=[])
     txns = [e for e in entries if isinstance(e, data.Transaction)]
     balances = [e for e in entries if isinstance(e, data.Balance)]
-    assert len(txns) == 4  # zero adjustment and unmapped USD charge skipped
+    assert len(txns) == 4  # zero adjustment skipped
     assert len(balances) == 1
 
     charge, monthly_fee, payment, payout = txns
@@ -100,7 +102,7 @@ def test_extract_charge_fee_payment_payout_and_balance() -> None:
         ("Assets:Transfer:Stripe", Decimal("200.00")),
     ]
 
-    # available + pending for mapped currencies only, dated as_of + 1.
+    # available + pending per mapped currency (USD is 0, so unmapped is fine).
     assert balances[0].date == Date(2026, 7, 11)
     assert balances[0].account == "Assets:Stripe:EUR"
     assert balances[0].amount.number == Decimal("286.58")
@@ -146,3 +148,53 @@ def test_without_tax_account_tax_folds_into_fees_but_still_balances() -> None:
         ("Expenses:Fees", Decimal("1.04")),
     ]
     assert sum(_units(p) for p in fee.postings) == 0
+
+
+def _document(tmp_path: Path, txns: list[dict[str, object]], **extra: object) -> str:
+    path = tmp_path / "stripe.json"
+    path.write_text(json.dumps({"data": txns, **extra}))
+    return str(path)
+
+
+CHARGE: dict[str, object] = {
+    "id": "txn_1",
+    "object": "balance_transaction",
+    "type": "charge",
+    "currency": "eur",
+    "created": 1778803200,
+    "amount": 10000,
+    "fee": 320,
+    "net": 9680,
+    "description": "Invoice 1",
+}
+
+
+def test_money_in_an_unmapped_currency_raises(tmp_path: Path) -> None:
+    usd = dict(CHARGE, id="txn_usd", currency="usd")
+    with pytest.raises(ValueError, match=r"txn_usd.*USD.*account_map"):
+        _importer().extract(_document(tmp_path, [CHARGE, usd]), existing=[])
+
+
+def test_an_unmapped_balance_raises_unless_zero(tmp_path: Path) -> None:
+    held = {"as_of": "2026-07-10", "available": [{"amount": 123, "currency": "usd"}]}
+    with pytest.raises(ValueError, match=r"balance.*USD.*account_map"):
+        _importer().extract(_document(tmp_path, [CHARGE], balance=held), existing=[])
+
+
+@pytest.mark.parametrize("field", ["id", "created", "net", "fee"])
+def test_a_missing_field_raises(tmp_path: Path, field: str) -> None:
+    txn = {k: v for k, v in CHARGE.items() if k != field}
+    with pytest.raises(ValueError, match=rf"txn_1|#0.*no \w+ '{field}'"):
+        _importer().extract(_document(tmp_path, [txn]), existing=[])
+
+
+def test_without_fees_account_the_counter_leg_is_the_net(tmp_path: Path) -> None:
+    """The fee is not posted, so it must not be subtracted either."""
+    importer = Importer(ACCOUNTS, payee_rules=((r"invoice", "Income:SaaS", "!"),))
+    entries = importer.extract(_document(tmp_path, [CHARGE]), existing=[])
+    txn = entries[0]
+    assert isinstance(txn, data.Transaction)
+    assert [(p.account, _units(p)) for p in txn.postings] == [
+        ("Assets:Stripe:EUR", Decimal("96.80")),
+        ("Income:SaaS", Decimal("-96.80")),
+    ]
