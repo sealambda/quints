@@ -33,6 +33,7 @@ API notes (discovered empirically):
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -70,18 +71,30 @@ def _localname(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
-_session: requests.Session | None = None
+_local = threading.local()
+
+
+def _thread_session() -> requests.Session:
+    """This thread's Session, created on first use.
+
+    A series fetch is one request per day, and reusing the TLS connection cuts
+    most of the per-request overhead. Per thread, not per process: bean-price
+    runs ``fetch_price`` on a ``ThreadPoolExecutor`` (``-w N``) and
+    ``requests.Session`` is not thread-safe. Not per ``Source`` either:
+    bean-price builds a new ``Source()`` for every job, so an instance
+    Session would never be reused, and ``_http_get`` must keep its
+    ``(url, params)`` shape as the test seam.
+    """
+    session = getattr(_local, "session", None)
+    if not isinstance(session, requests.Session):
+        session = requests.Session()
+        _local.session = session
+    return session
 
 
 def _http_get(url: str, params: dict[str, str]) -> str:
-    """Single network seam — monkeypatched in tests.
-
-    One shared Session: a series fetch is one request per day, and reusing the
-    TLS connection cuts most of the per-request overhead."""
-    global _session
-    if _session is None:
-        _session = requests.Session()
-    resp = _session.get(url, params=params, timeout=_TIMEOUT)
+    """Single network seam — monkeypatched in tests."""
+    resp = _thread_session().get(url, params=params, timeout=_TIMEOUT)
     resp.raise_for_status()
     return resp.text
 

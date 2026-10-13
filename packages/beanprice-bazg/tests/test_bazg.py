@@ -1,11 +1,14 @@
 """Unit tests for beanprice_bazg — offline by default (HTTP is monkeypatched)."""
 
+import io
 import os
+import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
+import requests
 
 from beanprice_bazg import bazg
 
@@ -120,3 +123,34 @@ def test_live_smoke():
     sp = bazg.Source().get_historical_price("USD", datetime(2026, 6, 3))
     assert Decimal("0.5") < sp.price < Decimal("2")
     assert sp.quote_currency == "CHF"
+
+
+def test_each_thread_gets_its_own_session(monkeypatch: pytest.MonkeyPatch):
+    """bean-price fetches from a ThreadPoolExecutor (``-w N``); a shared
+    ``requests.Session`` is not thread-safe."""
+    used: list[tuple[str, requests.Session]] = []
+
+    class Recorder(requests.Session):
+        def get(self, url: str | bytes, *args: object, **kwargs: object) -> requests.Response:
+            used.append((threading.current_thread().name, self))
+            response = requests.Response()
+            response.status_code = 200
+            response.raw = io.BytesIO(DAILY_XML.encode())
+            return response
+
+    monkeypatch.setattr(bazg.requests, "Session", Recorder)
+
+    def fetch_twice() -> None:
+        bazg.Source().get_latest_price("USD")
+        bazg.Source().get_latest_price("EUR")
+
+    # Fresh threads only: their session cache starts empty, so nothing real
+    # (and no network) can be picked up from an earlier test.
+    workers = [threading.Thread(target=fetch_twice, name=name) for name in ("a", "b")]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+    by_thread = {name: [s for n, s in used if n == name] for name in ("a", "b")}
+    assert all(len(s) == 2 and s[0] is s[1] for s in by_thread.values())  # reused per thread
+    assert by_thread["a"][0] is not by_thread["b"][0]  # never shared across threads
