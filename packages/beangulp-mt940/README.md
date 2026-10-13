@@ -9,7 +9,15 @@ bank statements (tested against UBS Switzerland exports), built on the
 - Drafts one beancount transaction per `:61:` statement line, with the bank's
   unique entry reference (the part after `//`) as `mt940_ref:` metadata.
   `extract()` skips references already present anywhere in the existing
-  ledger — **re-running an import is always safe**.
+  ledger — **re-running an import is safe**. A line without a reference
+  (empty, or SWIFT's `NONREF` filler) gets no key and is never skipped; if it
+  is imported twice, the closing `balance` assertion fails.
+- Refuses a file with statements for more than one account (`:25:`) — export
+  one file per account. Several statements for the same account are fine.
+- Books reversals with the right sign: `RC` (reversal of credit) is a debit,
+  `RD` (reversal of debit) a credit.
+- Takes the currency from the statement's balances; a statement without any
+  needs `currency=` on the importer, otherwise `extract()` raises.
 - Emits a `balance` assertion from the `:62F:` closing balance, dated the day
   after (beancount balances are beginning-of-day).
 - Skips zero-amount noise entries (e.g. UBS "Balance closing of service

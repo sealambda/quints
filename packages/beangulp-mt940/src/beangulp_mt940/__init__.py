@@ -5,7 +5,13 @@ Parses MT940 (via the ``mt-940`` library) into beancount transaction drafts:
 - Every draft carries the bank's unique entry reference (``:61:`` subfield
   after ``//``) as metadata (``mt940_ref:`` by default). ``extract()`` skips
   references already present anywhere in the existing ledger, so re-running an
-  import is always safe.
+  import is safe. A row with no reference (empty, or SWIFT's ``NONREF``
+  filler) gets no key and is never deduplicated: re-importing it drafts it
+  again, which the closing ``balance`` assertion then flags.
+- A file holding statements for more than one account (``:25:``) is refused:
+  split it per account.
+- Reversals are signed as what they are: ``RC`` (reversal of credit) is a
+  debit, ``RD`` (reversal of debit) a credit.
 - The statement's closing balance (``:62F:``) becomes a ``balance`` assertion
   dated the day after (beancount balance semantics are beginning-of-day).
 - Zero-amount entries (e.g. UBS "Balance closing of service prices") are noise
@@ -33,6 +39,23 @@ from beancount.core.amount import Amount
 __all__ = ["Importer"]
 
 _TAGS = re.compile(r":(20|25|28C?|60F|61|62F):")
+_ACCOUNT = re.compile(r"^:25:([^\r\n]+)", re.MULTILINE)
+_NO_REFERENCE = "NONREF"  # SWIFT's filler for "no reference" — shared, not an id
+
+
+def _accounts(text: str) -> set[str]:
+    """Distinct account identifications (``:25:``), whitespace-insensitive."""
+    return {re.sub(r"\s", "", m).upper() for m in _ACCOUNT.findall(text)}
+
+
+def _reference(d: dict[str, object]) -> str:
+    """The row's own reference, or "" when it has none worth deduplicating on."""
+    for key in ("bank_reference", "customer_reference"):
+        value = d.get(key)
+        ref = value.strip() if isinstance(value, str) else ""
+        if ref and ref.upper() != _NO_REFERENCE:
+            return ref
+    return ""
 
 
 def _payee(details: str) -> str:
@@ -78,15 +101,16 @@ class Importer(beangulp.Importer):
         if len(_TAGS.findall(head)) < 3 or ":61:" not in head:
             return False
         if self._iban:
-            m = re.search(r":25:([^\n]+)", head)
-            return bool(m) and self._iban in re.sub(r"\s", "", m.group(1)).upper()
+            # Any statement in the file: a multi-account file that holds ours
+            # is claimed here and then refused loudly by ``_parse``.
+            return any(self._iban in account for account in _accounts(head))
         return True
 
     def account(self, filepath: str) -> str:
         return self._account
 
     def date(self, filepath: str):
-        statements = mt940.parse(filepath)
+        statements = _parse(filepath)
         closing = statements.data.get("final_closing_balance")
         return closing.date if closing else None
 
@@ -94,16 +118,20 @@ class Importer(beangulp.Importer):
         return "statement.mt940"
 
     def extract(self, filepath: str, existing: data.Entries) -> data.Entries:
-        statements = mt940.parse(filepath)
+        statements = _parse(filepath)
         seen = _existing_references(existing, self._meta_key)
 
         entries: data.Entries = []
         for index, txn in enumerate(statements):
             d = txn.data
             number = Decimal(str(d["amount"].amount))
+            if d.get("status") == "RC":
+                # The library negates only "D"; a reversal of credit is a debit.
+                # "RD" (reversal of debit) is a credit and already positive.
+                number = -number
             if not number:
                 continue  # zero-amount service/fee closings are noise
-            ref = d.get("bank_reference") or d.get("customer_reference") or ""
+            ref = _reference(d)
             if ref and ref in seen:
                 continue
 
@@ -113,7 +141,12 @@ class Importer(beangulp.Importer):
             if ref:
                 meta[self._meta_key] = ref
 
-            currency = d.get("currency") or self._currency or "CHF"
+            currency = d.get("currency") or self._currency
+            if not currency:
+                raise ValueError(
+                    f"{filepath}: statement has no balance tag to take the currency "
+                    "from; pass currency= to the importer"
+                )
             postings = [
                 data.Posting(self._account, Amount(number, currency), None, None, None, None)
             ]
@@ -154,6 +187,23 @@ class Importer(beangulp.Importer):
                 )
             )
         return entries
+
+
+def _parse(filepath: str) -> mt940.models.Transactions:
+    """Parse the file, refusing one that mixes accounts.
+
+    ``mt940.parse`` merges every statement in a file into one: rows of a
+    second account would be booked onto ours and only the last closing
+    balance survives.
+    """
+    with open(filepath, encoding="utf-8", errors="replace") as f:
+        accounts = _accounts(f.read())
+    if len(accounts) > 1:
+        raise ValueError(
+            f"{filepath}: statements for {len(accounts)} accounts "
+            f"({', '.join(sorted(accounts))}); export one file per account"
+        )
+    return mt940.parse(filepath)
 
 
 def _existing_references(existing: data.Entries, meta_key: str) -> set[str]:
