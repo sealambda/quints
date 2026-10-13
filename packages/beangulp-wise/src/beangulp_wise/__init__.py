@@ -53,12 +53,12 @@ __all__ = [
 
 
 class _Money(TypedDict):
-    value: float | str
+    value: Decimal | int | str  # json.load(parse_float=Decimal)
     currency: str
 
 
 class _Fees(TypedDict, total=False):
-    value: float | str | None
+    value: Decimal | int | str | None
     currency: str | None
 
 
@@ -121,6 +121,24 @@ def _decimal(value: object) -> Decimal:
     return Decimal(str(value))
 
 
+def _fee(txn: _Txn, currency: str, where: str) -> Amount:
+    """``totalFees``, in its own currency.
+
+    A conversion leg may carry the fee in the other leg's currency —
+    ``merge_conversions`` nets it there. Any other row's fee comes off a
+    counter leg in the statement's currency, so it must be in that currency.
+    """
+    fees = txn.get("totalFees") or {}
+    fee = _decimal(fees.get("value") or 0)
+    fee_ccy = fees.get("currency") or currency
+    is_conversion = (txn.get("details") or {}).get("type") == "CONVERSION"
+    if fee and fee_ccy != currency and not is_conversion:
+        raise ValueError(
+            f"{where}: fee {fee} {fee_ccy} in a {currency} statement — book it by hand"
+        )
+    return Amount(fee, fee_ccy)
+
+
 def _payee(details: _Details) -> str:
     kind = details.get("type", "")
     if kind == "CARD":
@@ -170,7 +188,8 @@ class Importer(beangulp.Importer):
     def _load(self, filepath: str) -> _Statement | None:
         try:
             with open(filepath, encoding="utf-8") as f:
-                raw: object = json.load(f)
+                # Decimal, not float: money keeps every digit it was sent with.
+                raw: object = json.load(f, parse_float=Decimal)
         except (OSError, ValueError):
             return None
         if not _is_statement(raw):
@@ -229,12 +248,12 @@ class Importer(beangulp.Importer):
             postings = [
                 data.Posting(cash_account, Amount(number, currency), None, None, None, None)
             ]
-            fee = _decimal((txn.get("totalFees") or {}).get("value") or 0)
-            if fee and self._fees_account:
-                fee_ccy = (txn.get("totalFees") or {}).get("currency") or currency
-                postings.append(
-                    data.Posting(self._fees_account, Amount(fee, fee_ccy), None, None, None, None)
-                )
+            fee = _fee(txn, currency, f"{filepath}: {ref or f'transaction #{index}'}")
+            # Only a posted fee comes off the counter leg, or it won't balance.
+            posted_fee = Decimal(0)
+            if fee.number and self._fees_account:
+                postings.append(data.Posting(self._fees_account, fee, None, None, None, None))
+                posted_fee = fee.number
 
             payee = _payee(details)
             narration = (details.get("description") or "").strip()
@@ -245,7 +264,12 @@ class Importer(beangulp.Importer):
                     if pattern.search(haystack):
                         postings.append(
                             data.Posting(
-                                counter, Amount(-number - fee, currency), None, None, None, None
+                                counter,
+                                Amount(-number - posted_fee, currency),
+                                None,
+                                None,
+                                None,
+                                None,
                             )
                         )
                         flag = rule_flag

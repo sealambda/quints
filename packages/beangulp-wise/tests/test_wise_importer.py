@@ -1,9 +1,11 @@
 """Tests for the Wise balance-statement importer."""
 
+import json
 from datetime import date as Date
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from beancount.core import data
 
 from beangulp_wise import Importer, merge_conversions
@@ -150,3 +152,72 @@ def test_extract_skips_references_already_in_ledger():
     refs = [e.meta.get("wise_id") for e in entries if isinstance(e, data.Transaction)]
     assert "CARD-1000001" not in refs
     assert len(refs) == 2
+
+
+def _statement(tmp_path: Path, amount: str, fees: str, *, closing: str = "0") -> str:
+    """A one-transaction EUR statement; numbers are spliced in as JSON literals."""
+    path = tmp_path / "statement.json"
+    path.write_text(
+        '{"transactions": [{"type": "DEBIT", "date": "2026-07-03T09:00:00.000Z",'
+        f' "amount": {{"value": {amount}, "currency": "EUR"}},'
+        f' "totalFees": {fees},'
+        ' "details": {"type": "CARD", "merchant": {"name": "Cloudflare"}},'
+        ' "referenceNumber": "CARD-1"}],'
+        f' "endOfStatementBalance": {{"value": {closing}, "currency": "EUR"}},'
+        ' "query": {"currency": "EUR", "intervalEnd": "2026-07-10T23:59:59.999Z"}}'
+    )
+    return str(path)
+
+
+def test_amounts_are_read_as_decimals_not_floats(tmp_path: Path):
+    """A float keeps ~17 significant digits; money must keep every one."""
+    path = _statement(
+        tmp_path,
+        "-1234567890123456.78",
+        '{"value": 0, "currency": "EUR"}',
+        closing="9876543210987654.32",
+    )
+    entries = _importer().extract(path, existing=[])
+    txn, balance = entries
+    assert isinstance(txn, data.Transaction) and isinstance(balance, data.Balance)
+    assert _number(txn.postings[0]) == Decimal("-1234567890123456.78")
+    assert balance.amount.number == Decimal("9876543210987654.32")
+
+
+def test_without_fees_account_the_fee_stays_in_the_counter_leg(tmp_path: Path):
+    path = _statement(tmp_path, "-101.00", '{"value": 1.00, "currency": "EUR"}')
+    entries = Importer(ACCOUNTS, payee_rules=RULES).extract(path, existing=[])
+    txn = entries[0]
+    assert isinstance(txn, data.Transaction)
+    assert [(p.account, _number(p)) for p in txn.postings] == [
+        ("Assets:Wise:EUR", Decimal("-101.00")),
+        ("Expenses:IT:Hosting", Decimal("101.00")),
+    ]
+
+
+def test_a_fee_in_another_currency_raises(tmp_path: Path):
+    path = _statement(tmp_path, "-101.00", '{"value": 1.00, "currency": "USD"}')
+    with pytest.raises(ValueError, match=r"CARD-1.*USD.*EUR"):
+        _importer().extract(path, existing=[])
+
+
+def test_a_conversion_leg_may_carry_the_fee_in_the_other_currency(tmp_path: Path):
+    """No counter leg is drafted for a conversion, so the fee keeps its own
+    currency and ``merge_conversions`` nets it against the outgoing leg."""
+    eur = json.loads(Path(EUR).read_text())
+    eur["transactions"] = [t for t in eur["transactions"] if t["details"]["type"] == "CONVERSION"]
+    eur["transactions"][0]["totalFees"] = {"value": 0, "currency": "EUR"}
+    usd = json.loads(Path(USD).read_text())
+    usd["transactions"][0]["totalFees"] = {"value": 0.47, "currency": "EUR"}
+    (tmp_path / "eur.json").write_text(json.dumps(eur))
+    (tmp_path / "usd.json").write_text(json.dumps(usd))
+
+    importer = _importer()
+    entries = importer.extract(str(tmp_path / "eur.json"), existing=[]) + importer.extract(
+        str(tmp_path / "usd.json"), existing=[]
+    )
+    txn = next(e for e in merge_conversions(entries) if isinstance(e, data.Transaction))
+    out_leg, in_leg, fee = txn.postings
+    assert fee.units is not None and fee.units.currency == "EUR"
+    assert in_leg.price is not None and in_leg.price.number is not None
+    assert _number(out_leg) + in_leg.price.number + _number(fee) == 0
