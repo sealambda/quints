@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import NamedTuple
 from xml.etree import ElementTree
 
@@ -111,7 +111,7 @@ def _parse_daily(xml_text: str, ticker: str) -> tuple[Decimal, datetime]:
                 kurs = (field.text or "").strip()
         if not kurs:
             raise BAZGError(f"No <kurs> for {ticker!r} in BAZG response")
-        multiplier = _unit_multiplier(waehrung)
+        multiplier = _unit_multiplier(waehrung, code)
         price = (Decimal(kurs) / multiplier).normalize()
         if rate_date is None:
             raise BAZGError("BAZG response missing <datum>")
@@ -123,15 +123,19 @@ def _parse_daily(xml_text: str, ticker: str) -> tuple[Decimal, datetime]:
     )
 
 
-def _unit_multiplier(waehrung: str | None) -> Decimal:
-    """``waehrung`` is e.g. '1 USD' or '100 EGP'; return the leading count."""
-    if not waehrung:
-        return Decimal(1)
-    head = waehrung.split()[0]
+def _unit_multiplier(waehrung: str | None, code: str) -> Decimal:
+    """``waehrung`` is e.g. '1 USD' or '100 EGP'; return the leading count.
+
+    Anything else raises: a guessed 1 would store a per-100 rate 100x too high.
+    """
+    parts = (waehrung or "").split()
     try:
-        return Decimal(head)
-    except Exception:
-        return Decimal(1)
+        count = Decimal(parts[0]) if len(parts) == 2 else None
+    except InvalidOperation:
+        count = None
+    if count is None or not count.is_finite() or count <= 0 or parts[1].lower() != code:
+        raise BAZGError(f"Unreadable <waehrung> {waehrung!r} for {code.upper()} in BAZG response")
+    return count
 
 
 def _parse_date(text: str) -> datetime:
