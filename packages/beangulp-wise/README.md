@@ -21,7 +21,11 @@ is auditable, replayable, and testable offline.
 - Payee by detail type: merchant name for card payments, recipient/sender for
   transfers, description otherwise.
 - `totalFees` becomes an explicit posting to `fees_account` — fees stay
-  visible instead of dissolving into the counter leg.
+  visible instead of dissolving into the counter leg. Without a fees account
+  the fee is not posted and stays in the counter leg. A fee in a currency
+  other than the statement's raises `ValueError`, except on a conversion leg,
+  where `merge_conversions` nets it against the other leg.
+- The importer parses the statement file's numbers as decimals, not floats.
 - `payee_rules` (`(regex, account, flag)`) draft the counter leg; unmatched
   entries keep the `!` review flag and the cash leg only.
 - `endOfStatementBalance` → a `balance` assertion the day after the interval.
