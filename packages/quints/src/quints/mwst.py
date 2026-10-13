@@ -167,7 +167,7 @@ INPUT_ZIFFERN: dict[str, str] = {
 MINUS_ZIFFERN = ("415", "420")  # the form subtracts these from Ziffer 479
 
 VOCABULARY = frozenset(
-    {"taxable", "standard", "reduced", "lodging", "optioned", "old_rate"}
+    {"taxable", "standard", "reduced", "lodging", "optioned", "old_rate", "not_entgelt"}
     | set(TURNOVER_ZIFFERN)
     | set(FLOW_ZIFFERN)
     | set(INPUT_ZIFFERN)
@@ -179,6 +179,9 @@ REDUCTION_CODES = ("3800", "3899")  # Erlösminderungen, Verluste Forderungen
 # Erlösminderungen block. 39xx Bestandesänderungen are a valuation adjustment,
 # not Entgelt, and stay out of the return like any non-Klasse-3 income.
 TURNOVER_CODES = ("3000", "3899")
+# Betrieblicher Nebenerfolg (7) and betriebsfremder/ausserordentlicher Erfolg
+# (8): income there may or may not be Entgelt — it needs a mwst: tag.
+SIDE_CODES = ("7000", "8999")
 INPUT_COUNTER_CODES = (("1400", "1799"), ("4000", "7999"))  # Anlagen, Aufwand
 
 
@@ -464,9 +467,19 @@ def _rate_class(account: str, tokens: frozenset[str], cfg: config.Config) -> str
 
 
 def turnover_bucket(
-    account: str, code: str | None, tokens: frozenset[str], cfg: config.Config
+    account: str,
+    code: str | None,
+    tokens: frozenset[str],
+    cfg: config.Config,
+    vat_bearing: bool = False,
 ) -> str | None:
-    """Which section-I line an income posting belongs to (None = not turnover)."""
+    """Which section-I line an income posting belongs to (None = not turnover).
+
+    ``vat_bearing``: see :func:`vat_bearing` — income outside 3000-3899 that
+    carries the transaction's OutputVAT is taxable turnover.
+    """
+    if "not_entgelt" in tokens:
+        return None  # declared outside the form: no supply, no 900/910 flow
     if account == cfg.saldo_difference:
         # The SSS settlement books the gap between the statutory VAT invoiced
         # and the SSS owed here. The gross Entgelt was already declared when
@@ -484,7 +497,9 @@ def turnover_bucket(
     if _in(code, *REDUCTION_CODES):
         return "reduction"
     if code is not None and not _in(code, *TURNOVER_CODES):
-        return None  # booked as income, but not Entgelt (FX gain, rounding)
+        # Booked as income, but not Entgelt (FX gain, rounding) — unless VAT was
+        # charged on it: then it is a supply against Entgelt (Art. 18 Abs. 1).
+        return "taxable" if vat_bearing else None
     if cfg.export_goods_marker and cfg.export_goods_marker in account:
         return "export_goods"
     if cfg.export_marker and cfg.export_marker in account:
@@ -492,6 +507,24 @@ def turnover_bucket(
     if cfg.exempt_marker and cfg.exempt_marker in account:
         return "exempt"
     return "taxable"
+
+
+def vat_bearing(e: data.Transaction, cfg: config.Config, codes: dict[str, str]) -> bool:
+    """OutputVAT with no turnover leg beside it to carry it.
+
+    A side-business sale (Nebenbetrieb, kmu 7000) is income outside
+    3000-3899, which alone isn't Entgelt; but VAT was charged on it, so it
+    was a taxable supply (Art. 18 Abs. 1 MWSTG) and its net belongs next to
+    its tax. With a regular turnover leg in the transaction, the VAT is that
+    leg's and nothing changes.
+    """
+    if not any(p.account == cfg.output_vat for p in e.postings):
+        return False
+    income = [p for p in e.postings if p.account.startswith(cfg.income_prefix)]
+    return bool(income) and all(
+        turnover_bucket(p.account, codes.get(p.account), posting_tokens(p, e), cfg) is None
+        for p in income
+    )
 
 
 def _input_ziffer(
@@ -644,6 +677,7 @@ class _TxnState:
     """What one transaction contributed, for the rate-consistency check."""
 
     current: bool
+    vat_bearing: bool = False  # see vat_bearing()
     expected_tax: Decimal = Decimal("0")
     # net × rate per (rate class, vintage) — a mixed-rate sale's split
     expected_by_row: dict[tuple[str, bool], Decimal] = field(default_factory=dict)
@@ -767,7 +801,9 @@ def _transaction(
     old_rate = "old_rate" in txn_tokens or any(
         "old_rate" in posting_tokens(p, e) for p in e.postings
     )
-    state = _TxnState(current=e.date >= RATE_CHANGE and not old_rate)
+    state = _TxnState(
+        current=e.date >= RATE_CHANGE and not old_rate, vat_bearing=vat_bearing(e, cfg, codes)
+    )
     unknown: set[str] = _unknown_tokens(txn_tokens, cfg)
 
     for p in e.postings:
@@ -904,6 +940,31 @@ def _input_vat(
     )
 
 
+def _untagged_side_income(
+    e: data.Transaction,
+    p: data.Posting,
+    n: Decimal,
+    code: str | None,
+    price_map: bc_prices.PriceMap,
+    detail: _Detail,
+) -> None:
+    """Class 7/8 income may be Entgelt (exempt rent, a Nebenbetrieb) or not
+    (Schadenersatz, a released provision); its code can't say which, and
+    Ziffer 200 must count every Entgelt. Listed, left out as before."""
+    currency = p.units.currency if p.units is not None else "CHF"
+    detail.violations.append(
+        Violation(
+            str(e.date),
+            e.payee or "",
+            e.narration or "",
+            f"income on {code} outside 3000–3899 without a mwst: tag — tag it exempt, "
+            "taxable, donation, subvention or not_entgelt so Ziffer 200 is complete",
+            Decimal("0"),
+            ledger.rappen(ledger.to_chf(Amount(-n, currency), e.date, price_map)),
+        )
+    )
+
+
 def _is_credit_note(e: data.Transaction, p: data.Posting, codes: dict[str, str]) -> bool:
     """An InputVAT credit that reduces a purchase: an expense or investment
     leg is credited alongside it. (Input VAT moved *into* cost debits one.)"""
@@ -932,8 +993,11 @@ def _turnover(
 ) -> None:
     """One income posting → its section-I line, and its share of Ziffer 299."""
     acct = p.account
-    bucket = turnover_bucket(acct, codes.get(acct), tokens, cfg)
+    code = codes.get(acct)
+    bucket = turnover_bucket(acct, code, tokens, cfg, state.vat_bearing)
     if bucket is None:
+        if _in(code, *SIDE_CODES) and "not_entgelt" not in tokens:
+            _untagged_side_income(e, p, n, code, price_map, detail)
         return  # income, but not Entgelt — outside the return
     currency = p.units.currency if p.units is not None else "CHF"
     chf = ledger.to_chf(Amount(-n, currency), e.date, price_map)

@@ -485,3 +485,121 @@ def test_pre_liability_reversal_on_the_registration_day(
     r = mwst.compute(led, "2026-01-01", "2026-03-31", cfg)
     assert (r.z405, r.z415, r.z479) == (0, 0, 0)
     assert [v.posted for v in r.violations] == ([Decimal("-71.82")] if flagged else [])
+
+
+# ── 3b. side-business income that carries OutputVAT is Entgelt ─────────────────
+
+SIDE_BUSINESS = """
+2026-01-01 open Income:CH:GmbH:Side:Shop CHF
+  kmu: "7000"
+2026-07-07 * "Walk-in" "ancillary shop sale"
+  Assets:CH:GmbH:Current:UBS:CHF       1081.00 CHF
+  Income:CH:GmbH:Side:Shop            -1000.00 CHF
+  Liabilities:CH:GmbH:Tax:OutputVAT     -81.00 CHF
+"""
+
+
+def test_side_business_sale_with_output_vat_is_turnover(tmp_path: Path) -> None:
+    """Class-7 income is not turnover by its code — but a sale that charged
+    VAT is a supply against Entgelt (Art. 18 Abs. 1 MWSTG): its net belongs
+    in 200/303 next to its tax, not tax alone on 303."""
+    led = _write(tmp_path, SIDE_BUSINESS)
+    r = _q3(led)
+    assert (r.z200, r.z299, r.z303_net, r.z303_tax) == (
+        Decimal("1000.00"),
+        Decimal("1000.00"),
+        Decimal("1000.00"),
+        Decimal("81.00"),
+    )
+    assert r.violations == []
+    res = liability.compute(led, date(2026, 12, 31), CFG)
+    assert res.years[-1].turnover == Decimal("1000.00")
+
+
+def test_side_business_income_beside_regular_turnover_stays_out(tmp_path: Path) -> None:
+    """The VAT belongs to the 3400 sale; the 7000 leg next to it stays out,
+    and, untagged, is listed for a mwst: tag."""
+    led = _write(
+        tmp_path,
+        """
+2026-01-01 open Income:CH:GmbH:Side:Shop CHF
+  kmu: "7000"
+2026-07-07 * "Client" "consulting, plus a pass-through"
+  Assets:CH:GmbH:Current:UBS:CHF       1131.00 CHF
+  Income:CH:GmbH:Consulting:External:Domestic  -1000.00 CHF
+  Income:CH:GmbH:Side:Shop              -50.00 CHF
+  Liabilities:CH:GmbH:Tax:OutputVAT     -81.00 CHF
+""",
+    )
+    r = _q3(led)
+    assert (r.z200, r.z303_net, r.z303_tax) == (
+        Decimal("1000.00"),
+        Decimal("1000.00"),
+        Decimal("81.00"),
+    )
+    (v,) = r.violations
+    assert "7000" in v.message and v.posted == Decimal("50.00")
+
+
+def test_cli_vat_report_counts_side_business_sale(tmp_path: Path) -> None:
+    led = _write(tmp_path, SIDE_BUSINESS)
+    res = runner.invoke(app, ["vat", "report", "-p", "2026-Q3", "--json", "-f", str(led)])
+    assert res.exit_code == 0, res.output
+    d = json.loads(res.stdout)
+    assert (d["z200"], d["z303_net"], d["z303_tax"], d["violations"]) == (
+        "1000.00",
+        "1000.00",
+        "81.00",
+        [],
+    )
+
+
+# ── 3b. untagged class-7/8 income is listed so Ziffer 200 can be completed ─────
+
+CLASS_7_8 = """
+2026-01-01 open Income:CH:GmbH:Rent CHF
+  kmu: "7500"
+2026-01-01 open Income:CH:GmbH:Windfall CHF
+  kmu: "8510"
+2026-01-01 open Income:CH:GmbH:FX:Gain CHF
+  kmu: "6950"
+2026-07-08 * "Tenant" "sublet office, no VAT"
+  Assets:CH:GmbH:Current:UBS:CHF        900.00 CHF
+  Income:CH:GmbH:Rent                  -900.00 CHF
+2026-07-09 * "Insurer" "provision released"
+  Assets:CH:GmbH:Current:UBS:CHF        200.00 CHF
+  Income:CH:GmbH:Windfall              -200.00 CHF
+2026-07-10 * "Bank" "FX gain"
+  Assets:CH:GmbH:Current:UBS:CHF         30.00 CHF
+  Income:CH:GmbH:FX:Gain                -30.00 CHF
+"""
+
+
+def test_untagged_class_7_8_income_is_listed(tmp_path: Path) -> None:
+    r = _q3(_write(tmp_path, CLASS_7_8))
+    assert r.z200 == 0  # stays out of the figures, as before
+    flagged = sorted((v.message.split()[2], v.posted) for v in r.violations)
+    assert flagged == [("7500", Decimal("900.00")), ("8510", Decimal("200.00"))]  # not 6950
+
+
+def test_tagged_class_7_8_income_is_classified(tmp_path: Path) -> None:
+    body = CLASS_7_8.replace(
+        "  Income:CH:GmbH:Rent                  -900.00 CHF\n",
+        '  Income:CH:GmbH:Rent                  -900.00 CHF\n    mwst: "exempt"\n',
+    ).replace(
+        "  Income:CH:GmbH:Windfall              -200.00 CHF\n",
+        '  Income:CH:GmbH:Windfall              -200.00 CHF\n    mwst: "not_entgelt"\n',
+    )
+    r = _q3(_write(tmp_path, body))
+    assert (r.z200, r.z230, r.z299) == (Decimal("900.00"), Decimal("900.00"), 0)
+    assert r.violations == []
+
+
+def test_cli_vat_report_lists_untagged_class_7_8_income(tmp_path: Path) -> None:
+    led = _write(tmp_path, CLASS_7_8)
+    res = runner.invoke(app, ["vat", "report", "-p", "2026-Q3", "--json", "-f", str(led)])
+    assert res.exit_code == 0, res.output
+    d = json.loads(res.stdout)
+    assert d["z200"] == "0.00"
+    assert sorted(v["posted"] for v in d["violations"]) == ["200.00", "900.00"]
+    assert all("mwst:" in v["message"] for v in d["violations"])
