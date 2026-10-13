@@ -43,6 +43,24 @@ What each tool guards:
 - **pytest** — the suite runs in ~2s. Keep it that way: no network, no sleeps.
   Fixtures and the example project stand in for live services.
 
+## Reliability rules
+
+quints computes tax returns and statements, so a wrong number filed is the
+failure that matters. Adapted from NASA/JPL's "Power of Ten":
+
+- **Never turn a problem into a number.** No `return Decimal(0)`, `or 0`,
+  `continue` or `except: pass` on data you can't read. Raise a `ValueError`
+  for unreadable input, or add a `Violation` to the report so it still renders
+  and says what's wrong.
+- **Bad books are reported; quints bugs crash.** A state the code assumes can
+  never happen is checked with `ledger.invariant(cond, message)`, which raises
+  `InvariantError` and stays on under `python -O`. Use plain `assert` only in
+  tests. Never assert on user input.
+- **Every loop over outside data has a bound**, and hitting it raises.
+- **Every suppression says why**: `# type: ignore[code] -- reason`,
+  `# noqa: CODE — reason`. A deliberate exception to these rules is marked
+  `# p10: allow R<n> -- reason`.
+
 ## Architecture
 
 `quints` is layered, declared in the root `pyproject.toml` and enforced by
