@@ -1,6 +1,6 @@
 [project]
 name = "beangulp-yapeal"
-version = "0.1.0"
+version = "0.1.1"
 description = "beangulp importer for Yapeal CSV bank statements: drafts transactions with stable bank references for idempotent re-imports"
 readme = "README.md"
 requires-python = ">=3.10"

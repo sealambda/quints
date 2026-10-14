@@ -134,7 +134,7 @@ wheels = [
 
 [[package]]
 name = "beangulp-mt940"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/beangulp-mt940" }
 dependencies = [
     { name = "beancount" },
@@ -159,7 +159,7 @@ dev = [{ name = "pytest", specifier = ">=8" }]
 
 [[package]]
 name = "beangulp-stripe"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "packages/beangulp-stripe" }
 dependencies = [
     { name = "beancount" },
@@ -184,7 +184,7 @@ dev = [{ name = "pytest", specifier = ">=8" }]
 
 [[package]]
 name = "beangulp-wise"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "packages/beangulp-wise" }
 dependencies = [
     { name = "beancount" },
@@ -220,7 +220,7 @@ dev = [
 
 [[package]]
 name = "beangulp-yapeal"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/beangulp-yapeal" }
 dependencies = [
     { name = "beancount" },
@@ -259,7 +259,7 @@ wheels = [
 
 [[package]]
 name = "beanprice-bazg"
-version = "0.2.1"
+version = "0.2.2"
 source = { editable = "packages/beanprice-bazg" }
 dependencies = [
     { name = "requests" },
@@ -1723,7 +1723,7 @@ wheels = [
 
 [[package]]
 name = "quints"
-version = "0.17.0"
+version = "0.18.0"
 source = { editable = "packages/quints" }
 dependencies = [
     { name = "babel" },
