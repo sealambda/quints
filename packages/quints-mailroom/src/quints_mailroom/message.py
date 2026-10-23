@@ -31,6 +31,8 @@ class InboundEmail:
     body: str  # text/plain, or tag-stripped text/html fallback
     attachments: tuple[Attachment, ...]
     references: tuple[str, ...]  # existing References chain, for the reply
+    # Raw Authentication-Results header values, topmost (latest hop) first.
+    auth_results: tuple[str, ...] = ()
 
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -60,7 +62,13 @@ def parse_email(raw: bytes) -> InboundEmail:
     body = ""
     body_part = msg.get_body(preferencelist=("plain", "html"))
     if body_part is not None:
-        content = str(body_part.get_content())
+        try:
+            content = str(body_part.get_content())
+        except LookupError:
+            # Unknown charset label: raising here would stop every later pass
+            # at this message, so decode as UTF-8 with visible replacements.
+            raw_body = body_part.get_payload(decode=True)
+            content = raw_body.decode(errors="replace") if isinstance(raw_body, bytes) else ""
         body = _TAGS.sub(" ", content) if body_part.get_content_subtype() == "html" else content
 
     attachments: list[Attachment] = []
@@ -77,6 +85,7 @@ def parse_email(raw: bytes) -> InboundEmail:
         body=body.strip(),
         attachments=tuple(attachments),
         references=references,
+        auth_results=tuple(str(h) for h in msg.get_all("Authentication-Results", [])),
     )
 
 

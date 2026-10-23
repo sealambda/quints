@@ -10,6 +10,7 @@ keywords = [
     "email", "imap", "maildir", "agent", "claude",
 ]
 dependencies = [
+    "authres>=1.2",
     "claude-agent-sdk>=0.1",
     "imap-tools>=1.7",
     "tomli>=2; python_version < '3.11'",

@@ -67,6 +67,9 @@ DEFAULT_ALLOWED_TOOLS: tuple[str, ...] = (
 )
 
 
+DEFAULT_AGENT_TIMEOUT = 900
+
+
 @dataclass(frozen=True)
 class AgentConfig:
     backend: str = "claude"  # "claude" (Agent SDK) | "command" (stdin→stdout)
@@ -74,6 +77,15 @@ class AgentConfig:
     model: str | None = None  # backend="claude": model override
     allowed_tools: tuple[str, ...] = DEFAULT_ALLOWED_TOOLS
     instructions: str = ""  # extra guidance appended to every prompt
+    timeout_seconds: float = DEFAULT_AGENT_TIMEOUT  # one email's whole agent run
+
+
+@dataclass(frozen=True)
+class AuthConfig:
+    # authserv-id of the receiving MTA whose Authentication-Results header is
+    # trusted ("mx.google.com" for Gmail); every other one is sender-injectable.
+    authserv_id: str | None = None
+    required: bool = True
 
 
 @dataclass(frozen=True)
@@ -87,6 +99,7 @@ class MailroomConfig:
     smtp: SmtpConfig | None = None
     maildir: MaildirConfig = field(default_factory=MaildirConfig)
     agent: AgentConfig = field(default_factory=AgentConfig)
+    auth: AuthConfig = field(default_factory=AuthConfig)
 
 
 def _require(raw: dict[str, Any], key: str, path: Path) -> Any:
@@ -168,7 +181,22 @@ def load(path: Path) -> MailroomConfig:
         model=str(ag_raw["model"]) if "model" in ag_raw else None,
         allowed_tools=tuple(str(t) for t in ag_raw.get("allowed_tools", DEFAULT_ALLOWED_TOOLS)),
         instructions=str(ag_raw.get("instructions", "")),
+        timeout_seconds=float(ag_raw.get("timeout_seconds", DEFAULT_AGENT_TIMEOUT)),
     )
+    if agent_cfg.timeout_seconds <= 0:
+        raise MailroomConfigError(f"{path}: agent.timeout_seconds must be positive")
+
+    auth_raw = raw.get("auth", {})
+    auth_cfg = AuthConfig(
+        authserv_id=str(auth_raw["authserv_id"]).lower() if "authserv_id" in auth_raw else None,
+        required=bool(auth_raw.get("require_authentication", True)),
+    )
+    if auth_cfg.required and not auth_cfg.authserv_id:
+        raise MailroomConfigError(
+            f"{path}: [auth] authserv_id is required — the From: header alone is "
+            "forgeable, so mail must carry a DMARC/DKIM pass from your receiving "
+            "server (set require_authentication = false only for a local test setup)"
+        )
 
     books = _resolve(base, str(_require(raw, "books", path)))
     if not books.is_dir():
@@ -184,6 +212,7 @@ def load(path: Path) -> MailroomConfig:
         smtp=smtp_cfg,
         maildir=maildir_cfg,
         agent=agent_cfg,
+        auth=auth_cfg,
     )
 
 
