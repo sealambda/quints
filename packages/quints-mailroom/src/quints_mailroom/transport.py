@@ -29,8 +29,11 @@ from .message import Attachment, InboundEmail, parse_email, sanitize_filename
 
 
 class InboundTransport(Protocol):
-    def fetch(self) -> list[InboundEmail]:
-        """Return messages not yet acknowledged, oldest first."""
+    def fetch(self, limit: int) -> list[InboundEmail]:
+        """Return up to ``limit`` messages not yet acknowledged, oldest first.
+
+        The rest stay unacknowledged and come back on the next pass.
+        """
         ...
 
     def ack(self, message_id: str) -> None:
@@ -50,9 +53,11 @@ class MaildirInbound:
         self._maildir = mailbox.Maildir(str(path), factory=None, create=True)
         self._keys: dict[str, str] = {}  # message_id → maildir key
 
-    def fetch(self) -> list[InboundEmail]:
+    def fetch(self, limit: int) -> list[InboundEmail]:
         out: list[InboundEmail] = []
         for key in sorted(self._maildir.keys()):
+            if len(out) >= limit:
+                break
             if "S" in self._maildir[key].get_flags():
                 continue
             inbound = parse_email(self._maildir.get_bytes(key))
@@ -97,9 +102,9 @@ class ImapInbound:
             )
         return self._box
 
-    def fetch(self) -> list[InboundEmail]:
+    def fetch(self, limit: int) -> list[InboundEmail]:
         out: list[InboundEmail] = []
-        for msg in self._mailbox().fetch(AND(seen=False), mark_seen=False):
+        for msg in self._mailbox().fetch(AND(seen=False), limit=limit, mark_seen=False):
             header = msg.headers.get("message-id", ())
             message_id = header[0].strip() if header else ""
             if not message_id:
@@ -120,6 +125,7 @@ class ImapInbound:
                 body=(msg.text or msg.html or "").strip(),
                 attachments=attachments,
                 references=tuple(refs_header[0].split()) if refs_header else (),
+                auth_results=tuple(msg.headers.get("authentication-results") or ()),
             )
             if msg.uid:
                 self._uids[message_id] = msg.uid

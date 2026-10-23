@@ -62,6 +62,12 @@ wheels = [
 ]
 
 [[package]]
+name = "authres"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6a/29/e28209b5d3d56c102845cca5a4a3abaf2724f79e83476a52b94d775ecce6/authres-1.2.0.tar.gz", hash = "sha256:93d1b995ad7ce21e62db649f361048125dd6022563a0ae8a23909465f1fd25b7", size = 23226, upload-time = "2019-08-03T19:38:00.494Z" }
+
+[[package]]
 name = "babel"
 version = "2.18.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2045,6 +2051,7 @@ name = "quints-mailroom"
 version = "0.1.0"
 source = { editable = "packages/quints-mailroom" }
 dependencies = [
+    { name = "authres" },
     { name = "claude-agent-sdk" },
     { name = "imap-tools" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
@@ -2058,6 +2065,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "authres", specifier = ">=1.2" },
     { name = "claude-agent-sdk", specifier = ">=0.1" },
     { name = "imap-tools", specifier = ">=1.7" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2" },

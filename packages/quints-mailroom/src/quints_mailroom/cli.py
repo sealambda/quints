@@ -90,10 +90,10 @@ def run(
     inbound, outbound = _build_transports(cfg)
     agent = build_agent(cfg.agent)
     had_error = False
-    while True:
+    while True:  # p10: allow R2 -- the poll loop is the daemon; each pass is bounded
         for o in process_once(inbound, outbound, agent, cfg):
             typer.echo(f"{o.status:9}  {o.sender}  {o.subject!r}  {o.detail}")
-            had_error = had_error or o.status == "error"
+            had_error = had_error or o.status in ("error", "rejected")
         if once:
             raise typer.Exit(1 if had_error else 0)
         time.sleep(interval)
@@ -110,6 +110,15 @@ allowed_senders = ["you@example.com"]  # or "@example.com" for a whole domain
 
 inbound = "imap"     # imap | maildir (maildir = own MX / local delivery)
 outbound = "smtp"    # smtp | maildir (maildir = drop replies in a local outbox)
+
+[auth]
+# From: is forgeable. Only mail your receiving server marked dmarc=pass (or
+# dkim=pass for the From domain) gets an agent run. authserv_id is the first
+# token of the topmost Authentication-Results header in a received message's
+# raw source — "mx.google.com" for Gmail / Google Workspace.
+authserv_id = "mx.example.com"
+# require_authentication = false   # only for a local Maildir test setup, where
+#                                  # no MTA writes Authentication-Results
 
 [imap]
 host = "imap.example.com"
@@ -132,6 +141,7 @@ backend = "claude"   # claude (Agent SDK) | command (prompt on stdin, reply on s
 # model = "claude-sonnet-5"
 # command = ["claude", "-p"]
 # instructions = "Extra guidance appended to every prompt."
+# timeout_seconds = 900   # one email's agent run; overrunning is an error
 """
 
 

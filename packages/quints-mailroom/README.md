@@ -44,16 +44,20 @@ decides bookings itself — it moves mail and runs the agent
   list: read/edit/`quints`/read-only `git` — nothing that leaves the repo).
   `backend = "command"` runs any executable with the prompt on stdin and the
   reply on stdout (`claude -p`, codex, a shell script, the test suite).
-- **At-least-once, idempotent.** A message is acknowledged (IMAP `\Seen`,
-  Maildir `new/`→`cur/`) only after the reply is sent, and every processed
-  Message-ID is recorded in `<books>/.mailroom/processed`. A crash retries;
-  a redelivery is skipped.
-- **Untrusted input is treated as such.** Only `allowed_senders` get an
+- **At-least-once, idempotent.** After the reply is sent, the Message-ID is
+  recorded (fsynced) in `<books>/.mailroom/processed`, and only then is the
+  message acknowledged (IMAP `\Seen`, Maildir `new/`→`cur/`). A crash
+  retries; a redelivery is skipped.
+- **Untrusted input is treated as such.** Only `allowed_senders` whose mail
+  the receiving server authenticated (`Authentication-Results` from the
+  configured `authserv_id`: `dmarc=pass`, or an aligned `dkim=pass`) get an
   agent run at all — everyone else is dropped without a reply (no
   backscatter). The email body is fenced as data in the prompt; attachment
   filenames are sanitised to bare basenames; email content never reaches any
-  argv. Prompt injection can still steer the *proposal* — it cannot skip
-  `staging/`, `quints check`, or your review of the diff.
+  argv; oversized mail is rejected whole. The Claude backend refuses file
+  writes outside `staging/` and `inbox/` in a `PreToolUse` hook, and every
+  agent run has a timeout. Prompt injection can still steer the *proposal* —
+  it cannot skip `staging/`, `quints check`, or your review of the diff.
 - **Async by nature.** An agent run takes a minute or three. Email makes
   that latency invisible — nobody stares at a spinner in their inbox.
 
@@ -86,6 +90,9 @@ user = "books@firm.ch"
 host = "smtp.migadu.com"
 port = 587
 user = "books@firm.ch"
+
+[auth]
+authserv_id = "mx.example.net"   # first token of Authentication-Results on received mail
 
 [agent]
 backend = "claude"

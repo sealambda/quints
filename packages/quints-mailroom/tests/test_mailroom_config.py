@@ -16,6 +16,9 @@ outbound = "maildir"
 [maildir]
 inbox = "mail-in"
 outbox = "mail-out"
+
+[auth]
+authserv_id = "mx.firm.ch"
 """
 
 
@@ -31,6 +34,8 @@ def test_load_resolves_paths_relative_to_config_file(tmp_path: Path) -> None:
     assert cfg.books == (tmp_path / "books").resolve()
     assert cfg.maildir.inbox == (tmp_path / "mail-in").resolve()
     assert cfg.agent.backend == "claude"  # default
+    assert cfg.agent.timeout_seconds == 900  # default
+    assert cfg.auth.authserv_id == "mx.firm.ch" and cfg.auth.required
 
 
 def test_missing_file_and_missing_keys_error_clearly(tmp_path: Path) -> None:
@@ -53,6 +58,21 @@ def test_imap_inbound_requires_section(tmp_path: Path) -> None:
 def test_command_backend_requires_command(tmp_path: Path) -> None:
     with pytest.raises(MailroomConfigError, match=r"agent\.command"):
         load(write(tmp_path, MINIMAL + '\n[agent]\nbackend = "command"\n'))
+
+
+def test_authserv_id_is_required_unless_auth_is_switched_off(tmp_path: Path) -> None:
+    no_auth = MINIMAL.replace('[auth]\nauthserv_id = "mx.firm.ch"\n', "")
+    with pytest.raises(MailroomConfigError, match="authserv_id is required"):
+        load(write(tmp_path, no_auth))
+    cfg = load(write(tmp_path, no_auth + "[auth]\nrequire_authentication = false\n"))
+    assert not cfg.auth.required
+
+
+def test_timeout_must_be_positive(tmp_path: Path) -> None:
+    cfg = load(write(tmp_path, MINIMAL + "\n[agent]\ntimeout_seconds = 120\n"))
+    assert cfg.agent.timeout_seconds == 120
+    with pytest.raises(MailroomConfigError, match="timeout_seconds"):
+        load(write(tmp_path, MINIMAL + "\n[agent]\ntimeout_seconds = 0\n"))
 
 
 def test_sender_allowed_exact_and_domain() -> None:
