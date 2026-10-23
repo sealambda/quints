@@ -5,10 +5,15 @@ Two backends behind :class:`AgentRunner`:
 - ``claude`` — Claude Agent SDK, headless, ``cwd`` = the books repo, with a
   pre-approved tool list (read/edit/quints/git — nothing that leaves the
   repo). ``setting_sources=["project"]`` so the books repo's CLAUDE.md /
-  AGENTS.md conventions load, same as an interactive session.
+  AGENTS.md conventions load, same as an interactive session. File writes
+  are confined to ``staging/`` and ``inbox/`` by a ``PreToolUse`` hook, so
+  the boundary holds even if an email talks the model out of the prompt.
 - ``command`` — any executable: prompt on stdin, reply on stdout. This is
   the standards seam for other agents (``claude -p``, codex, a script) and
   what the test suite uses.
+
+Both run under ``agent.timeout_seconds``; a run that overruns is an
+:class:`AgentError`, never a reply.
 
 The email body is untrusted input from an external sender. It is fenced as
 data in the prompt and never touches the argv of any subprocess; the agent
@@ -21,9 +26,17 @@ from __future__ import annotations
 import asyncio
 import subprocess
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
-from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
+from claude_agent_sdk import (
+    ClaudeAgentOptions,
+    HookContext,
+    HookInput,
+    HookJSONOutput,
+    HookMatcher,
+    ResultMessage,
+    query,
+)
 
 from .config import AgentConfig
 from .message import InboundEmail
@@ -82,23 +95,60 @@ def build_prompt(message: InboundEmail, saved: list[str], extra_instructions: st
     )
 
 
+# Books-relative directories the agent may write into.
+WRITABLE_DIRS = ("staging", "inbox")
+# Claude Code's file-writing tools, and the input key naming each one's target.
+WRITE_TOOLS = {
+    "Edit": "file_path",
+    "Write": "file_path",
+    "MultiEdit": "file_path",
+    "NotebookEdit": "notebook_path",
+}
+# Turn cap for one email's session; the wall-clock timeout is the hard stop.
+MAX_TURNS = 100
+
+
+def write_denial(books: Path, tool_name: str, tool_input: dict[str, Any]) -> str | None:
+    """Why this tool call may not write, or None when it may (or isn't a write)."""
+    key = WRITE_TOOLS.get(tool_name)
+    if key is None:
+        return None
+    raw = tool_input.get(key)
+    if not isinstance(raw, str) or not raw:
+        return f"{tool_name} without a {key} is not allowed"
+    root = books.resolve()
+    # resolve() follows ".." and symlinks, so the check is on the real target.
+    target = (root / raw).resolve()
+    if any(target.is_relative_to(root / d) for d in WRITABLE_DIRS):
+        return None
+    allowed = " or ".join(f"{d}/" for d in WRITABLE_DIRS)
+    return f"the mailroom only lets the agent write under {allowed}; {raw} is outside"
+
+
 class CommandAgentRunner:
     """Prompt on stdin, reply on stdout, non-zero exit is failure."""
 
-    def __init__(self, argv: tuple[str, ...]) -> None:
+    def __init__(self, argv: tuple[str, ...], timeout: float) -> None:
         self._argv = argv
+        self._timeout = timeout
 
     def run(self, prompt: str, cwd: Path) -> str:
         # argv comes from the operator's mailroom.toml, never from the email;
         # untrusted email content only ever flows through stdin.
-        proc = subprocess.run(  # noqa: S603
-            list(self._argv),
-            input=prompt,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            proc = subprocess.run(  # noqa: S603 — argv is operator config, see above
+                list(self._argv),
+                input=prompt,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=self._timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise AgentError(
+                f"agent command {self._argv[0]} timed out after {self._timeout:g}s"
+            ) from exc
         if proc.returncode != 0:
             raise AgentError(
                 f"agent command {self._argv[0]} exited {proc.returncode}: {proc.stderr.strip()}"
@@ -116,18 +166,46 @@ class ClaudeAgentRunner:
         self._cfg = cfg
 
     def run(self, prompt: str, cwd: Path) -> str:
-        return asyncio.run(self._query(prompt, cwd))
+        timeout = self._cfg.timeout_seconds
+        try:
+            return asyncio.run(asyncio.wait_for(self._query(prompt, cwd), timeout))
+        except asyncio.TimeoutError as exc:
+            raise AgentError(f"agent session timed out after {timeout:g}s") from exc
 
-    async def _query(self, prompt: str, cwd: Path) -> str:
-        options = ClaudeAgentOptions(
+    def options(self, cwd: Path) -> ClaudeAgentOptions:
+        async def guard_writes(
+            hook_input: HookInput, _tool_use_id: str | None, _context: HookContext
+        ) -> HookJSONOutput:
+            if hook_input["hook_event_name"] != "PreToolUse":
+                return {}
+            reason = write_denial(cwd, hook_input["tool_name"], hook_input["tool_input"])
+            if reason is None:
+                return {}
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": reason,
+                }
+            }
+
+        # A hook, not can_use_tool: the SDK never consults that callback for
+        # calls allowed_tools or acceptEdits already approve, i.e. Edit/Write.
+        return ClaudeAgentOptions(
             cwd=str(cwd),
             permission_mode="acceptEdits",
             allowed_tools=list(self._cfg.allowed_tools),
             setting_sources=["project"],
             model=self._cfg.model,
+            max_turns=MAX_TURNS,
+            hooks={
+                "PreToolUse": [HookMatcher(matcher="|".join(WRITE_TOOLS), hooks=[guard_writes])]
+            },
         )
+
+    async def _query(self, prompt: str, cwd: Path) -> str:
         result: str | None = None
-        async for msg in query(prompt=prompt, options=options):
+        async for msg in query(prompt=prompt, options=self.options(cwd)):
             if isinstance(msg, ResultMessage):
                 if msg.is_error:
                     raise AgentError(f"agent session failed: {msg.subtype}")
@@ -139,5 +217,5 @@ class ClaudeAgentRunner:
 
 def build_agent(cfg: AgentConfig) -> AgentRunner:
     if cfg.backend == "command":
-        return CommandAgentRunner(cfg.command)
+        return CommandAgentRunner(cfg.command, cfg.timeout_seconds)
     return ClaudeAgentRunner(cfg)

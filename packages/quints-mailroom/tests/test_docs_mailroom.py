@@ -97,3 +97,5 @@ def test_config_examples_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         path.write_text(block + "\n")
         cfg = config_mod.load(path)
         assert cfg.allowed_senders, f"toml example {i} loaded without allowed_senders"
+        # Real-mailbox examples never teach switching sender authentication off.
+        assert cfg.auth.required, f"toml example {i} turns off sender authentication"

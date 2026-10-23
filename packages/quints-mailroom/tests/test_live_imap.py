@@ -45,7 +45,9 @@ def test_login_folder_and_unseen_fetch() -> None:
     assert folder in folders, f"folder {folder!r} not found on {HOST} — mailbox exposes: {folders}"
 
     inbound = ImapInbound(ImapConfig(host=HOST, user=user, folder=folder), password)
-    messages = inbound.fetch()  # searches UNSEEN; never sets \Seen
+    messages = inbound.fetch(limit=50)  # searches UNSEEN; never sets \Seen
     print(f"\n{HOST} {folder!r}: {len(messages)} unseen message(s)")
     for m in messages:
         print(f"  {m.sender!r}  {m.subject!r}  ({len(m.attachments)} attachment(s))")
+        for verdict in m.auth_results:  # the first token of each is an authserv-id
+            print(f"    Authentication-Results: {verdict}")
