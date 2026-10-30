@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal
 
-from .. import config
+from .. import config, ledger
 from .model import Invoice, Totals, document_path, vat_included
+from .verify import Received
 
 
 def _quoted(value: str) -> str:
@@ -22,13 +24,13 @@ def filing_account(inv: Invoice, cfg: config.Config) -> str:
     return cfg.income_export if inv.kind == "export" else cfg.income_domestic
 
 
-def _vat_leg(cfg: config.Config, vat: Decimal, ccy: str, vat_chf: Decimal | None) -> str:
+def _vat_leg(vat: Decimal, ccy: str, chf_rate: Decimal | None, todo: str = "") -> str:
     """The OutputVAT amount: CHF as the return is, priced ``@@`` in `ccy`."""
     if ccy == "CHF":
         return f"{-vat:>10.2f} {ccy}"
-    if vat_chf is not None:
-        return f"{-vat_chf:>10.2f} CHF @@ {vat:.2f} {ccy}"
-    return f"{-vat:>10.2f} {ccy}  ; TODO in CHF: quints vat convert"
+    if chf_rate is not None:
+        return f"{-ledger.rappen(vat * chf_rate):>10.2f} CHF @@ {vat:.2f} {ccy}"
+    return f"{-vat:>10.2f} {ccy}  ; TODO in CHF{todo}: quints vat convert"
 
 
 def _lines(header: str, meta: list[str], legs: list[tuple[str, str, str]]) -> str:
@@ -41,17 +43,7 @@ def _lines(header: str, meta: list[str], legs: list[tuple[str, str, str]]) -> st
     return "\n".join(out)
 
 
-def vat_owed(inv: Invoice, totals: Totals) -> Decimal:
-    """The VAT the draft books now: the pro forma's split out of its gross, or
-    the invoice's VAT less what its advances declared on receipt."""
-    if inv.proforma:
-        return vat_included(totals.amount_due, totals.vat_rate)
-    return totals.vat_amount - totals.advance_vat
-
-
-def receipt_draft(
-    inv: Invoice, totals: Totals, cfg: config.Config | None = None, vat_chf: Decimal | None = None
-) -> str:
+def receipt_draft(inv: Invoice, totals: Totals, cfg: config.Config | None = None) -> str:
     """The booking for a pro forma's payment, when it arrives.
 
     Not income yet: the advance is a liability until the invoice credits it.
@@ -62,11 +54,11 @@ def receipt_draft(
     cfg = cfg or config.get()
     ccy = inv.currency
     gross = totals.amount_due
-    vat = vat_owed(inv, totals)
+    vat = vat_included(gross, totals.vat_rate)
     doc = document_path(inv, filing_account(inv, cfg))
     legs = [(filing_account(inv, cfg), f"{-(gross - vat):>10.2f} {ccy}", "")]
     if vat:
-        legs.append((cfg.output_vat, _vat_leg(cfg, vat, ccy, vat_chf), ""))
+        legs.append((cfg.output_vat, _vat_leg(vat, ccy, None, " at the day received"), ""))
     header = (
         f"{inv.issue_date} * {_quoted(inv.resolved_customer.name)} "
         f"{_quoted(f'Advance on pro forma {inv.number}')} ^{inv.number}"
@@ -88,35 +80,57 @@ def build_draft(
     inv: Invoice,
     totals: Totals,
     cfg: config.Config | None = None,
-    vat_chf: Decimal | None = None,
+    chf_rate: Decimal | None = None,
+    received: Mapping[str, Received] | None = None,
 ) -> str:
     """A balanced receivable booking matching what `verify.cross_check` expects.
 
     VAT is owed in CHF, so on a foreign-currency invoice the OutputVAT leg is
-    ``vat_chf`` CHF, priced ``@@`` at the invoice's VAT. Without a rate
-    (``vat_chf`` None) it stays in the invoice currency, marked to convert.
+    CHF at ``chf_rate`` (the issue date's), priced ``@@`` at the invoice's
+    VAT. Without a rate it stays in the invoice currency, marked to convert.
+
+    Credited advances are released as their receipts booked them
+    (``received``, from `verify.cross_check`): the VAT they declared is not
+    owed again, and a foreign advance leaves at the CHF it came in at — the
+    income it becomes is valued at that too, so the advances account clears
+    in CHF as well as in units. A pro forma missing from ``received`` is
+    released as the invoice credits it.
     """
     cfg = cfg or config.get()
     if inv.proforma:
-        return receipt_draft(inv, totals, cfg, vat_chf)
+        return receipt_draft(inv, totals, cfg)
     customer = inv.resolved_customer
     ccy = inv.currency
     income = filing_account(inv, cfg)
     advances = cfg.advances_for(inv.kind)
     narration = f"{inv.supply.text(inv.locale)} invoiced"
     doc = document_path(inv, income)  # same name the rendered PDF is filed under
-    vat = vat_owed(inv, totals)
 
-    legs: list[tuple[str, str, str]] = [(income, f"{-totals.subtotal:>10.2f} {ccy}", "")]
+    vat = totals.vat_amount
+    rest = totals.subtotal  # the income not advanced, valued at the issue date
+    slices: list[tuple[str, str, str]] = []
+    released: list[tuple[str, str, str]] = []
+    for number in dict.fromkeys(a.proforma for a in inv.advances):
+        r = (received or {}).get(number) or _as_credited(inv, number, totals.vat_rate)
+        vat -= r.vat
+        # Posting metadata, not a second ^link: receivables trust a lone invoice link.
+        tag = f"proforma: {_quoted(number)}"
+        if ccy != "CHF" and r.net_chf is not None:
+            rest -= r.net
+            slices.append((income, f"{-r.net:>10.2f} {ccy} @@ {r.net_chf:.2f} CHF", ""))
+            released.append((advances, f"{r.net:>10.2f} {ccy} @@ {r.net_chf:.2f} CHF", tag))
+        elif ccy != "CHF":
+            todo = "  ; TODO @@ the CHF it was received at"
+            released.append((advances, f"{r.net:>10.2f} {ccy}{todo}", tag))
+        else:
+            released.append((advances, f"{r.net:>10.2f} {ccy}", tag))
+
+    legs = [(income, f"{-rest:>10.2f} {ccy}", ""), *slices]
     if totals.amount_due:
         legs.append((cfg.receivable, f"{totals.amount_due:>10.2f} {ccy}", ""))
-    for a in inv.advances:
-        # Released net of its VAT, the way `receipt_draft` booked it. Posting
-        # metadata, not a second ^link: receivables trust a lone invoice link.
-        net = a.amount - vat_included(a.amount, totals.vat_rate)
-        legs.append((advances, f"{net:>10.2f} {ccy}", f"proforma: {_quoted(a.proforma)}"))
+    legs += released
     if vat:
-        legs.append((cfg.output_vat, _vat_leg(cfg, vat, ccy, vat_chf), ""))
+        legs.append((cfg.output_vat, _vat_leg(vat, ccy, chf_rate), ""))
     if totals.rounding:
         legs.append((cfg.rounding_income, f"{-totals.rounding:>10.2f} {ccy}", ""))
 
@@ -128,3 +142,10 @@ def build_draft(
     meta.append(f"    document: {_quoted(doc.name)}  ; TODO file the PDF under {doc.parent}/")
     header = f"{inv.issue_date} * {_quoted(customer.name)} {_quoted(narration)} ^{inv.number}"
     return _lines(header, meta, legs)
+
+
+def _as_credited(inv: Invoice, number: str, rate: Decimal) -> Received:
+    """An advance not (yet) in the books, split the way its receipt would be."""
+    gross = sum((a.amount for a in inv.advances if a.proforma == number), Decimal("0"))
+    vat = vat_included(gross, rate)
+    return Received(net=gross - vat, vat=vat, net_chf=None)

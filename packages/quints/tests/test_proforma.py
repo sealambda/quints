@@ -12,9 +12,11 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from beancount.core import data, prices
+from beancount.core.convert import get_weight
 from test_invoice import ISSUER
 
-from quints import config, fx, mwst
+from quints import config, fx, ledger, mwst
 from quints.invoice import draft, qr, render, verify
 from quints.invoice.model import Advance, Invoice, LineItem, Party, SupplyPeriod, compute
 
@@ -53,8 +55,9 @@ def _base(kind: str, currency: str, customer: Party, **overrides: object) -> Inv
     return Invoice.model_validate(fields)
 
 
-def _pair(base: Invoice, number: str, bank: str) -> tuple[Invoice, Invoice, str]:
-    """A 50 % pro forma paid in 2026, its 2027 invoice, and both bookings."""
+def _pair(base: Invoice, number: str, bank: str, tmp_path: Path) -> tuple[Invoice, Invoice, str]:
+    """A 50 % pro forma paid in 2026, its 2027 invoice, and both bookings —
+    the invoice drafted from the receipt in the books, the way the CLI does."""
     ccy = base.currency
     pf = base.model_copy(
         update={
@@ -85,16 +88,21 @@ def _pair(base: Invoice, number: str, bank: str) -> tuple[Invoice, Invoice, str]
             ],
         }
     )
-    booked = draft.build_draft(final, compute(final), config.Config())
+    paid_only = _ledger(tmp_path, _CHART + "\n" + receipt + "\n")
+    received = verify.cross_check(paid_only, final, compute(final)).received
+    booked = draft.build_draft(final, compute(final), config.Config(), received=received)
     return pf, final, _CHART + "\n" + receipt + "\n\n" + booked + "\n"
 
 
-def _domestic_pair() -> tuple[Invoice, Invoice, str]:
-    acme = Party(name="ACME AG", address=["Bahnhofstrasse 1", "8000 Zürich"])
-    return _pair(_base("domestic", "CHF", acme), "ACME202701", "Assets:CH:GmbH:Current:UBS:CHF")
+_ACME = Party(name="ACME AG", address=["Bahnhofstrasse 1", "8000 Zürich"])
 
 
-def _export_pair(**overrides: object) -> tuple[Invoice, Invoice, str]:
+def _domestic_pair(tmp_path: Path, currency: str = "CHF") -> tuple[Invoice, Invoice, str]:
+    bank = f"Assets:CH:GmbH:Current:{'UBS:CHF' if currency == 'CHF' else 'Wise:EUR'}"
+    return _pair(_base("domestic", currency, _ACME), "ACME202701", bank, tmp_path)
+
+
+def _export_pair(tmp_path: Path, **overrides: object) -> tuple[Invoice, Invoice, str]:
     nordsoft = Party(
         name="nordsoft",
         address=["Tornimäe tn 1", "15551 Tallinn"],
@@ -102,7 +110,7 @@ def _export_pair(**overrides: object) -> tuple[Invoice, Invoice, str]:
         vat_id="EE102566484",
     )
     base = _base("export", "EUR", nordsoft, **overrides)
-    return _pair(base, "KEI202701", "Assets:CH:GmbH:Current:Wise:EUR")
+    return _pair(base, "KEI202701", "Assets:CH:GmbH:Current:Wise:EUR", tmp_path)
 
 
 def _ledger(tmp_path: Path, text: str) -> Path:
@@ -114,7 +122,7 @@ def _ledger(tmp_path: Path, text: str) -> Path:
 def test_domestic_advance_is_declared_on_receipt_and_only_the_rest_on_the_invoice(
     tmp_path: Path,
 ) -> None:
-    _, _, text = _domestic_pair()
+    _, _, text = _domestic_pair(tmp_path)
     led = _ledger(tmp_path, text)
     q4 = mwst.compute(led, "2026-10-01", "2026-12-31")
     q1 = mwst.compute(led, "2027-01-01", "2027-03-31")
@@ -125,7 +133,7 @@ def test_domestic_advance_is_declared_on_receipt_and_only_the_rest_on_the_invoic
 
 @pytest.mark.parametrize("reverse_charge", [True, False])  # EU B2B, and outside the EU
 def test_export_advance_is_declared_in_221_on_receipt(tmp_path: Path, reverse_charge: bool) -> None:
-    _, _, text = _export_pair(reverse_charge=reverse_charge)
+    _, _, text = _export_pair(tmp_path, reverse_charge=reverse_charge)
     led = _ledger(tmp_path, text)
     q4 = mwst.compute(led, "2026-10-01", "2026-12-31")
     q1 = mwst.compute(led, "2027-01-01", "2027-03-31")
@@ -137,18 +145,17 @@ def test_export_advance_is_declared_in_221_on_receipt(tmp_path: Path, reverse_ch
     assert (q1.z200, q1.z221) == (Decimal("9400.00"), Decimal("9400.00"))
 
 
-def test_final_invoice_credits_the_advance_and_asks_for_the_rest() -> None:
-    _, final, _ = _domestic_pair()
+def test_final_invoice_credits_the_advance_and_asks_for_the_rest(tmp_path: Path) -> None:
+    _, final, _ = _domestic_pair(tmp_path)
     t = compute(final)
-    assert (t.grand_total, t.advances, t.advance_vat) == (21620, 10810, Decimal("810.00"))
-    assert t.amount_due == Decimal("10810.00")
-    text = draft.build_draft(final, t, config.Config())
+    assert (t.grand_total, t.advances, t.amount_due) == (21620, 10810, Decimal("10810.00"))
+    text = draft.build_draft(final, t, config.Config())  # no books: split as credited
     assert 'proforma: "PF2026001"' in text and "^PF2026001" not in text
     assert "Liabilities:CH:GmbH:Tax:OutputVAT                 -810.00 CHF" in text
 
 
 def test_cross_check_reads_the_receipt_and_the_release(tmp_path: Path) -> None:
-    pf, final, text = _domestic_pair()
+    pf, final, text = _domestic_pair(tmp_path)
     led = _ledger(tmp_path, text)
     paid = verify.cross_check(led, pf, compute(pf))
     assert paid.found and paid.ok and paid.date == "2026-11-20" and paid.date_ok
@@ -169,7 +176,7 @@ def test_cross_check_reads_the_receipt_and_the_release(tmp_path: Path) -> None:
 
 
 def test_unpaid_pro_forma_prints_the_receipt_legs(tmp_path: Path) -> None:
-    pf, _, _ = _domestic_pair()
+    pf, _, _ = _domestic_pair(tmp_path)
     assert not verify.cross_check(_ledger(tmp_path, _CHART), pf, compute(pf)).found
     text = draft.build_draft(pf, compute(pf), config.Config())
     assert "Liabilities:CH:GmbH:Advances:Domestic     -10000.00 CHF" in text
@@ -177,14 +184,14 @@ def test_unpaid_pro_forma_prints_the_receipt_legs(tmp_path: Path) -> None:
 
 
 def test_export_advance_is_not_revalued_at_year_end(tmp_path: Path) -> None:
-    _, _, text = _export_pair()
+    _, _, text = _export_pair(tmp_path)
     receipt_only = text.split("\n2027-01-29")[0] + "\n2026-12-31 price EUR 0.90 CHF\n"
     revalued = {r.account for r in fx.compute(_ledger(tmp_path, receipt_only), "2026-12-31")}
     assert revalued == {"Assets:CH:GmbH:Current:Wise:EUR"}
 
 
 def test_pro_forma_is_no_invoice_to_the_payers_software(tmp_path: Path) -> None:
-    pf, _, _ = _domestic_pair()
+    pf, _, _ = _domestic_pair(tmp_path)
     t = compute(pf)
     payload = qr.payload(qr.build_bill(pf, ISSUER, ISSUER.account("CHF"), t))
     assert "//S1/" not in payload and "10810.00" in payload
@@ -195,7 +202,7 @@ def test_pro_forma_is_no_invoice_to_the_payers_software(tmp_path: Path) -> None:
 
 
 def test_final_invoice_shows_the_advance_and_pays_the_rest(tmp_path: Path) -> None:
-    _, final, _ = _domestic_pair()
+    _, final, _ = _domestic_pair(tmp_path)
     t = compute(final)
     ctx = render.build_context(final, ISSUER, t, {"type": "qrbill"})
     assert ctx["advances"] == [
@@ -207,8 +214,8 @@ def test_final_invoice_shows_the_advance_and_pays_the_rest(tmp_path: Path) -> No
     render.render(final, ISSUER, tmp_path / "final.pdf")
 
 
-def test_advances_are_refused_where_they_make_no_sense() -> None:
-    _, final, _ = _domestic_pair()
+def test_advances_are_refused_where_they_make_no_sense(tmp_path: Path) -> None:
+    _, final, _ = _domestic_pair(tmp_path)
     too_much = final.model_copy(
         update={
             "advances": [
@@ -293,6 +300,12 @@ def test_cli_pro_forma_to_invoice_end_to_end(
         r = json.loads(res.output)
         assert (r["z200"], r["z221"], r["violations"]) == (z221, z221, []), r
 
+    # Released at the CHF it came in at: nothing is left on 2030 once invoiced.
+    res = runner.invoke(app, ["report", "bilanz", "--at", "2027-12-31", "--json"])
+    rows = json.loads(res.output)["short_term_liabilities"]
+    codes = {c["code"]: c["amount"] for r in rows for c in r["codes"]}
+    assert Decimal(codes.get("2030", "0")) == 0, rows
+
 
 def test_saldo_method_taxes_the_gross_advance_on_receipt(tmp_path: Path) -> None:
     # The SSS form declares Entgelte VAT included (MWST-Info 12): the advance's
@@ -300,7 +313,7 @@ def test_saldo_method_taxes_the_gross_advance_on_receipt(tmp_path: Path) -> None
     cfg = config.validate(
         config.Config(vat_method="saldo", saldo=(config.SaldoRate(Decimal("0.062")),))
     )
-    _, _, text = _domestic_pair()
+    _, _, text = _domestic_pair(tmp_path)
     led = _ledger(tmp_path, text)
     for d0, d1 in (("2026-10-01", "2026-12-31"), ("2027-01-01", "2027-03-31")):
         r = mwst.compute(led, d0, d1, cfg)
@@ -333,3 +346,85 @@ def test_advance_is_declared_like_the_income_it_becomes(
     assert getattr(r, field) == Decimal("1000.00")
     if vat:
         assert (r.z303_net, r.z313_tax) == (0, Decimal(vat))
+
+
+def test_foreign_advance_leaves_at_the_chf_it_came_in_at(tmp_path: Path) -> None:
+    # Received at 0.93, invoiced at 0.94: the release and the income it becomes
+    # carry the receipt's CHF, so the advances account clears in CHF too.
+    _, _, text = _export_pair(tmp_path)
+    advance = "Liabilities:CH:GmbH:Advances:Export"
+    assert "10000.00 EUR @@ 9300.00 CHF" in text and "-10000.00 EUR @@ 9300.00 CHF" in text
+    entries, problems = ledger.load(_ledger(tmp_path, text))
+    assert not problems, problems
+    price_map = prices.build_price_map(entries)
+    legs = [
+        (p, e.date)
+        for e in entries
+        if isinstance(e, data.Transaction)
+        for p in e.postings
+        if p.account == advance
+    ]
+    # kmu's book value: each leg's weight at its own date.
+    book = sum((ledger.to_chf(get_weight(p), on, price_map) for p, on in legs), Decimal("0"))
+    assert book == 0 and sum(p.units.number or 0 for p, _ in legs if p.units) == 0
+
+
+def test_foreign_pro_forma_leaves_its_vat_to_the_day_received(tmp_path: Path) -> None:
+    # The VAT on an advance is owed at the rate of the day it arrives (Art. 45
+    # MWSTV); the pro forma's own date fixes nothing.
+    pf = _base("domestic", "EUR", _ACME, proforma=True, items=[_item("Advance", 10000)])
+    text = draft.build_draft(pf, compute(pf), config.Config())
+    assert "-810.00 EUR  ; TODO in CHF at the day received: quints vat convert" in text
+    assert " CHF" not in text.split("OutputVAT")[1].split(";")[0]
+
+
+def _receipt(amount: str, on: str = "2026-11-20", account: str = "Domestic", vat: str = "") -> str:
+    net = Decimal(amount) - Decimal(vat or 0)
+    tax = f"    Liabilities:CH:GmbH:Tax:OutputVAT  -{vat} CHF\n" if vat else ""
+    return (
+        f'{on} * "ACME AG" "Advance on pro forma PF2026001"\n'
+        '    proforma: "PF2026001"\n'
+        f"    Assets:CH:GmbH:Current:UBS:CHF  {amount} CHF\n"
+        f"    Liabilities:CH:GmbH:Advances:{account}  -{net:.2f} CHF\n" + tax + "\n"
+    )
+
+
+def test_pro_forma_paid_in_part_is_received_not_conflicting(tmp_path: Path) -> None:
+    pf, _, _ = _domestic_pair(tmp_path)
+    led = _ledger(tmp_path, _CHART + _receipt("5000.00", vat="374.65"))
+    cc = verify.cross_check(led, pf, compute(pf))
+    assert cc.ok and cc.ledger_total == Decimal("5000.00")
+    over = _ledger(tmp_path, _CHART + _receipt("20000.00", vat="1498.61"))
+    assert not verify.cross_check(over, pf, compute(pf)).ok
+
+
+def test_instalments_of_one_pro_forma_are_credited_together(tmp_path: Path) -> None:
+    _, final, _ = _domestic_pair(tmp_path)
+    halves = [
+        Advance(proforma="PF2026001", received=date(2026, 11, d), amount=Decimal("5405.00"))
+        for d in (20, 27)
+    ]
+    final = final.model_copy(update={"advances": halves})
+    led = _ledger(
+        tmp_path,
+        _CHART
+        + _receipt("5405.00", vat="405.00")
+        + _receipt("5405.00", "2026-11-27", vat="405.00"),
+    )
+    cc = verify.cross_check(led, final, compute(final))
+    assert not cc.advance_problems
+    text = draft.build_draft(final, compute(final), config.Config(), received=cc.received)
+    assert text.count("Advances:Domestic") == 1 and "10000.00 CHF" in text
+
+
+def test_receipt_the_invoice_cannot_release_is_reported(tmp_path: Path) -> None:
+    _, final, _ = _domestic_pair(tmp_path)
+    # Booked as an export advance (no VAT) — the domestic invoice would
+    # release VAT never declared, from an account that never held it.
+    led = _ledger(tmp_path, _CHART + _receipt("10810.00", account="Export"))
+    problems = verify.cross_check(led, final, compute(final)).advance_problems
+    assert problems == [
+        "advance PF2026001 is booked on Liabilities:CH:GmbH:Advances:Export, "
+        "a domestic invoice releases Liabilities:CH:GmbH:Advances:Domestic",
+        "advance PF2026001 declared 0.00 VAT on receipt, 810.00 at the invoice's 8.1%",
+    ]
