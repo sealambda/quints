@@ -31,6 +31,14 @@ def _structured(name: str, lines: Sequence[str], country: str) -> dict[str, str 
             f"like '8000 Zürich' (got {lines})"
         )
     street_lines = [ln for i, ln in enumerate(lines) if i != postal_idx]
+    if len(street_lines) > 1:
+        # Structured addresses carry one street line; c/o or Postfach can't follow.
+        warnings.warn(
+            f"{name}: the QR-bill's structured address takes one street line, so "
+            f"{street_lines[1:]} is left off the payment part (the invoice still "
+            f"prints it) — put the line the post delivers to first",
+            stacklevel=3,
+        )
     if street_lines:
         m = re.match(r"^(.*?)[\s,]+(\d+\w*)$", street_lines[0])  # split trailing house no
         street, house = (m.group(1), m.group(2)) if m else (street_lines[0], "")
@@ -57,12 +65,14 @@ def build_bill(inv: Invoice, issuer: Issuer, account: BankAccount, totals: Total
     # A pro forma carries none: its /10/ invoice number, date and VAT rate are
     # what the payer's software books an invoice — and input tax — from.
     billing = "" if inv.proforma else swico.billing_information(inv, issuer, totals, message) or ""
+    creditor = _structured(issuer.name, issuer.address, issuer.country)
+    debtor = _structured(customer.name, customer.address, customer.country)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         bill = QRBill(
             account=ref_mod.creditor_iban(account, payment_ref.kind, currency),
-            creditor=_structured(issuer.name, issuer.address, issuer.country),
-            debtor=_structured(customer.name, customer.address, customer.country),
+            creditor=creditor,
+            debtor=debtor,
             amount=f"{totals.amount_due:.2f}",
             currency=currency,
             reference_number=payment_ref.value,

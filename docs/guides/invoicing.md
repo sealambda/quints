@@ -12,10 +12,14 @@ later matches the payment to it.
         - *Not registered:* it charges and mentions none — see
           [below](#not-vat-registered).
     - **Invoices:** domestic Swiss QR-bills in CHF or EUR, and export
-      invoices (SEPA/SWIFT, EU reverse charge).
+      invoices for services to a customer abroad (SEPA/SWIFT, EU reverse
+      charge).
     - **Not covered:** e-invoicing formats (ZUGFeRD, Peppol), credit notes as
       separate documents, instalment plans beyond
-      [advances against a pro forma](#get-paid-before-you-invoice-pro-forma).
+      [advances against a pro forma](#get-paid-before-you-invoice-pro-forma),
+      and two kinds of foreign sale whose legal basis differs from the export
+      invoice's note: exported goods, and services taxed in Switzerland
+      although the customer is abroad (see [below](#foreign-invoices)).
 
 ## Render a QR-bill
 
@@ -326,7 +330,12 @@ quints invoice invoicing/globex-2026-08.yaml
 An export invoice (`kind: export`) renders without a QR part. It shows the
 full SEPA/international payment instruction instead (beneficiary, IBAN,
 BIC/SWIFT, bank, reference) and the Swiss note that the place of supply is
-abroad.[^place] It defaults to the EU B2B reverse-charge note, which requires
+abroad.[^place] That note is right for a service whose place of supply is the
+customer's seat. It is wrong for exported goods, which are exempt on other
+grounds and need an export record, and for the services the law places in
+Switzerland whatever the customer's seat, such as work on Swiss real estate,
+events held here, restaurant services and passenger transport.[^not-export] Don't use
+`kind: export` for those. It defaults to the EU B2B reverse-charge note, which requires
 the customer's VAT number in the registry.[^reverse] Set
 `reverse_charge: false` for customers outside a reverse-charge regime (e.g.
 the US). The currency's account needs both a regular `iban` (a QR-IBAN can't
@@ -576,6 +585,7 @@ consolidated total converts everything at the latest rate in your price file
 [^art27]: Art. 27 Abs. 1 and 2 MWSTG: "Wer nicht im Register der steuerpflichtigen Personen eingetragen ist …, darf in Rechnungen nicht auf die Steuer hinweisen"; who shows it anyway "schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^vat-id]: Art. 26 Abs. 2 Bst. a MWSTG: the invoice names the issuer "sowie die Nummer, unter der er oder sie eingetragen ist". The `MWST` suffix format is the one in [MWST-Info 16, Ziff. 2.2](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/cipherDisplay.xhtml?publicationId=1002536&componentId=1002626).
 [^place]: Art. 8 Abs. 1 MWSTG (place of supply of services: where the recipient has its seat), [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_8).
+[^not-export]: Goods: Art. 23 Abs. 2 Ziff. 1 and Abs. 4 MWSTG (exempt, proven by customs documents), declared in Ziffer 220. Services placed in Switzerland: Art. 8 Abs. 2 MWSTG. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_8).
 [^reverse]: Art. 44 and 196 of the VAT Directive (place of supply and reverse charge for B2B services), Art. 226 points (4) and (11a) (the customer's VAT number and the "Reverse charge" mention). [EUR-Lex](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02006L0112-20250414).
 [^advance-vat]: Art. 40 Abs. 1 Bst. c MWSTG: the tax arises "mit der Vereinnahmung des Entgelts bei Vorauszahlungen für nicht von der Steuer befreite Leistungen" (in force since 1 Jan. 2025). [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_40). MWST-Info 16 *Buchführung und Rechnungsstellung*, Ziff. 1.6.4: "Anzahlungen von Kunden müssen beim Erhalt als Umsatz versteuert werden." [ESTV](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/tableOfContent.xhtml?publicationId=1002536)
 [^advance-rate]: Art. 45 Abs. 1 MWSTV: "Zur Berechnung der geschuldeten Mehrwertsteuer sind Entgelte in ausländischer Währung im Zeitpunkt der Entstehung der Steuerforderung in Landeswährung umzurechnen." For an advance that is the day it is received (Art. 40 Abs. 1 Bst. c MWSTG). [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/828/de#art_45)

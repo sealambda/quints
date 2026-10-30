@@ -1060,3 +1060,15 @@ def test_supply_schema_advertises_every_accepted_form():
     assert any("$ref" in f for f in forms)
     assert "supply" in schema["required"]
     assert set(schema["$defs"]["SupplyPeriod"]["properties"]) == {"from", "to"}
+
+
+def test_qr_address_says_which_lines_it_leaves_off():
+    with pytest.warns(UserWarning, match="Postfach 12"):
+        address = qr._structured(  # pyright: ignore[reportPrivateUsage]
+            "Acme AG", ["Bahnhofstrasse 1", "Postfach 12", "8001 Zürich"], "CH"
+        )
+    assert (address["street"], address["house_num"], address["pcode"]) == (
+        "Bahnhofstrasse",
+        "1",
+        "8001",
+    )

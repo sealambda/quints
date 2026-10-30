@@ -15,6 +15,14 @@ This project is a git repository; `quints init` committed the pristine
 scaffold. Work in reviewable steps: `git diff` before moving drafts into
 `books/`, commit once `quints check` passes — the history is the audit trail.
 
+## Confidential data
+
+These are the company's books: its customers, suppliers, bank balances and
+their documents, some of them personal data. Whatever you read here goes to
+your model provider. Read what the task needs, never open `.env` or `.wise/`,
+and never send the books to a service the company hasn't approved. Keep the
+git remote private.
+
 ## Layout
 
 - `main.bean` — options, plugins, includes; the entry point every tool loads.

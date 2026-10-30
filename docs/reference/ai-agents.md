@@ -17,6 +17,27 @@ legal claim to its source: the article, the ESTV publication, the standard.
 An agent can check that a rule applies to the entity in front of it, and
 show a human where it came from.
 
+## Your data
+
+quints itself sends nothing anywhere: it runs locally and calls no model. The
+agent is different. Everything it reads goes to its model provider: bookings,
+`customers.yaml`, the PDFs under `documents/`, bank statements. That includes
+personal data: an Einzelfirma customer's name and address, an employee's
+salary.
+
+The provider processes that data on your behalf, often outside
+Switzerland.[^processor] Before you point an agent at real books:
+
+- **Check the provider's terms.** You need a data-processing agreement (DPA),
+  the countries it processes in, and whether it trains on your data. Prefer a
+  plan that excludes training.[^abroad]
+- **Say so in your privacy notice** if customers or employees are natural
+  persons.[^inform]
+- **Keep the git remote private.** `documents/` is committed on purpose, so
+  the repository holds every invoice and receipt.
+- **Keep credentials out of reach.** `.env` and `.wise/` are git-ignored, and
+  the scaffolded `AGENTS.md` tells the agent never to open them.
+
 ## AGENTS.md
 
 `quints init` scaffolds an `AGENTS.md` into every project: the layout, the
@@ -81,3 +102,7 @@ byte-identical projects. The repo's example project is regenerated from an
 answer file and byte-checked in CI — the same mechanism that runs every
 command in these docs against a real ledger. What you read here is executed,
 not asserted.
+
+[^processor]: Art. 9 DSG (processing by a processor), [SR 235.1](https://www.fedlex.admin.ch/eli/cc/2022/491/de#art_9). For personal data of people in the EU, also Art. 28 GDPR.
+[^abroad]: Art. 16 f. DSG (disclosure abroad: a country with adequate protection per Annex 1 DSV, or safeguards such as standard contractual clauses), [SR 235.1](https://www.fedlex.admin.ch/eli/cc/2022/491/de#art_16); Art. 44 ff. GDPR.
+[^inform]: Art. 19 Abs. 4 DSG: the information duty names the country a disclosure abroad goes to. [SR 235.1](https://www.fedlex.admin.ch/eli/cc/2022/491/de#art_19).

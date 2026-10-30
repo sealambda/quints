@@ -164,3 +164,9 @@ make check     # ruff, basedpyright, import-linter, deptry, vulture, pytest
 `make check` is the whole quality gate; CI runs exactly it. Pushing a `vX.Y.Z`
 tag builds and publishes every distribution to PyPI (trusted publishing). See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the architecture and conventions.
+
+## License
+
+[GPL-2.0-only](LICENSE), the license beancount itself uses. quints is not tax
+or legal advice and comes without warranty (GPL-2.0, sections 11–12). You,
+or your Treuhänder, stay responsible for what you file and sign.
