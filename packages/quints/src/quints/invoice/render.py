@@ -17,7 +17,17 @@ from babel.dates import format_date
 from . import bank, qr
 from . import reference as ref_mod
 from .labels import labels as get_labels
-from .model import BankAccount, Invoice, Issuer, Totals, compute, money, number
+from .model import (
+    Advance,
+    BankAccount,
+    Invoice,
+    Issuer,
+    Totals,
+    compute,
+    money,
+    number,
+    vat_included,
+)
 
 TEMPLATE = Path(__file__).parent / "template.typ"
 # Always on the search path: the default brand families (Geist, Geist Mono,
@@ -131,9 +141,7 @@ def build_context(
         # Credited advances, between the invoice total and the amount due.
         "advances": [
             {
-                "label": lbl["advance"].format(
-                    number=a.proforma, date=_fmt_date(a.received, inv.locale)
-                ),
+                "label": _advance_label(inv, lbl, a, totals),
                 "amount": money(-a.amount, inv.locale),
             }
             for a in inv.advances
@@ -142,6 +150,17 @@ def build_context(
         "notes": list(inv.notes),
         "brand": _brand_context(issuer, logo),
     }
+
+
+def _advance_label(inv: Invoice, lbl: Mapping[str, str], a: Advance, totals: Totals) -> str:
+    """The pro forma showed the advance's VAT, and the invoice shows VAT on the
+    whole supply: naming the VAT credited back keeps it from reading as shown
+    twice (Art. 27 Abs. 2 MWSTG)."""
+    text = lbl["advance"].format(number=a.proforma, date=_fmt_date(a.received, inv.locale))
+    if not totals.vat_rate:
+        return text  # export or unregistered: no VAT was shown
+    vat = money(vat_included(a.amount, totals.vat_rate), inv.locale)
+    return f"{text}, {lbl['advance_vat'].format(vat=vat)}"
 
 
 def _totals_context(inv: Invoice, totals: Totals) -> dict[str, str | bool]:

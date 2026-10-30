@@ -213,9 +213,13 @@ def test_final_invoice_shows_the_advance_and_pays_the_rest(tmp_path: Path) -> No
     _, final, _ = _domestic_pair(tmp_path)
     t = compute(final)
     ctx = render.build_context(final, ISSUER, t, {"type": "qrbill"})
+    # The VAT the pro forma showed is credited back by name, not shown twice.
     assert ctx["advances"] == [
-        {"label": "Anzahlung PF2026001 vom 20.11.2026", "amount": "-10'810.00"}
+        {"label": "Anzahlung PF2026001 vom 20.11.2026, inkl. MWST 810.00", "amount": "-10'810.00"}
     ]
+    _, export, _ = _export_pair(tmp_path)
+    export_ctx = render.build_context(export, ISSUER, compute(export), {"type": "sepa"})
+    assert "MWST" not in export_ctx["advances"][0]["label"]
     assert ctx["totals"]["amount_due"] == "10'810.00"
     payload = qr.payload(qr.build_bill(final, ISSUER, ISSUER.account("CHF"), t))
     assert "10810.00" in payload.splitlines()  # the QR-bill asks for the rest only
