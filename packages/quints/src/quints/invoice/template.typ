@@ -144,7 +144,7 @@
     // Advances credited from pro formas: the invoice total — VAT on the
     // whole supply — first, then what was paid ahead, leaving the amount due.
     ..(if d.advances.len() > 0 {
-      row(L.grand_total, d.totals.grand_total)
+      row(L.invoice_total, d.totals.grand_total)
       d.advances.map(a => row(a.label, a.amount)).flatten()
     } else { () }),
   )
@@ -199,7 +199,7 @@
   // layout and typography are prescribed by the Implementation Guidelines —
   // it is rendered by qr.py and deliberately left unstyled here.
   place(bottom + left, dx: -20mm, dy: 108mm, image("qrbill.svg", width: 210mm))
-} else {
+} else if d.payment.type == "sepa" {
   v(8mm)
   block(fill: panel, inset: (x: 10pt, y: 9pt), width: 100%)[
     #text(size: 8pt, weight: "medium", tracking: 0.1em, fill: accent)[#upper(L.payment_to)]

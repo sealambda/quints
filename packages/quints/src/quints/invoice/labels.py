@@ -40,6 +40,7 @@ LABELS = {
         "proforma_no": "Proforma-Nr.",
         "proforma_date": "Datum",
         "amount_due": "Zahlbar",
+        "invoice_total": "Rechnungstotal",
         "advance": "Anzahlung {number} vom {date}",
         "proforma_note": "Zahlungsaufforderung für eine Anzahlung. Diese Proforma-Rechnung "
         "berechtigt nicht zum Vorsteuerabzug: Die Rechnung folgt mit der Leistung und "
@@ -72,6 +73,7 @@ LABELS = {
         "proforma_no": "Pro forma no.",
         "proforma_date": "Date",
         "amount_due": "Amount due",
+        "invoice_total": "Invoice total",
         "advance": "Advance {number} received {date}",
         "proforma_note": "Request for an advance payment. This pro forma invoice is no "
         "basis for an input tax deduction: the invoice follows with the supply and "
@@ -105,6 +107,7 @@ LABELS = {
         "proforma_no": "N.º de proforma",
         "proforma_date": "Fecha",
         "amount_due": "Importe a pagar",
+        "invoice_total": "Total factura",
         "advance": "Anticipo {number} recibido el {date}",
         "proforma_note": "Solicitud de pago anticipado. Esta factura proforma no da derecho "
         "a deducir el IVA soportado: la factura se emitirá con la prestación y "

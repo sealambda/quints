@@ -7,6 +7,7 @@ it — so that period declares only the remainder. The tests paste quints' own
 drafts into a ledger, the way a user does, and read both returns back.
 """
 
+import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -74,6 +75,12 @@ def _pair(base: Invoice, number: str, bank: str, tmp_path: Path) -> tuple[Invoic
     )
     paid = f"    {bank}  {pf_totals.amount_due:.2f} {ccy}"
     receipt = "\n".join(paid if "TODO the bank leg" in ln else ln for ln in receipt.splitlines())
+    # A foreign VAT leg, converted at the day received as the guide says (0.93).
+    receipt = re.sub(
+        r"-(\S+) EUR  ; TODO in CHF.*",
+        lambda m: f"-{Decimal(m[1]) * Decimal('0.93'):.2f} CHF @@ {m[1]} EUR",
+        receipt,
+    )
 
     final = base.model_copy(
         update={
@@ -90,7 +97,8 @@ def _pair(base: Invoice, number: str, bank: str, tmp_path: Path) -> tuple[Invoic
     )
     paid_only = _ledger(tmp_path, _CHART + "\n" + receipt + "\n")
     received = verify.cross_check(paid_only, final, compute(final)).received
-    booked = draft.build_draft(final, compute(final), config.Config(), received=received)
+    rate = None if ccy == "CHF" else Decimal("0.94")  # the invoice date's
+    booked = draft.build_draft(final, compute(final), config.Config(), rate, received)
     return pf, final, _CHART + "\n" + receipt + "\n\n" + booked + "\n"
 
 
@@ -369,6 +377,31 @@ def test_foreign_advance_leaves_at_the_chf_it_came_in_at(tmp_path: Path) -> None
     assert book == 0 and sum(p.units.number or 0 for p, _ in legs if p.units) == 0
 
 
+def test_foreign_domestic_advance_declares_each_share_at_its_own_rate(tmp_path: Path) -> None:
+    # VAT and FX together: EUR 10'810 received at 0.93 in Q4, the invoice's
+    # other EUR 10'810 at 0.94 in Q1 — and the advance clears in CHF and EUR.
+    _, _, text = _domestic_pair(tmp_path, "EUR")
+    led = _ledger(tmp_path, text)
+    q4 = mwst.compute(led, "2026-10-01", "2026-12-31")
+    q1 = mwst.compute(led, "2027-01-01", "2027-03-31")
+    for r in (q4, q1):
+        assert not r.violations, r.violations
+    assert (q4.z303_net, q4.z303_tax) == (Decimal("9300.00"), Decimal("753.30"))
+    assert (q1.z303_net, q1.z303_tax) == (Decimal("9400.00"), Decimal("761.40"))
+    entries, problems = ledger.load(led)
+    assert not problems, problems
+    price_map = prices.build_price_map(entries)
+    legs = [
+        (p, e.date)
+        for e in entries
+        if isinstance(e, data.Transaction)
+        for p in e.postings
+        if p.account == "Liabilities:CH:GmbH:Advances:Domestic"
+    ]
+    book = sum((ledger.to_chf(get_weight(p), on, price_map) for p, on in legs), Decimal("0"))
+    assert book == 0 and sum(p.units.number or 0 for p, _ in legs if p.units) == 0
+
+
 def test_foreign_pro_forma_leaves_its_vat_to_the_day_received(tmp_path: Path) -> None:
     # The VAT on an advance is owed at the rate of the day it arrives (Art. 45
     # MWSTV); the pro forma's own date fixes nothing.
@@ -428,3 +461,21 @@ def test_receipt_the_invoice_cannot_release_is_reported(tmp_path: Path) -> None:
         "a domestic invoice releases Liabilities:CH:GmbH:Advances:Domestic",
         "advance PF2026001 declared 0.00 VAT on receipt, 810.00 at the invoice's 8.1%",
     ]
+
+
+def test_invoice_the_advances_cover_asks_for_nothing(tmp_path: Path) -> None:
+    _, final, _ = _domestic_pair(tmp_path)
+    paid = Advance(proforma="PF2026001", received=date(2026, 11, 20), amount=Decimal("21620"))
+    final = final.model_copy(update={"advances": [paid]})
+    t = compute(final)
+    ctx = render.build_context(final, ISSUER, t, {"type": "none"})
+    assert t.amount_due == 0 and ctx["terms"] is None
+    path, _, payload = render.render(final, ISSUER, tmp_path / "covered.pdf")
+    assert payload is None and path.read_bytes().startswith(b"%PDF")
+
+
+def test_gross_row_is_the_invoice_total_not_a_second_amount_due(tmp_path: Path) -> None:
+    _, final, _ = _domestic_pair(tmp_path)
+    english = final.model_copy(update={"locale": "en_CH"})
+    ctx = render.build_context(english, ISSUER, compute(english), {"type": "qrbill"})
+    assert ctx["labels"]["invoice_total"] == "Invoice total"
