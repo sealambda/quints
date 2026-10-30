@@ -306,3 +306,30 @@ def test_saldo_method_taxes_the_gross_advance_on_receipt(tmp_path: Path) -> None
         r = mwst.compute(led, d0, d1, cfg)
         assert not r.violations, r.violations
         assert (r.z200, r.z323_net) == (Decimal("10810.00"), Decimal("10810.00"))
+
+
+@pytest.mark.parametrize(
+    ("marker", "vat", "field"),
+    [(":Reduced", "26.00", "z313_net"), (":Exempt", None, "z230")],
+)
+def test_advance_is_declared_like_the_income_it_becomes(
+    tmp_path: Path, marker: str, vat: str | None, field: str
+) -> None:
+    # The income account's marker says reduced or exempt; the advance, held on
+    # a liability until invoiced, is declared in that same Ziffer.
+    cfg = config.validate(
+        config.Config(income_domestic=f"Income:CH:GmbH:Consulting:External:Domestic{marker}")
+    )
+    gross = Decimal("1026.00") if vat else Decimal("1000.00")
+    tax = f"    Liabilities:CH:GmbH:Tax:OutputVAT  -{vat} CHF\n" if vat else ""
+    receipt = (
+        '2026-11-20 * "ACME AG" "Advance on pro forma PF2026001"\n'
+        '    proforma: "PF2026001"\n'
+        f"    Assets:CH:GmbH:Current:UBS:CHF  {gross} CHF\n"
+        "    Liabilities:CH:GmbH:Advances:Domestic  -1000.00 CHF\n" + tax
+    )
+    r = mwst.compute(_ledger(tmp_path, _CHART + receipt), "2026-10-01", "2026-12-31", cfg)
+    assert not r.violations, r.violations
+    assert getattr(r, field) == Decimal("1000.00")
+    if vat:
+        assert (r.z303_net, r.z313_tax) == (0, Decimal(vat))
