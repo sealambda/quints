@@ -326,6 +326,15 @@ class Config:
         """Whether the entity is VAT-registered on ``day``."""
         return self.phase_at(day) is not None
 
+    @property
+    def advances(self) -> tuple[str, str]:
+        """The customer-advance accounts: held at the CHF received, turnover to `mwst`."""
+        return (self.advances_domestic, self.advances_export)
+
+    def advances_for(self, kind: str) -> str:
+        """The advances account of an invoice `kind` (domestic or export)."""
+        return self.advances_export if kind == "export" else self.advances_domestic
+
     def for_period(self, d0: Date, d1: Date) -> tuple[Config, Date, Date]:
         """The config one return is computed under, and the liable stretch of it.
 

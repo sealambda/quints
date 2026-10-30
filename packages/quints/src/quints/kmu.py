@@ -724,8 +724,9 @@ def compute_bilanz(
     price_map = bc_prices.build_price_map(entries)
     mapping = kmu_map(entries, cfg.entity_marker)
     pos = _positions(entries, mapping, on, fy_start, price_map, problems)
-    advances = (cfg.advances_domestic, cfg.advances_export)
-    per_code, converted, market_minus_book = _value(pos, mapping, on, price_map, problems, advances)
+    per_code, converted, market_minus_book = _value(
+        pos, mapping, on, price_map, problems, cfg.advances
+    )
     problems += _unmapped(per_code, BILANZ_ROWS, "Bilanz")
 
     assets_rows = _rows_from(

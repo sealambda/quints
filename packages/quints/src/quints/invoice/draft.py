@@ -18,7 +18,7 @@ def filing_account(inv: Invoice, cfg: config.Config) -> str:
     """The account the invoice books against, and its PDF is filed under: the
     income account — or, for a pro forma, the customer advances it becomes."""
     if inv.proforma:
-        return cfg.advances_export if inv.kind == "export" else cfg.advances_domestic
+        return cfg.advances_for(inv.kind)
     return cfg.income_export if inv.kind == "export" else cfg.income_domestic
 
 
@@ -102,7 +102,7 @@ def build_draft(
     customer = inv.resolved_customer
     ccy = inv.currency
     income = filing_account(inv, cfg)
-    advances = cfg.advances_export if inv.kind == "export" else cfg.advances_domestic
+    advances = cfg.advances_for(inv.kind)
     narration = f"{inv.supply.text(inv.locale)} invoiced"
     doc = document_path(inv, income)  # same name the rendered PDF is filed under
     vat = vat_owed(inv, totals)
