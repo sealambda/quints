@@ -10,7 +10,8 @@ Valuation:
 
 - Balance-sheet positions: non-CHF balances are converted at the report-date
   rate (latest BAZG rate on or before ``--at``) — the same method Fava uses
-  for market value, so totals tie out.
+  for market value, so totals tie out. Customer advances are the exception:
+  settled by the supply, not in money, they stay at the CHF received.
 - Income-statement flows: converted at each transaction's date.
 - The difference between the balance sheet's balancing result and the income
   statement's result is therefore the **unrealized currency translation** not
@@ -82,6 +83,7 @@ KMU_NAMES: dict[str, dict[str, str]] = {
         "de": "Nicht einbezahltes Aktien-, Stamm-, Anteilschein- oder Stiftungskapital",
     },
     "2000": {"en": "Trade payables", "de": "Verbindlichkeiten aus Lieferungen und Leistungen"},
+    "2030": {"en": "Advances received", "de": "Erhaltene Anzahlungen"},
     "2200": {"en": "VAT due", "de": "Geschuldete Mehrwertsteuer"},
     "2270": {"en": "Social security payable", "de": "Geschuldete Sozialversicherungsbeiträge"},
     "2300": {"en": "Accrued expenses", "de": "Passive Rechnungsabgrenzung"},
@@ -647,12 +649,20 @@ def _value(
     on: Date,
     price_map: bc_prices.PriceMap,
     problems: list[ledger.Violation],
+    at_book: tuple[str, ...] = (),
 ) -> tuple[dict[str, tuple[Decimal, set[str]]], dict[str, Decimal], Decimal]:
-    """(per-code CHF at ``on``, foreign units converted, report-date − book value)."""
+    """(per-code CHF at ``on``, foreign units converted, report-date − book value).
+
+    ``at_book`` accounts keep their book value: customer advances are settled
+    by the supply, not in money, so `fx` never revalues them either."""
     per_code: dict[str, tuple[Decimal, set[str]]] = {}
     converted: dict[str, Decimal] = {}
     market_minus_book = Decimal("0")
     for account, inv in pos.inventories.items():
+        if account in at_book and account not in pos.unbooked:
+            amount, accounts = per_code.get(mapping[account], (Decimal("0"), set()))
+            per_code[mapping[account]] = (amount + pos.book[account], accounts | {account})
+            continue
         total = Decimal("0")
         valued = True
         for position in inv:
@@ -714,7 +724,8 @@ def compute_bilanz(
     price_map = bc_prices.build_price_map(entries)
     mapping = kmu_map(entries, cfg.entity_marker)
     pos = _positions(entries, mapping, on, fy_start, price_map, problems)
-    per_code, converted, market_minus_book = _value(pos, mapping, on, price_map, problems)
+    advances = (cfg.advances_domestic, cfg.advances_export)
+    per_code, converted, market_minus_book = _value(pos, mapping, on, price_map, problems, advances)
     problems += _unmapped(per_code, BILANZ_ROWS, "Bilanz")
 
     assets_rows = _rows_from(

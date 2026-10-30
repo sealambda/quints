@@ -54,14 +54,16 @@ def build_bill(inv: Invoice, issuer: Issuer, account: BankAccount, totals: Total
     # statement, so it carries the invoice number; the structured billing
     # information is for the payer's software and carries everything else.
     message = inv.number
-    billing = swico.billing_information(inv, issuer, totals, message) or ""
+    # A pro forma carries none: its /10/ invoice number, date and VAT rate are
+    # what the payer's software books an invoice — and input tax — from.
+    billing = "" if inv.proforma else swico.billing_information(inv, issuer, totals, message) or ""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         bill = QRBill(
             account=ref_mod.creditor_iban(account, payment_ref.kind, currency),
             creditor=_structured(issuer.name, issuer.address, issuer.country),
             debtor=_structured(customer.name, customer.address, customer.country),
-            amount=f"{totals.grand_total:.2f}",
+            amount=f"{totals.amount_due:.2f}",
             currency=currency,
             reference_number=payment_ref.value,
             additional_information=message,

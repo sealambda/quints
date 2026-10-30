@@ -32,6 +32,7 @@ class InvoiceContext(TypedDict):
     """The data context handed to the Typst template as ``data.json``."""
 
     reverse_charge: bool
+    proforma: bool
     lang: str
     kind: str
     currency: str
@@ -42,6 +43,7 @@ class InvoiceContext(TypedDict):
     references: list[dict[str, str]]
     terms: str | None
     items: list[dict[str, str | int]]
+    advances: list[dict[str, str]]
     totals: dict[str, str | bool]
     payment: Mapping[str, str | None]
     notes: list[str]
@@ -63,8 +65,18 @@ def build_context(
     logo: str | None = None,
 ) -> InvoiceContext:
     lbl = get_labels(inv.language)
+    if inv.proforma:
+        # Titled, numbered and totalled as what it is — never as "Rechnung".
+        lbl = {
+            **lbl,
+            "invoice": lbl["proforma"],
+            "invoice_no": lbl["proforma_no"],
+            "date": lbl["proforma_date"],
+            "grand_total": lbl["amount_due"],
+        }
     customer = inv.resolved_customer
     return {
+        "proforma": inv.proforma,
         "reverse_charge": reverse_charge,
         "lang": inv.language,
         "kind": inv.kind,
@@ -112,6 +124,16 @@ def build_context(
             for i, it in enumerate(inv.items)
         ],
         "totals": _totals_context(inv, totals),
+        # Credited advances, between the invoice total and the amount due.
+        "advances": [
+            {
+                "label": lbl["advance"].format(
+                    number=a.proforma, date=_fmt_date(a.received, inv.locale)
+                ),
+                "amount": money(-a.amount, inv.locale),
+            }
+            for a in inv.advances
+        ],
         "payment": payment,
         "notes": list(inv.notes),
         "brand": _brand_context(issuer, logo),
@@ -126,6 +148,7 @@ def _totals_context(inv: Invoice, totals: Totals) -> dict[str, str | bool]:
         "rounding": money(totals.rounding, inv.locale),
         "show_rounding": totals.rounding != 0,
         "grand_total": money(totals.grand_total, inv.locale),
+        "amount_due": money(totals.amount_due, inv.locale),
         "export": inv.kind == "export",
         # Not registered: no VAT row and no Swiss VAT note — the invoice
         # may not mention the tax at all (Art. 27 Abs. 1 MWSTG).

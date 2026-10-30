@@ -1,5 +1,44 @@
 {
   "$defs": {
+    "Advance": {
+      "additionalProperties": false,
+      "description": "A payment received against a pro forma, credited on the final invoice.",
+      "properties": {
+        "proforma": {
+          "description": "The pro forma's number, e.g. PF2026001.",
+          "minLength": 1,
+          "title": "Proforma",
+          "type": "string"
+        },
+        "received": {
+          "description": "The day the payment arrived.",
+          "format": "date",
+          "title": "Received",
+          "type": "string"
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "description": "What was received, in the invoice currency, VAT included \u2014 the amount the advance was booked at.",
+          "title": "Amount"
+        }
+      },
+      "required": [
+        "proforma",
+        "received",
+        "amount"
+      ],
+      "title": "Advance",
+      "type": "object"
+    },
     "ExtraReference": {
       "description": "A labelled reference the customer's side needs quoted on the invoice.\n\nThe long tail nobody can model up front \u2014 a Leitweg-ID, an Italian\nCIG/CUP, a cost centre, a contract or framework-agreement number. It is\nprinted next to the invoice number with the label as given, so it reads\nthe way the customer's accounts-payable department expects it to.",
       "properties": {
@@ -259,6 +298,20 @@
         "type": "string"
       },
       "title": "Notes",
+      "type": "array"
+    },
+    "proforma": {
+      "default": false,
+      "description": "A pro forma: a request for an advance payment, not the invoice. It is titled and marked as such, carries no Swico billing information (the payer's software would book it as an invoice), and is booked only when paid, as a customer advance. Give it its own number series (PF2026001).",
+      "title": "Proforma",
+      "type": "boolean"
+    },
+    "advances": {
+      "description": "Payments received against pro formas, credited on this invoice: it shows VAT on the full supply, subtracts them, and asks for the rest.",
+      "items": {
+        "$ref": "#/$defs/Advance"
+      },
+      "title": "Advances",
       "type": "array"
     },
     "round_5": {
