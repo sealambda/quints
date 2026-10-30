@@ -90,6 +90,27 @@ with your issuer identity from `invoicing/issuer.yaml` on it. `--out` picks
 the path. Both statements cover the same fiscal year: `--from` (default
 1 January) to `--at` (default 31 December).
 
+What the law asks of the annual accounts, and what the PDF does about it:
+
+- **Prior-year figures.** Each statement carries a second column with the
+  previous calendar year's figures.[^prior] A first year has none: with
+  `--from` (an [extended first year](year-end.md#an-extended-first-year)),
+  or when nothing was booked the year before, the column is left out and
+  `report statements` says so. Moved your books to quints mid-life? Date
+  the opening-balance entry 31 December of the year before instead of
+  1 January, and the Bilanz column has that year's closing figures. After
+  an extended first year, the next year's comparative column covers only the
+  calendar year before it, not the whole first period.
+- **Signatures.** The last page has lines for place and date, the chair of
+  the management body, and the person responsible for the financial
+  reporting.[^sign] In an Einzelfirma the owner signs both. A GmbH's
+  managing director, or an AG's board chair, signs the first.
+- **The notes (Anhang).** Not included, and the PDF says so. You write them
+  separately (see [below](#what-quints-doesnt-do-here)).
+
+The PDF is PDF/A-2b, the archival format, so it stays readable for the ten
+years you keep it ([Close the year](year-end.md#keep-the-books-for-ten-years)).
+
 ![The Bilanz page of the generated statements PDF, grouped by KMU code](../assets/statements.png){ width="480" }
 
 All report commands take `--lang` and `--json`.
@@ -105,10 +126,15 @@ Before the statements are final, run the year-end checklist:
 
 ## What quints doesn't do here
 
-- **The Anhang (notes).** Write it with your Treuhänder. The Kontoblätter
-  (`quints report konten`) are the detail behind it.
+- **The Anhang (notes).** Every company with full bookkeeping needs one:
+  a GmbH, an AG, and an Einzelfirma above CHF 500'000 turnover.[^anhang]
+  Write it with your Treuhänder. The Kontoblätter (`quints report konten`)
+  are the detail behind it.
 - **Profit appropriation** and the shareholders' approval (GmbH/AG).
 - **The tax return.** The statements are its input, not the return.
 
 [^kmu]: Schweizer Kontenrahmen KMU, [Schulkontenrahmen KMU (SwissAccounting)](https://www.kmu.admin.ch/dam/de/sd-web/Q2HAXEngBfiW/schulkontenrahmen-kmu.pdf): classes 7 (Betrieblicher Nebenerfolg: 7000/7010, 7500/7510) and 8 (8000, 8100, 8500, 8510, 8900), and the Gesamtkostenverfahren layout on its last page.
 [^structure]: Minimum structure of the balance sheet and income statement: Art. 959a and 959b OR, [SR 220](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_959_a). Art. 959b Abs. 2 lists the income statement's positions, "8. betriebsfremder Aufwand und betriebsfremder Ertrag; 9. ausserordentlicher, einmaliger oder periodenfremder Aufwand und Ertrag; 10. direkte Steuern" among them. The Aufwertungsreserve is shown "unter der gesetzlichen Gewinnreserve gesondert" (Art. 725c Abs. 1 OR). The account codes follow the Schweizer Kontenrahmen KMU, edition 2023 ([SwissAccounting](https://swissaccounting.org/kontenrahmen)).
+[^prior]: Art. 958d Abs. 2 OR: "In der Jahresrechnung sind neben den Zahlen für das Geschäftsjahr die entsprechenden Werte des Vorjahres anzugeben." [fedlex](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_958_d).
+[^sign]: Art. 958 Abs. 3 OR: the Geschäftsbericht is signed "vom Vorsitzenden des obersten Leitungs- oder Verwaltungsorgans und der innerhalb des Unternehmens für die Rechnungslegung zuständigen Person". [fedlex](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_958).
+[^anhang]: Art. 958 Abs. 2 OR (the annual accounts are the Bilanz, the Erfolgsrechnung and the Anhang) and Art. 959c OR (its contents). Art. 957 Abs. 2 OR exempts the Einzelunternehmen below CHF 500'000 turnover, which may keep simplified accounts. [fedlex](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_957).

@@ -35,6 +35,7 @@ The steps:
 3. **Book what the check asks for.** The other commands print the entries.
 4. **Check again**, until nothing fails.
 5. **Hand the PDF to your Treuhänder** ([Statutory reports](reports.md)).
+6. **Archive the closed year** ([below](#keep-the-books-for-ten-years)).
 
 A registered business also runs `quints vat liability --at 2026-12-31` at
 the year end. If turnover stayed below the threshold, it says whether you may
@@ -200,6 +201,40 @@ next to it, and both roll up to the same Bilanz row (Sachanlagen, KMU
 1500–1699). `method = "indirect"` in `quints.toml` makes it the default and
 makes quints warn about any asset that has no contra account.
 
+## Keep the books for ten years
+
+The ledger, the documents it links and the statements are your business
+records. Keep them for ten years after the end of the fiscal year.[^keep]
+VAT records stay until the tax claim expires, which is ten years after the
+period ends. Records about real estate take longer.[^keep-vat] They have to
+stay complete, unaltered and readable for the whole period.[^gebuev]
+
+A quints project is plain text in git, so every change shows up in the
+history, but anyone with access can rewrite that history. Once the year is
+closed, fix its state in place:
+
+```bash
+git add -A && git commit -m "Close fiscal year 2026"
+git tag -s fy-2026 -m "Fiscal year 2026, closed"
+git archive --format=tar.gz -o books-2026.tar.gz fy-2026
+shasum -a 256 books-2026.tar.gz > books-2026.tar.gz.sha256
+```
+
+1. **Commit everything:** books, `documents/`, the statements PDF.
+2. **Sign a tag** for the closed year. A signed tag is verifiable, and moving it
+   later shows. Its date, though, is whatever the signer's clock said.
+3. **Archive the tagged state** and its checksum to storage you don't edit
+   day to day, which records when it was stored: a bucket with write-once
+   retention, or a timestamp from a trusted timestamping service on the
+   checksum. Integrity alone isn't enough on modifiable media. The time of
+   storage has to be provable too.[^gebuev]
+4. **Write down how the books are kept:** who books, who reviews, where the
+   archive lives. The scaffolded `AGENTS.md` describes the booking procedure
+   and is a starting point.[^procedure]
+
+Invoices and statements are PDF/A-2b, the archival PDF format, so they render
+the same in ten years.
+
 ## Configuration
 
 ```toml
@@ -229,3 +264,7 @@ receivable_review_days = 90         # open longer at year end → Delkredere rev
 [^fy]: Art. 79 Abs. 3 DBG, [SR 642.11](https://www.fedlex.admin.ch/eli/cc/1991/1184_1184_1184/de#art_79): "In jedem Kalenderjahr, ausgenommen im Gründungsjahr, muss ein Geschäftsabschluss mit Bilanz und Erfolgsrechnung erstellt werden." The year after the founding needs a closing, so the first fiscal year ends by 31 December of that year.
 [^fy-ef]: Art. 41 Abs. 3 DBG, [SR 642.11](https://www.fedlex.admin.ch/eli/cc/1991/1184_1184_1184/de#art_41): a closing "in jeder Steuerperiode"; for a natural person the tax period is the calendar year (Art. 40 Abs. 1).
 [^zh]: Kantonales Steueramt Zürich, [Steuererklärung juristische Personen](https://www.zh.ch/de/steuern-finanzen/steuern/steuern-juristische-personen/steuererklaerung-juristische-personen.html), section *Steuererklärung im Gründungsjahr*: an extended fiscal year "bis maximal 31. Dezember des Folgejahres", to be reported to the Kantonales Steueramt.
+[^keep]: Art. 958f Abs. 1 OR: "Die Geschäftsbücher und die Buchungsbelege sowie der Geschäftsbericht und der Revisionsbericht sind während zehn Jahren aufzubewahren. Die Aufbewahrungsfrist beginnt mit dem Ablauf des Geschäftsjahres." [fedlex](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_958_f).
+[^keep-vat]: Art. 70 Abs. 2 MWSTG (until the absolute limitation period of the tax claim, Art. 42 Abs. 6: ten years after the end of the tax period) and Art. 70 Abs. 3 MWSTG (the longer period for records on real estate, for Einlageentsteuerung and Eigenverbrauch). [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_70).
+[^gebuev]: Geschäftsbücherverordnung (GeBüV), [SR 221.431](https://www.fedlex.admin.ch/eli/cc/2002/247/de): Art. 3 (integrity: records can't be changed without the change showing), Art. 9 Abs. 1 Bst. b (modifiable media are allowed when a technical procedure such as a digital signature protects integrity, *and* the time of storage is provable beyond falsification, such as by a timestamp, and the procedure is documented), Art. 10 (records stay readable: migrate them when formats or media age).
+[^procedure]: Art. 4 GeBüV: organisation, responsibilities, processes and the infrastructure of the bookkeeping are documented so the records can be understood. [fedlex](https://www.fedlex.admin.ch/eli/cc/2002/247/de#art_4).

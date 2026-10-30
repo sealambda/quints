@@ -1559,9 +1559,29 @@ def statements(
     lang = lang or config_mod.get().report_language
     bilanz_report = kmu_mod.compute_bilanz(file, balance_date, date_from=date_from)
     erfolg_report = kmu_mod.compute_erfolg(file, date_from, balance_date)
+    # The prior year's figures sit next to this year's (Art. 958d Abs. 2 OR).
+    # An extended first year (`--from`) and a year with empty books before it
+    # have none.
+    # shortcut: the prior year is a calendar year, so after an extended first
+    # year its column covers only that year's calendar part; add --prior-from if asked.
+    prior = None
+    if from_ is None:
+        prior_bilanz = kmu_mod.compute_bilanz(
+            file, f"{year - 1}-12-31", date_from=f"{year - 1}-01-01"
+        )
+        prior_erfolg = kmu_mod.compute_erfolg(file, f"{year - 1}-01-01", f"{year - 1}-12-31")
+        if prior_bilanz.total_assets or prior_erfolg.result:
+            prior = (prior_bilanz, prior_erfolg)
     out = out or Path(f"statements-{year}-{lang}.pdf")
-    path = report_pdf.render_pdf(bilanz_report, erfolg_report, lang, out)
+    path = report_pdf.render_pdf(bilanz_report, erfolg_report, lang, out, prior=prior)
     typer.secho(f"Wrote {path}", fg="green")
+    if prior is None and from_ is None:
+        typer.secho(
+            f"No figures for {year - 1} in the books, so the statements have no "
+            "prior-year column (Art. 958d Abs. 2 OR). If the company existed then, "
+            f"date the opening balances {year - 1}-12-31 instead of {year}-01-01.",
+            fg="yellow",
+        )
     if bilanz_report.violations:
         typer.secho("The statements list these problems in the books at the top:", fg="yellow")
         _problems(bilanz_report.violations)

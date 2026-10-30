@@ -87,14 +87,25 @@ def test_bilanz_extended_first_year_has_no_prior_result(tmp_path: Path) -> None:
     assert kmu.compute_erfolg(f, "2025-01-01", "2026-06-30").result == Decimal("130.00")
 
 
+priors: list[tuple[kmu.BilanzReport, kmu.ErfolgReport] | None] = []
+
+
 def _statements(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *args: str
 ) -> tuple[kmu.BilanzReport, kmu.ErfolgReport]:
     """Run `report statements`; return the two reports it would render."""
     seen: list[tuple[kmu.BilanzReport, kmu.ErfolgReport]] = []
+    priors.clear()
 
-    def render(bilanz: kmu.BilanzReport, erfolg: kmu.ErfolgReport, lang: str, out: Path) -> Path:
+    def render(
+        bilanz: kmu.BilanzReport,
+        erfolg: kmu.ErfolgReport,
+        lang: str,
+        out: Path,
+        prior: tuple[kmu.BilanzReport, kmu.ErfolgReport] | None = None,
+    ) -> Path:
         seen.append((bilanz, erfolg))
+        priors.append(prior)
         return out
 
     monkeypatch.setattr("quints.report_pdf.render_pdf", render)
@@ -109,6 +120,11 @@ def test_statements_cover_one_fiscal_year(tmp_path: Path, monkeypatch: pytest.Mo
     bilanz, erfolg = _statements(tmp_path, monkeypatch, "--year", "2026", "--at", "2026-06-30")
     assert (erfolg.date_from, erfolg.date_to) == ("2026-01-01", "2026-06-30")
     assert bilanz.retained_prior == Decimal("-50.00")
+    # 2025 booked a loss, so it is the comparative column (Art. 958d Abs. 2 OR)
+    prior = priors[0]
+    assert prior and prior[1].result == Decimal("-50.00") and prior[0].at == "2025-12-31"
+    _statements(tmp_path, monkeypatch, "--year", "2025")
+    assert priors[0] is None  # nothing was booked in 2024
 
 
 def test_statements_extended_first_year(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -116,6 +132,7 @@ def test_statements_extended_first_year(tmp_path: Path, monkeypatch: pytest.Monk
     assert (erfolg.date_from, erfolg.date_to) == ("2025-01-01", "2026-12-31")
     assert bilanz.retained_prior == Decimal("0.00")
     assert bilanz.result == erfolg.result - 10  # less the unrealized EUR drop
+    assert priors[0] is None  # an extended first year has no prior year
 
 
 def test_fiscal_year_cannot_start_after_balance_date(tmp_path: Path) -> None:

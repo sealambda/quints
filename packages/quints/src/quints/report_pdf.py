@@ -1,12 +1,13 @@
 """Statutory statements as one PDF artifact (Typst) — plan 3 step 4.
 
 Bilanz + Erfolgsrechnung in the requested language, issuer identity from
-``invoicing/issuer.yaml`` — the single document the Treuhänder/auditor files.
+``invoicing/issuer.yaml``, with the prior year's figures (Art. 958d Abs. 2 OR)
+and lines for the signatures (Art. 958 Abs. 3 OR). The notes (Anhang, Art.
+959c OR) are not part of it, and the PDF says so.
 
 All structure lives here as flat display lines (indent/code/label/amount/
 emphasis); the Typst template just lays them out. Same pipeline as the
-invoice: context → ``data.json`` → ``typst.compile`` (PDF/A-2b when
-supported).
+invoice: context → ``data.json`` → ``typst.compile`` (PDF/A-2b).
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ class Line(TypedDict):
     indent: int
     bold: bool
     rule: bool
+    prior: str  # the prior year's amount; "" without a comparative column
 
 
 def _money(value: Decimal, lang: str) -> str:
@@ -61,7 +63,44 @@ def _line(
         "indent": indent,
         "bold": bold,
         "rule": rule,
+        "prior": "",
     }
+
+
+def with_prior(current: list[Line], prior: list[Line]) -> list[Line]:
+    """`current` with each line's prior-year amount filled in. A line only the
+    prior year has (an account since closed) is kept where the statement's
+    order puts it: a row before the next line both years share, a code under
+    the row above it."""
+    out = [line.copy() for line in current]
+    match: list[int | None] = []
+    at = -1
+    for p in prior:
+        key = (p["code"], p["label"])
+        i = next(
+            (j for j in range(at + 1, len(out)) if (out[j]["code"], out[j]["label"]) == key), None
+        )
+        match.append(i)
+        if i is not None:
+            out[i]["prior"] = p["amount"]
+            at = i
+    # Sort key per line: (current index it is anchored to, 0 before / 1 the
+    # line itself / 2 after it, insertion order).
+    keyed = [((j, 1, 0), line) for j, line in enumerate(out)]
+    last = (-1, 2, 0)
+    for n, (p, i) in enumerate(zip(prior, match, strict=True)):
+        if i is not None:
+            last = (i, 1, 0)
+            continue
+        if p["indent"] == 0:
+            successor = next((m for m in match[n + 1 :] if m is not None), len(out))
+            last = (successor, 0, n)
+        else:
+            last = (last[0], 2 if last[1] == 1 else last[1], n)
+        only_prior = p.copy()
+        only_prior["amount"], only_prior["prior"] = "", p["amount"]
+        keyed.append((last, only_prior))
+    return [line for _, line in sorted(keyed, key=lambda kl: kl[0])]
 
 
 def _section(
@@ -165,6 +204,21 @@ def _load_issuer(path: Path) -> dict[str, object]:
     }
 
 
+_SIGNATURES = {
+    "en": {
+        "place_date": "Place, date",
+        "chair": "Chair of the management body",
+        "accounting": "Responsible for financial reporting",
+        "no_notes": "The notes to the accounts (Art. 959c CO) are not part of this document.",
+    },
+    "de": {
+        "place_date": "Ort, Datum",
+        "chair": "Vorsitz des obersten Leitungsorgans",
+        "accounting": "Verantwortlich für die Rechnungslegung",
+        "no_notes": "Der Anhang (Art. 959c OR) ist nicht Teil dieses Dokuments.",
+    },
+}
+
 _PROBLEMS_TITLE = {
     "en": "Problems in the books — these statements may be incomplete",
     "de": "Prüfung — Probleme in der Buchhaltung, die Abschlüsse sind evtl. unvollständig",
@@ -172,8 +226,13 @@ _PROBLEMS_TITLE = {
 
 
 def build_context(
-    bilanz: BilanzReport, erfolg: ErfolgReport, lang: str, issuer_path: Path = DEFAULT_ISSUER
+    bilanz: BilanzReport,
+    erfolg: ErfolgReport,
+    lang: str,
+    issuer_path: Path = DEFAULT_ISSUER,
+    prior: tuple[BilanzReport, ErfolgReport] | None = None,
 ) -> dict[str, object]:
+    """`prior` adds the comparative column; leave it out for a first year."""
     fx_note = ""
     if bilanz.converted:
         parts = ", ".join(f"{_money(v, lang)} {c}" for c, v in sorted(bilanz.converted.items()))
@@ -189,21 +248,29 @@ def build_context(
         item = {"date": v.date, "message": v.message}
         if item not in problems:
             problems.append(item)
+    b_lines, e_lines = bilanz_lines(bilanz, lang), erfolg_lines(erfolg, lang)
+    columns: list[str] = []
+    if prior:
+        b_lines = with_prior(b_lines, bilanz_lines(prior[0], lang))
+        e_lines = with_prior(e_lines, erfolg_lines(prior[1], lang))
+        columns = [bilanz.at[:4], prior[0].at[:4]]
     return {
         "lang": lang,
+        "columns": columns,
+        "signatures": _SIGNATURES.get(lang, _SIGNATURES["en"]),
         "issuer": _load_issuer(issuer_path),
         "violations": problems,
         "violations_title": _PROBLEMS_TITLE.get(lang, _PROBLEMS_TITLE["en"]),
         "bilanz": {
             "title": label("bilanz_title", lang),
             "subtitle": f"{label('as_at', lang)} {bilanz.at} · OR Art. 959a · CHF",
-            "lines": bilanz_lines(bilanz, lang),
+            "lines": b_lines,
             "note": fx_note,
         },
         "erfolg": {
             "title": label("erfolg_title", lang),
             "subtitle": f"{erfolg.date_from} – {erfolg.date_to} · OR Art. 959b · CHF",
-            "lines": erfolg_lines(erfolg, lang),
+            "lines": e_lines,
         },
     }
 
@@ -214,20 +281,20 @@ def render_pdf(
     lang: str,
     out_path: Path,
     issuer_path: Path = DEFAULT_ISSUER,
+    prior: tuple[BilanzReport, ErfolgReport] | None = None,
 ) -> Path:
-    ctx = build_context(bilanz, erfolg, lang, issuer_path)
+    ctx = build_context(bilanz, erfolg, lang, issuer_path, prior)
     work = Path(tempfile.mkdtemp(prefix="quints-report-"))
     try:
         (work / "data.json").write_text(json.dumps(ctx, ensure_ascii=False, indent=2))
         shutil.copy(TEMPLATE, work / "report.typ")
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            typst.compile(
-                str(work / "report.typ"), output=str(out_path), root=str(work), pdf_standards="a-2b"
-            )
-        except (TypeError, ValueError):
-            typst.compile(str(work / "report.typ"), output=str(out_path), root=str(work))
+        # Archival PDF/A-2b, never a silent plain-PDF fallback: the books' PDFs
+        # must stay readable for the ten years they are kept (Art. 958f OR).
+        typst.compile(
+            str(work / "report.typ"), output=str(out_path), root=str(work), pdf_standards="a-2b"
+        )
         return out_path
     finally:
         shutil.rmtree(work, ignore_errors=True)

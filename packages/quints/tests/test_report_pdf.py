@@ -85,3 +85,35 @@ def test_render_pdf_produces_file(tmp_path: Path):
     )
     assert out.exists() and out.stat().st_size > 10_000
     assert out.read_bytes()[:5] == b"%PDF-"
+
+
+def test_prior_year_column_keeps_lines_only_one_year_has(tmp_path: Path):
+    f = tmp_path / "main.bean"
+    f.write_text(LEDGER)
+    erfolg = kmu.compute_erfolg(f, "2026-01-01", "2026-12-31")
+    prior = kmu.compute_erfolg(f, "2025-01-01", "2025-12-31")
+    lines = report_pdf.with_prior(
+        report_pdf.erfolg_lines(erfolg, "en"), report_pdf.erfolg_lines(prior, "en")
+    )
+    by_code = {ln["code"]: ln for ln in lines if ln["code"]}
+    assert (by_code["6570"]["amount"], by_code["6570"]["prior"]) == ("", "-50.00")
+    assert (by_code["6940"]["amount"], by_code["6940"]["prior"]) == ("-10.00", "")
+    assert (lines[-1]["amount"], lines[-1]["prior"]) == ("180.00", "-50.00")
+    # the 2025-only row keeps its statutory place: after revenue, before EBIT
+    order = [ln["code"] or ln["label"] for ln in lines]
+    assert order.index("3400") < order.index("6570") < order.index("Operating result (EBIT)")
+    # every line of either year, each once
+    assert len(lines) == len({(ln["code"], ln["label"]) for ln in lines})
+
+
+def test_render_pdf_with_prior_year(tmp_path: Path):
+    bilanz, erfolg = _reports(tmp_path)
+    f = tmp_path / "main.bean"
+    prior = (
+        kmu.compute_bilanz(f, "2025-12-31", date_from="2025-01-01"),
+        kmu.compute_erfolg(f, "2025-01-01", "2025-12-31"),
+    )
+    ctx = report_pdf.build_context(bilanz, erfolg, "de", prior=prior)
+    assert ctx["columns"] == ["2026", "2025"]
+    out = report_pdf.render_pdf(bilanz, erfolg, "de", tmp_path / "s.pdf", prior=prior)
+    assert out.read_bytes()[:5] == b"%PDF-"

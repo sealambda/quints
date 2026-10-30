@@ -200,7 +200,8 @@ def _brand_context(issuer: Issuer, logo: str | None) -> dict[str, str | float | 
 def _compile(
     main: Path, output: Path, root: Path, font_paths: list[Path], only_bundled: bool
 ) -> None:
-    """Compile to PDF/A-2b (archival) when supported, else a plain PDF.
+    """Compile to PDF/A-2b (archival) — never a silent plain-PDF fallback: an
+    invoice is kept, readable, for ten years (Art. 958f OR, Art. 70 MWSTG).
 
     `only_bundled` switches machine-installed families off. Without it, a
     variable font installed on the designer's machine shadows the bundled (or
@@ -209,21 +210,14 @@ def _compile(
     renders differently on a colleague's machine. Only an issuer who names a
     family that neither we nor they ship keeps system fonts on.
     """
-    fonts = [str(p) for p in font_paths]
-    base: dict[str, object] = {"output": str(output), "root": str(root), "font_paths": fonts}
-    # Most capable call first; drop the options an older typst-py may not know.
-    attempts = [
-        {**base, "ignore_system_fonts": only_bundled, "pdf_standards": "a-2b"},
-        {**base, "pdf_standards": "a-2b"},
-        base,
-    ]
-    for i, opts in enumerate(attempts):
-        try:
-            typst.compile(str(main), **opts)  # type: ignore[arg-type] -- stub lacks **dict
-            return
-        except (TypeError, ValueError):
-            if i == len(attempts) - 1:
-                raise
+    typst.compile(
+        str(main),
+        output=str(output),
+        root=str(root),
+        font_paths=[str(p) for p in font_paths],
+        ignore_system_fonts=only_bundled,
+        pdf_standards="a-2b",
+    )
 
 
 # The suffix that makes a Swiss UID a VAT number (MWST / TVA / IVA, and the
