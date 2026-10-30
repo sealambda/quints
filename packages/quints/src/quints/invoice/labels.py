@@ -7,10 +7,10 @@ other file to touch; the matching CLDR locale, e.g. `es_ES`, gives Babel the
 number/date formatting for free).
 
 The legally load-bearing strings — `terms`, `export_note`, `reverse_charge`,
-`proforma_note` —
+`proforma_note`, `advance_vat` —
 should be reviewed by a native/legal speaker before an entry ships.
-`terms` MUST keep the literal `{days}` placeholder and `advance` its `{number}`
-and `{date}` (`render` calls `.format`)."""
+`terms` MUST keep the literal `{days}` placeholder, `advance` its `{number}`
+and `{date}`, and `advance_vat` its `{vat}` (`render` calls `.format`)."""
 
 LABELS = {
     "de": {
@@ -42,9 +42,9 @@ LABELS = {
         "amount_due": "Zahlbar",
         "invoice_total": "Rechnungstotal",
         "advance": "Anzahlung {number} vom {date}",
-        "proforma_note": "Zahlungsaufforderung für eine Anzahlung. Diese Proforma-Rechnung "
-        "berechtigt nicht zum Vorsteuerabzug: Die Rechnung folgt mit der Leistung und "
-        "rechnet diese Zahlung an.",
+        "advance_vat": "inkl. MWST {vat}",
+        "proforma_note": "Zahlungsaufforderung für eine Anzahlung. Die Rechnung folgt mit "
+        "der Leistung und rechnet diese Zahlung samt der darin enthaltenen MWST an.",
     },
     "en": {
         "invoice": "Invoice",
@@ -75,9 +75,9 @@ LABELS = {
         "amount_due": "Amount due",
         "invoice_total": "Invoice total",
         "advance": "Advance {number} received {date}",
-        "proforma_note": "Request for an advance payment. This pro forma invoice is no "
-        "basis for an input tax deduction: the invoice follows with the supply and "
-        "credits this payment.",
+        "advance_vat": "incl. VAT {vat}",
+        "proforma_note": "Request for an advance payment. The invoice follows with the "
+        "supply and credits this payment, including the VAT it contains.",
     },
     "es": {
         "invoice": "Factura",
@@ -109,9 +109,9 @@ LABELS = {
         "amount_due": "Importe a pagar",
         "invoice_total": "Total factura",
         "advance": "Anticipo {number} recibido el {date}",
-        "proforma_note": "Solicitud de pago anticipado. Esta factura proforma no da derecho "
-        "a deducir el IVA soportado: la factura se emitirá con la prestación y "
-        "descontará este pago.",
+        "advance_vat": "IVA incl. {vat}",
+        "proforma_note": "Solicitud de pago anticipado. La factura se emitirá con la "
+        "prestación y descontará este pago, incluido el IVA que contiene.",
     },
 }
 

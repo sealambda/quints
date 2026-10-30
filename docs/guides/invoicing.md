@@ -407,13 +407,16 @@ quints invoice invoicing/globex-pf2026001.yaml
 ```
 
 The PDF is titled *Proforma-Rechnung* / *Pro forma invoice*, never
-*Rechnung*. It carries a note that it is a request for an advance and not a
-basis for deducting input tax. It still asks to be paid, with a QR-bill or
-the SEPA block and a reference derived from `PF2026001`. Swiss law treats
-any document that bills a supply as an invoice, whatever its
-title.[^rechnung] So a pro forma carries no Swico billing information
-either: the payer's accounts-payable software would book that as an
-invoice. It is filed under the advances account:
+*Rechnung*. It carries a note that it is a request for an advance, which the
+invoice will credit together with the VAT it contains. It asks to be paid,
+with a QR-bill or the SEPA block and a reference derived from `PF2026001`.
+Swiss law treats any document that bills a supply as an invoice, whatever its
+title,[^rechnung] and VAT shown on an invoice is owed as shown.[^art27] The
+advance's VAT is owed anyway, in the period the money arrives.[^advance-vat]
+The invoice that follows names that VAT again on the advance row, so it isn't
+shown twice (see step 3). The pro forma carries no Swico billing information, because
+the payer's accounts-payable software would book that as the invoice. It is
+filed under the advances account:
 
 ```text
 documents/Liabilities/CH/GmbH/Advances/Export/2026-11-02.globex.PF2026001.pdf
@@ -469,13 +472,15 @@ advances:
 A pro forma paid in instalments is listed once per instalment; the
 cross-check adds them up.
 
-The PDF shows the invoice total with VAT on the whole supply, then *Advance
-PF2026001 received 20.11.2026*, then the **amount due**. The QR-bill asks
-for that amount only; an invoice the advances cover in full asks for nothing
-and carries no payment part. The customer never got an invoice for the
-advance, so they deduct the full input tax on this one. The draft books the
-whole income, releases the advance as its receipt booked it, and leaves the
-rest as receivable:
+The PDF shows the invoice total with VAT on the whole supply, then each
+advance with the VAT it contained (*Anzahlung PF2026001 vom 20.11.2026, inkl.
+MWST 810.00* on a domestic invoice), then the **amount due**. The pro forma
+already showed that VAT. Naming it on the advance row shows that it is credited
+here, not charged a second time. An export invoice shows no VAT, so its advance
+rows show none either. The QR-bill asks for the amount due only. An invoice the
+advances cover in full asks for nothing and carries no payment part. The draft
+books the whole income, releases the advance as its receipt booked it, and
+leaves the rest as receivable:
 
 ```beancount
 2027-01-29 * "Globex Ltd" "1 Jan – 31 Mar 2027 invoiced" ^INV2027001
