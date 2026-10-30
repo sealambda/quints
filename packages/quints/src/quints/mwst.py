@@ -57,6 +57,10 @@ the vintage from the transaction date, or from an explicit ``mwst: "old_rate"``.
    class).
 4. otherwise: domestic turnover at the standard rate.
 
+A customer advance (``advances_domestic`` / ``advances_export``) is turnover
+too: credited when the payment arrives, debited back by the invoice that
+credits it, so each period declares what it received or invoiced on top.
+
 VAT is computed on an **accrual** basis directly from ledger entries: output
 VAT from OutputVAT movements (credits accrue, a credit note's debit reverses),
 input VAT from InputVAT movements, Bezugsteuer from Bezugsteuer movements
@@ -828,7 +832,7 @@ def _transaction(
             elif acct == cfg.input_vat:
                 t.input_moved += n
                 _input_vat(e, p, n, tokens, codes, price_map, cfg, t, detail)
-            elif acct.startswith(cfg.income_prefix):
+            elif acct.startswith(cfg.income_prefix) or acct in _advances(cfg):
                 _turnover(e, p, n, tokens, codes, price_map, cfg, state, t, detail)
         except ledger.RateUnavailable as exc:  # raised before anything accrues
             detail.violations.append(_missing_rate(e, p, exc))
@@ -979,6 +983,19 @@ def _is_credit_note(e: data.Transaction, p: data.Posting, codes: dict[str, str])
     return False
 
 
+def _advances(cfg: config.Config) -> tuple[str, str]:
+    """The customer-advance accounts, which carry turnover like income does.
+
+    A payment received before the invoice is declared in the period it
+    arrives — with its VAT when domestic (Art. 40 Abs. 1 Bst. c MWSTG), in
+    Ziffer 200/221 when the place of supply is abroad (MWST-Info 15 Ziff. 1.3,
+    "Zahlungseingänge aus … zukünftigen Leistungen, die nicht in Rechnung
+    gestellt wurden"). The invoice later debits the advance back, which
+    deducts it, so the invoice's period declares only the remainder.
+    """
+    return (cfg.advances_domestic, cfg.advances_export)
+
+
 def _turnover(
     e: data.Transaction,
     p: data.Posting,
@@ -991,9 +1008,16 @@ def _turnover(
     t: _Totals,
     detail: _Detail,
 ) -> None:
-    """One income posting → its section-I line, and its share of Ziffer 299."""
+    """One income posting → its section-I line, and its share of Ziffer 299.
+
+    A customer advance counts as well: the return declares it when received,
+    and its release on the invoice deducts it again (see :func:`_advances`)."""
     acct = p.account
     code = codes.get(acct)
+    if acct in _advances(cfg):
+        code = None  # kmu 2030 is a liability; the advance is Entgelt all the same
+        if acct == cfg.advances_export:
+            tokens = tokens | {"export"}  # by identity, not by a marker in its name
     bucket = turnover_bucket(acct, code, tokens, cfg, state.vat_bearing)
     if bucket is None:
         if _in(code, *SIDE_CODES) and "not_entgelt" not in tokens:

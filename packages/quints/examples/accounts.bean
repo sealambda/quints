@@ -11,6 +11,10 @@
   kmu: "1170"  ; Input VAT
 2026-01-01 open Liabilities:CH:GmbH:Payable:Trade
   kmu: "2000"  ; Trade payables
+2026-01-01 open Liabilities:CH:GmbH:Advances:Domestic
+  kmu: "2030"  ; Advances received
+2026-01-01 open Liabilities:CH:GmbH:Advances:Export
+  kmu: "2030"  ; Advances received
 ; Fixed assets: `quints close depreciation --year <year>` prints the
 ; year's write-down from the metadata below, and `quints close check`
 ; verifies it was booked. Rates are the ESTV Merkblatt A/1995 maxima

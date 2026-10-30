@@ -131,7 +131,8 @@
 // exactly where the line-item total column does; the figures are bare (the
 // currency is named in the table header and on the amount due).
 #v(4mm)
-#align(right, block(width: 76mm)[
+// Wider when it credits advances: their labels name the pro forma and date.
+#align(right, block(width: if d.advances.len() > 0 { 100mm } else { 76mm })[
   #let row(l, v) = (align(horizon, label(l)), fig(v))
   #grid(
     columns: (1fr, auto), column-gutter: 6mm, row-gutter: 7pt,
@@ -140,6 +141,12 @@
       row(L.vat + " " + d.totals.vat_rate + "%", d.totals.vat_amount)
     } else { () }),
     ..(if d.totals.show_rounding { row(L.rounding, d.totals.rounding) } else { () }),
+    // Advances credited from pro formas: the invoice total — VAT on the
+    // whole supply — first, then what was paid ahead, leaving the amount due.
+    ..(if d.advances.len() > 0 {
+      row(L.grand_total, d.totals.grand_total)
+      d.advances.map(a => row(a.label, a.amount)).flatten()
+    } else { () }),
   )
   #v(6pt)
   // The amount due is the one thing a reader looks for: accent on a tinted
@@ -148,13 +155,22 @@
   #block(fill: panel, inset: (y: 7pt), outset: (x: 8pt), width: 100%,
     grid(columns: (1fr, auto), column-gutter: 6mm,
       align(horizon, text(size: 8pt, weight: "medium", tracking: 0.1em, fill: accent)[
-        #upper(L.grand_total)
+        #upper(if d.advances.len() > 0 { L.amount_due } else { L.grand_total })
       ]),
       [#text(size: 8pt, fill: accent, tracking: 0.05em)[#d.currency]
-        #fig(d.totals.grand_total, weight: "medium", fill: accent, size: 12pt)],
+        #fig(d.totals.amount_due, weight: "medium", fill: accent, size: 12pt)],
     ),
   )
 ])
+
+// ── Pro forma note: what this document is, and what it is not ─────────
+#if d.proforma {
+  v(6mm)
+  block(
+    fill: panel, width: 100%,
+    inset: (left: 9pt, right: 9pt, y: 8pt), stroke: (left: 1.5pt + accent),
+  )[#text(size: 8.5pt)[#L.proforma_note]]
+}
 
 // ── Export legal notes ────────────────────────────────────────────────
 #if d.totals.export and (d.totals.vat_registered or d.reverse_charge) {

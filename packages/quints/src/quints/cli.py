@@ -250,12 +250,15 @@ def _vat_chf(file: Path, totals: Totals, inv: Invoice) -> Decimal | None:
     when it is CHF already or the books hold no rate (the draft says so)."""
     from beancount.core.amount import Amount
 
-    if inv.currency == "CHF" or not totals.vat_amount:
+    from .invoice import draft as dr
+
+    owed = dr.vat_owed(inv, totals)
+    if inv.currency == "CHF" or not owed:
         return None
     entries, _ = ledger.load_entries(file)  # its errors were listed by the cross-check
     try:
         chf = ledger.to_chf(
-            Amount(totals.vat_amount, inv.currency),
+            Amount(owed, inv.currency),
             inv.issue_date,
             bc_prices.build_price_map(entries),
         )
@@ -844,10 +847,9 @@ def invoice(
     # an invoice from before registration (or after it ended) carries no VAT.
     registered = cfg.liable_on(inv.issue_date)
     if out is None:
-        # File the PDF the way beancount documents are filed: under the income
-        # account's folder, date-prefixed, next to the ledger's other evidence.
-        account = cfg.income_export if inv.kind == "export" else cfg.income_domestic
-        out = m.document_path(inv, account)
+        # File the PDF the way beancount documents are filed: under the folder
+        # of the account it books against, date-prefixed, next to the evidence.
+        out = m.document_path(inv, dr.filing_account(inv, cfg))
     path, totals, payload = r.render(inv, iss, out, vat_registered=registered)
     ref = ref_mod.payment_reference(inv, iss.account(inv.currency))
 
@@ -892,6 +894,7 @@ def _invoice_payload(
     return {
         "number": inv.number,
         "kind": inv.kind,
+        "proforma": inv.proforma,
         "currency": inv.currency,
         "issue_date": inv.issue_date,
         "customer": inv.resolved_customer.name,
@@ -918,8 +921,9 @@ def _print_rendered(
     """What was written: the PDF, its reference, VAT status and QR payload."""
     from .invoice import model as m
 
+    kind = f"pro forma {inv.kind}" if inv.proforma else inv.kind
     ui.console.print(
-        f"[ok]Wrote[/] {path}  ·  {inv.kind}  ·  {inv.currency} {m.money(totals.grand_total)}"
+        f"[ok]Wrote[/] {path}  ·  {kind}  ·  {inv.currency} {m.money(totals.amount_due)}"
     )
     ui.console.print(f"[muted]ref {ref.kind} {ref.formatted}[/]")
     if not registered:
@@ -938,7 +942,18 @@ def _print_cross_check(cc: CrossCheck, inv: Invoice, ledger_draft: str | None) -
     from .invoice import model as m
 
     _problems(cc.violations)
-    if not cc.found:
+    for problem in cc.advance_problems:
+        ui.console.print(
+            f"[err]{problem}[/] — fix the invoice's `advances` or the receipt booking."
+        )
+    if not cc.found and inv.proforma:
+        ui.console.print(
+            f"[warn]No payment booked for pro forma {inv.number} yet[/] — when it arrives, "
+            f"book it with these legs into books/<year>.bean:\n"
+        )
+        print(ledger_draft)
+        print()
+    elif not cc.found:
         ui.console.print(
             f"[warn]No ledger txn for {inv.number}[/] — paste this draft "
             f"into books/{inv.issue_date.year}.bean:\n"
@@ -948,9 +963,8 @@ def _print_cross_check(cc: CrossCheck, inv: Invoice, ledger_draft: str | None) -
     elif cc.ok:
         if cc.ledger_total is None:  # unreachable: found implies totals are set
             raise ValueError(f"cross-check for {inv.number} lost its ledger total")
-        ui.console.print(
-            f"[ok]Ledger match[/] ({cc.date}): {inv.currency} {m.money(cc.ledger_total)}"
-        )
+        what = "Advance received" if inv.proforma else "Ledger match"
+        ui.console.print(f"[ok]{what}[/] ({cc.date}): {inv.currency} {m.money(cc.ledger_total)}")
         if not cc.date_ok:
             ui.console.print(f"[warn]booking date {cc.date} ≠ invoice date {inv.issue_date}[/]")
     else:

@@ -243,6 +243,12 @@ class Config:
     rounding_income: str = "Income:CH:GmbH:Rounding"
     income_domestic: str = "Income:CH:GmbH:Consulting:External:Domestic"
     income_export: str = "Income:CH:GmbH:Consulting:External:Export"
+    # Customer advances (KMU 2030 Erhaltene Anzahlungen): a payment against a
+    # pro forma, held until the invoice credits it. The return counts it as
+    # turnover on receipt (Art. 40 Abs. 1 Bst. c MWSTG), so `mwst` routes these
+    # like the income account they mirror — the export one carries the marker.
+    advances_domestic: str = "Liabilities:CH:GmbH:Advances:Domestic"
+    advances_export: str = "Liabilities:CH:GmbH:Advances:Export"
     # Saldosteuersatz method only. The difference between the statutory VAT
     # invoiced and the SSS owed lands in `saldo_difference` at settlement;
     # Bezugsteuer is a cost, not a deduction, so it lands in
@@ -445,6 +451,8 @@ _ACCOUNT_KEYS = (
     "rounding_income",
     "income_domestic",
     "income_export",
+    "advances_domestic",
+    "advances_export",
     "saldo_difference",
     "bezugsteuer_expense",
 )

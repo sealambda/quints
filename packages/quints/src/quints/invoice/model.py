@@ -279,6 +279,22 @@ class LineItem(BaseModel):
         return (self.quantity * self.unit_price).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
+class Advance(BaseModel):
+    """A payment received against a pro forma, credited on the final invoice."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    proforma: str = Field(min_length=1, description="The pro forma's number, e.g. PF2026001.")
+    received: date = Field(description="The day the payment arrived.")
+    amount: Decimal = Field(
+        gt=0,
+        description=(
+            "What was received, in the invoice currency, VAT included — the "
+            "amount the advance was booked at."
+        ),
+    )
+
+
 class VatBlock(BaseModel):
     rate: Decimal | None = Field(
         default=None,
@@ -336,6 +352,23 @@ class Invoice(BaseModel):
         ),
     )
     notes: list[str] = Field(default_factory=list)
+    proforma: bool = Field(
+        default=False,
+        description=(
+            "A pro forma: a request for an advance payment, not the invoice. It "
+            "is titled and marked as such, carries no Swico billing information "
+            "(the payer's software would book it as an invoice), and is booked "
+            "only when paid, as a customer advance. Give it its own number "
+            "series (PF2026001)."
+        ),
+    )
+    advances: list[Advance] = Field(
+        default_factory=list,
+        description=(
+            "Payments received against pro formas, credited on this invoice: it "
+            "shows VAT on the full supply, subtracts them, and asks for the rest."
+        ),
+    )
     round_5: bool | None = None  # None → 0.05 rounding iff currency is CHF
     terms_days: int | None = 30  # None → no payment-terms line
     # Export only. None → reverse charge expected (EU B2B default); requires the
@@ -366,6 +399,14 @@ class Invoice(BaseModel):
                 f"vat.rate {self.vat.rate} is not a Swiss VAT rate for a supply on {start} "
                 f"— in force: {rates} % (Art. 25 MWSTG); VAT shown is owed even when "
                 "too high (Art. 27 Abs. 2 MWSTG)"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _proforma_has_no_advances(self) -> Invoice:
+        if self.proforma and self.advances:
+            raise ValueError(
+                "a pro forma cannot credit advances — list them on the invoice that follows it"
             )
         return self
 
@@ -611,6 +652,11 @@ class Totals(BaseModel):
     unrounded: Decimal
     rounding: Decimal
     grand_total: Decimal
+    # Advances received against pro formas, VAT included, and the VAT within
+    # them — already declared when received; the invoice owes only the rest.
+    advances: Decimal = Decimal("0")
+    advance_vat: Decimal = Decimal("0")
+    amount_due: Decimal  # grand_total − advances: what the payment part asks for
     # Whether the issuer was VAT-registered on the issue date. When not, the
     # invoice must not mention the tax at all (Art. 27 Abs. 1 MWSTG).
     vat_registered: bool = True
@@ -696,6 +742,11 @@ def load_invoice(path: Path, customers: CustomerRegistry | None = None) -> Invoi
 # ── computation ───────────────────────────────────────────────────────────────
 
 
+def vat_included(gross: Decimal, rate: Decimal) -> Decimal:
+    """The VAT within a gross amount at `rate` per cent (8.1 → 81 of 1081)."""
+    return (gross * rate / (100 + rate)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+
 def compute(inv: Invoice, vat_registered: bool = True) -> Totals:
     """The invoice's figures. ``vat_registered`` is the issuer's status on the
     issue date: a business that is not registered charges no VAT."""
@@ -708,6 +759,12 @@ def compute(inv: Invoice, vat_registered: bool = True) -> Totals:
         vat = (subtotal * rate / 100).quantize(Decimal("0.01"), ROUND_HALF_UP)
     unrounded = subtotal + vat
     grand = round_step(unrounded, Decimal("0.05") if inv.rounds_to_5 else Decimal("0"))
+    advances = sum((a.amount for a in inv.advances), Decimal("0"))
+    if advances > grand:
+        raise ValueError(
+            f"invoice {inv.number}: advances of {advances} exceed its total of {grand} "
+            f"{inv.currency} — refund the difference or issue a credit note"
+        )
     return Totals(
         subtotal=subtotal,
         vat_rate=rate,
@@ -715,5 +772,9 @@ def compute(inv: Invoice, vat_registered: bool = True) -> Totals:
         unrounded=unrounded,
         rounding=grand - unrounded,
         grand_total=grand,
+        # Each advance's VAT as its receipt booked it (see `draft.receipt_draft`).
+        advances=advances,
+        advance_vat=sum((vat_included(a.amount, rate) for a in inv.advances), Decimal("0")),
+        amount_due=grand - advances,
         vat_registered=vat_registered,
     )
