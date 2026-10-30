@@ -245,26 +245,15 @@ def _problems(violations: list[ledger.Violation], *, err: bool = False) -> None:
         console.print(ui.violations_table(violations, "Problems in the books"))
 
 
-def _vat_chf(file: Path, totals: Totals, inv: Invoice) -> Decimal | None:
-    """An invoice's VAT in CHF at its issue date, for the ledger draft — None
-    when it is CHF already or the books hold no rate (the draft says so)."""
-    from beancount.core.amount import Amount
-
-    from .invoice import draft as dr
-
-    owed = dr.vat_owed(inv, totals)
-    if inv.currency == "CHF" or not owed:
+def _chf_rate(file: Path, inv: Invoice) -> Decimal | None:
+    """CHF per unit of a foreign invoice's currency on its issue date, for the
+    ledger draft's VAT — None when it is CHF already, a pro forma (owed at the
+    day received), or the books hold no rate (the draft says so)."""
+    if inv.currency == "CHF" or inv.proforma:
         return None
     entries, _ = ledger.load_entries(file)  # its errors were listed by the cross-check
-    try:
-        chf = ledger.to_chf(
-            Amount(owed, inv.currency),
-            inv.issue_date,
-            bc_prices.build_price_map(entries),
-        )
-    except ledger.RateUnavailable:
-        return None
-    return ledger.rappen(chf)
+    _, rate = ledger.rate(bc_prices.build_price_map(entries), inv.currency, inv.issue_date)
+    return rate
 
 
 def _require_ledger(file: Path) -> None:
@@ -861,7 +850,9 @@ def invoice(
     if verify and file.exists():
         cc = v.cross_check(file, inv, totals)
         if not cc.found:
-            ledger_draft = dr.build_draft(inv, totals, vat_chf=_vat_chf(file, totals, inv))
+            ledger_draft = dr.build_draft(
+                inv, totals, chf_rate=_chf_rate(file, inv), received=cc.received
+            )
         if not as_json:
             _print_cross_check(cc, inv, ledger_draft)
     elif verify and not as_json:
@@ -963,8 +954,16 @@ def _print_cross_check(cc: CrossCheck, inv: Invoice, ledger_draft: str | None) -
     elif cc.ok:
         if cc.ledger_total is None:  # unreachable: found implies totals are set
             raise ValueError(f"cross-check for {inv.number} lost its ledger total")
-        what = "Advance received" if inv.proforma else "Ledger match"
-        ui.console.print(f"[ok]{what}[/] ({cc.date}): {inv.currency} {m.money(cc.ledger_total)}")
+        if inv.proforma and cc.invoice_total is not None and cc.ledger_total < cc.invoice_total:
+            ui.console.print(
+                f"[ok]Advance received[/] ({cc.date}): {inv.currency} "
+                f"{m.money(cc.ledger_total)} of {m.money(cc.invoice_total)}"
+            )
+        else:
+            what = "Advance received" if inv.proforma else "Ledger match"
+            ui.console.print(
+                f"[ok]{what}[/] ({cc.date}): {inv.currency} {m.money(cc.ledger_total)}"
+            )
         if not cc.date_ok:
             ui.console.print(f"[warn]booking date {cc.date} ≠ invoice date {inv.issue_date}[/]")
     else:

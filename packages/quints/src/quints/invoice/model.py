@@ -652,10 +652,9 @@ class Totals(BaseModel):
     unrounded: Decimal
     rounding: Decimal
     grand_total: Decimal
-    # Advances received against pro formas, VAT included, and the VAT within
-    # them — already declared when received; the invoice owes only the rest.
+    # Advances received against pro formas, VAT included: their VAT was
+    # declared when received (see `draft.build_draft`).
     advances: Decimal = Decimal("0")
-    advance_vat: Decimal = Decimal("0")
     amount_due: Decimal  # grand_total − advances: what the payment part asks for
     # Whether the issuer was VAT-registered on the issue date. When not, the
     # invoice must not mention the tax at all (Art. 27 Abs. 1 MWSTG).
@@ -772,9 +771,7 @@ def compute(inv: Invoice, vat_registered: bool = True) -> Totals:
         unrounded=unrounded,
         rounding=grand - unrounded,
         grand_total=grand,
-        # Each advance's VAT as its receipt booked it (see `draft.receipt_draft`).
         advances=advances,
-        advance_vat=sum((vat_included(a.amount, rate) for a in inv.advances), Decimal("0")),
         amount_due=grand - advances,
         vat_registered=vat_registered,
     )

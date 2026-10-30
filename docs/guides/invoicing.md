@@ -436,10 +436,13 @@ the day the money arrived:
 ```
 
 A domestic advance also splits out its VAT: CHF 10'810 received is
-`Advances:Domestic -10000.00` and `OutputVAT -810.00`. If the customer
-paid a different amount, split that amount: VAT = amount × rate ÷ (100 +
-rate). Run `quints invoice` on the pro forma again and it reports
-*Advance received*.
+`Advances:Domestic -10000.00` and `OutputVAT -810.00`. In a foreign
+currency that VAT is owed in CHF at the rate of the day the money
+arrived,[^advance-rate] which the pro forma cannot know: its OutputVAT leg is
+marked `TODO`. Convert it with `quints vat convert <vat> EUR <day received>`.
+If the customer paid a different amount, split that amount: VAT = amount ×
+rate ÷ (100 + rate). Run `quints invoice` on the pro forma again and it
+reports *Advance received*, or *received X of Y* while it is paid in part.
 
 ### 3. Invoice the supply and credit the advance
 
@@ -463,26 +466,38 @@ advances:
     amount: 10000.00
 ```
 
+A pro forma paid in instalments is listed once per instalment; the
+cross-check adds them up.
+
 The PDF shows the invoice total with VAT on the whole supply, then *Advance
 PF2026001 received 20.11.2026*, then the **amount due**. The QR-bill asks
-for that amount only. The customer never got an invoice for the advance, so
-they deduct the full input tax on this one. The draft books the whole
-income, releases the advance (net of the VAT it already declared), and
-leaves the rest as receivable:
+for that amount only; an invoice the advances cover in full asks for nothing
+and carries no payment part. The customer never got an invoice for the
+advance, so they deduct the full input tax on this one. The draft books the
+whole income, releases the advance as its receipt booked it, and leaves the
+rest as receivable:
 
 ```beancount
 2027-01-29 * "Globex Ltd" "1 Jan – 31 Mar 2027 invoiced" ^INV2027001
     invoice: "INV2027001"
-    Income:CH:GmbH:Consulting:External:Export     -20000.00 EUR
+    Income:CH:GmbH:Consulting:External:Export     -10000.00 EUR
+    Income:CH:GmbH:Consulting:External:Export     -10000.00 EUR @@ 9300.00 CHF
     Assets:CH:GmbH:Receivable:Trade                10000.00 EUR
-    Liabilities:CH:GmbH:Advances:Export            10000.00 EUR
+    Liabilities:CH:GmbH:Advances:Export            10000.00 EUR @@ 9300.00 CHF
       proforma: "PF2026001"
 ```
 
+In a foreign currency the advance leaves at the CHF it came in at (here EUR
+10'000 at 0.93 in November), and the share of income it becomes is valued at
+that too. The advances account then clears in CHF as well as in EUR; the rest
+of the income is valued at the invoice date.
+
 On a domestic invoice the OutputVAT leg is only the VAT not yet declared:
 CHF 1'620 on the whole supply, minus the 810 the advance declared. The
-cross-check confirms each advance against its receipt in the ledger. A
-mismatch is reported, because it would leave OutputVAT out of balance.
+cross-check confirms each advance against its receipts in the ledger and
+reports one booked at another amount, on the other advances account, or with
+VAT that does not match the invoice's rate — any of them would leave
+OutputVAT or the advances account out of balance.
 
 ### 4. File the two returns
 
@@ -494,7 +509,8 @@ quints vat report -p 2027-Q1
 
 Q4 2026 declares the advance, Q1 2027 the rest. The advance is settled by the
 work, not in money, so it is not revalued at year end: `quints fx revalue`
-skips it, and the balance sheet carries it at the CHF it was received at.
+skips it, and the balance sheet carries it at the CHF it was received at
+until the invoice releases it.
 
 ## Editor validation
 
@@ -557,6 +573,7 @@ consolidated total converts everything at the latest rate in your price file
 [^place]: Art. 8 Abs. 1 MWSTG (place of supply of services: where the recipient has its seat), [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_8).
 [^reverse]: Art. 44 and 196 of the VAT Directive (place of supply and reverse charge for B2B services), Art. 226 points (4) and (11a) (the customer's VAT number and the "Reverse charge" mention). [EUR-Lex](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02006L0112-20250414).
 [^advance-vat]: Art. 40 Abs. 1 Bst. c MWSTG: the tax arises "mit der Vereinnahmung des Entgelts bei Vorauszahlungen für nicht von der Steuer befreite Leistungen" (in force since 1 Jan. 2025). [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_40). MWST-Info 16 *Buchführung und Rechnungsstellung*, Ziff. 1.6.4: "Anzahlungen von Kunden müssen beim Erhalt als Umsatz versteuert werden." [ESTV](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/tableOfContent.xhtml?publicationId=1002536)
+[^advance-rate]: Art. 45 MWSTV: a consideration in a foreign currency is converted to CHF at the time the tax claim arises, which for an advance is the day it is received (Art. 40 Abs. 1 Bst. c MWSTG). [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/828/de#art_45)
 [^advance-221]: MWST-Info 15 *Abrechnung und Steuerentrichtung*, Ziff. 1.3: under agreed consideration, Ziffer 200 includes "Sämtliche Zahlungseingänge, die nicht in Rechnung gestellt wurden", and Ziffer 221 "Zahlungseingänge aus erbrachten oder zukünftigen Leistungen, die nicht in Rechnung gestellt wurden und deren Ort der Leistungserbringung im Ausland liegt". [ESTV](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/tableOfContent.xhtml?publicationId=1013189)
 [^rechnung]: Art. 3 Bst. k MWSTG: "Rechnung: jedes Dokument, mit dem gegenüber einer Drittperson über das Entgelt für eine Leistung abgerechnet wird, gleichgültig, wie dieses Dokument im Geschäftsverkehr bezeichnet wird". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_3)
 [^s1]: Swico, [*Syntaxdefinition der Rechnungsinformationen (S1) bei der QR-Rechnung*, Version 1.2, 23.11.2018](https://www.swico.ch/media/filer_public/20/76/2076a19a-a017-438a-bc9a-73b1a5980d00/v2_qr-bill-s1-syntax-de.pdf). SIX has taken over the definition and reproduces it in Anhang D of the [Swiss Implementation Guidelines QR-bill 2.4](https://www.six-group.com/dam/download/banking-services/standardization/qr-bill/ig-qr-bill-v2.4-de.pdf).
