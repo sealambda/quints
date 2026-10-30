@@ -335,6 +335,10 @@ class Config:
         """The advances account of an invoice `kind` (domestic or export)."""
         return self.advances_export if kind == "export" else self.advances_domestic
 
+    def mirrored_income(self, account: str) -> str:
+        """The income account an advances account stands in for until invoiced."""
+        return self.income_export if account == self.advances_export else self.income_domestic
+
     def for_period(self, d0: Date, d1: Date) -> tuple[Config, Date, Date]:
         """The config one return is computed under, and the liable stretch of it.
 

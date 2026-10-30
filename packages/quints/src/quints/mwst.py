@@ -1007,9 +1007,12 @@ def _turnover(
     acct = p.account
     code = codes.get(acct)
     if acct in cfg.advances:
-        code = None  # kmu 2030 is a liability; the advance is Entgelt all the same
         if acct == cfg.advances_export:
             tokens = tokens | {"export"}  # by identity, not by a marker in its name
+        # Classified as the income it becomes: that account's markers carry
+        # the rate class, exemption, option and Saldosteuersatz.
+        acct = cfg.mirrored_income(acct)
+        code = codes.get(acct)
     bucket = turnover_bucket(acct, code, tokens, cfg, state.vat_bearing)
     if bucket is None:
         if _in(code, *SIDE_CODES) and "not_entgelt" not in tokens:
