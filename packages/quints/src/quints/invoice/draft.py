@@ -125,7 +125,7 @@ def build_draft(
         else:
             released.append((advances, f"{r.net:>10.2f} {ccy}", tag))
 
-    legs = [(income, f"{-rest:>10.2f} {ccy}", ""), *slices]
+    legs = [*([(income, f"{-rest:>10.2f} {ccy}", "")] if rest else []), *slices]
     if totals.amount_due:
         legs.append((cfg.receivable, f"{totals.amount_due:>10.2f} {ccy}", ""))
     legs += released

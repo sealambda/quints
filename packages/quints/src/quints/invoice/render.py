@@ -111,7 +111,11 @@ def build_context(
             ),
             *({"label": r.label, "value": r.value} for r in inv.references),
         ],
-        "terms": (lbl["terms"].format(days=inv.terms_days) if inv.terms_days is not None else None),
+        "terms": (
+            lbl["terms"].format(days=inv.terms_days)
+            if inv.terms_days is not None and totals.amount_due
+            else None
+        ),
         "items": [
             {
                 "pos": i + 1,
@@ -306,7 +310,9 @@ def render(
     work = Path(tempfile.mkdtemp(prefix="quints-inv-"))
     try:
         qr_payload = None
-        if inv.kind == "domestic":
+        if not totals.amount_due:
+            payment: dict[str, str | None] = {"type": "none"}  # advances covered it all
+        elif inv.kind == "domestic":
             # Swiss QR-bill: IBAN + SCOR, or QR-IBAN + QRR — see `reference.py`.
             bill = qr.build_bill(inv, issuer, account, totals)
             qr.write_svg(bill, work / "qrbill.svg")
