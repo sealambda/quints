@@ -832,7 +832,7 @@ def _transaction(
             elif acct == cfg.input_vat:
                 t.input_moved += n
                 _input_vat(e, p, n, tokens, codes, price_map, cfg, t, detail)
-            elif acct.startswith(cfg.income_prefix) or acct in _advances(cfg):
+            elif acct.startswith(cfg.income_prefix) or acct in cfg.advances:
                 _turnover(e, p, n, tokens, codes, price_map, cfg, state, t, detail)
         except ledger.RateUnavailable as exc:  # raised before anything accrues
             detail.violations.append(_missing_rate(e, p, exc))
@@ -983,19 +983,6 @@ def _is_credit_note(e: data.Transaction, p: data.Posting, codes: dict[str, str])
     return False
 
 
-def _advances(cfg: config.Config) -> tuple[str, str]:
-    """The customer-advance accounts, which carry turnover like income does.
-
-    A payment received before the invoice is declared in the period it
-    arrives — with its VAT when domestic (Art. 40 Abs. 1 Bst. c MWSTG), in
-    Ziffer 200/221 when the place of supply is abroad (MWST-Info 15 Ziff. 1.3,
-    "Zahlungseingänge aus … zukünftigen Leistungen, die nicht in Rechnung
-    gestellt wurden"). The invoice later debits the advance back, which
-    deducts it, so the invoice's period declares only the remainder.
-    """
-    return (cfg.advances_domestic, cfg.advances_export)
-
-
 def _turnover(
     e: data.Transaction,
     p: data.Posting,
@@ -1010,11 +997,16 @@ def _turnover(
 ) -> None:
     """One income posting → its section-I line, and its share of Ziffer 299.
 
-    A customer advance counts as well: the return declares it when received,
-    and its release on the invoice deducts it again (see :func:`_advances`)."""
+    A customer advance counts as well. A payment received before the invoice
+    is declared in the period it arrives — with its VAT when domestic (Art. 40
+    Abs. 1 Bst. c MWSTG), in Ziffer 200/221 when the place of supply is abroad
+    (MWST-Info 15 Ziff. 1.3, "Zahlungseingänge aus … zukünftigen Leistungen,
+    die nicht in Rechnung gestellt wurden"). The invoice later debits the
+    advance back, which deducts it, so its period declares only the remainder.
+    """
     acct = p.account
     code = codes.get(acct)
-    if acct in _advances(cfg):
+    if acct in cfg.advances:
         code = None  # kmu 2030 is a liability; the advance is Entgelt all the same
         if acct == cfg.advances_export:
             tokens = tokens | {"export"}  # by identity, not by a marker in its name

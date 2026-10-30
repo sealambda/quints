@@ -39,7 +39,6 @@ def _booked(txns: list[data.Transaction], currency: str, cfg: config.Config) -> 
     The turnover legs are income, output VAT and customer advances — an
     invoice books them against its receivable, a pro forma's payment against
     the bank. None when no leg is in `currency`."""
-    advances = (cfg.advances_domestic, cfg.advances_export)
     total = None
     for e in txns:
         for p in e.postings:
@@ -50,7 +49,7 @@ def _booked(txns: list[data.Transaction], currency: str, cfg: config.Config) -> 
             if (
                 p.account.startswith(cfg.income_prefix)
                 or p.account == cfg.output_vat
-                or p.account in advances
+                or p.account in cfg.advances
             ):
                 total = (total or Decimal("0")) - weight.number
     return total

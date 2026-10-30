@@ -78,7 +78,7 @@ def compute(
             root = p.account.split(":", 1)[0]
             if cfg.entity_marker not in p.account or root not in ("Assets", "Liabilities"):
                 continue
-            if p.account in (cfg.advances_domestic, cfg.advances_export):
+            if p.account in cfg.advances:
                 continue  # settled by the supply, not in money: stays at the rate received
             if p.units is None or p.units.currency == "CHF":
                 continue
