@@ -34,6 +34,7 @@ LABELS = {
         "reference": "Referenz",
         "scan_to_pay": "Mit der Banking-App scannen",
         "qr_bill": "QR-Rechnung",
+        "made_with": "Erstellt mit quints",
         "terms": "Zahlbar innert {days} Tagen netto.",
         "export_note": "Nicht der schweizerischen MWST unterliegend: Ort der "
         "Leistung im Ausland (Art. 8 Abs. 1 MWSTG).",
@@ -69,6 +70,7 @@ LABELS = {
         "reference": "Reference",
         "scan_to_pay": "Scan with your banking app",
         "qr_bill": "QR-bill",
+        "made_with": "Made with quints",
         "terms": "Payable within {days} days net.",
         "export_note": "Not subject to Swiss VAT: place of supply abroad "
         "(Art. 8 para. 1 Swiss VAT Act).",
@@ -104,6 +106,7 @@ LABELS = {
         "reference": "Referencia",
         "scan_to_pay": "Escanee con la app de su banco",
         "qr_bill": "Factura QR",
+        "made_with": "Hecho con quints",
         "terms": "A pagar en un plazo de {days} días netos.",
         "export_note": "No sujeto al IVA suizo: lugar de la prestación en el "
         "extranjero (art. 8 apdo. 1 de la Ley suiza del IVA).",

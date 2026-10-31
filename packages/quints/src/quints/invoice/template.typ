@@ -46,6 +46,14 @@
 #set page(
   paper: "a4",
   margin: (x: 20mm, top: 16mm, bottom: if qrbill { 108mm } else { 24mm }),
+  // Credit line, right under the body: on a QR-bill page that is the 3 mm
+  // above the perforation — nothing but the payment part may print below it.
+  // A footer is a PDF/UA artifact, which may not carry a link: the address is
+  // printed instead (viewers auto-link it).
+  footer-descent: if qrbill { 0pt } else { 30% },
+  footer: if d.brand.credit {
+    align(right, text(size: 6.5pt, fill: subtle)[#L.made_with · sealambda.github.io/quints])
+  },
 )
 #set text(font: body, size: 9.5pt, fill: ink, lang: d.lang, region: d.region)
 #set par(justify: false, leading: 0.65em)
@@ -153,9 +161,9 @@
   )
   #v(6pt)
   // The amount due is the one thing a reader looks for: accent on a tinted
-  // band. The fill bleeds outward (`outset`), no horizontal inset — so the
-  // amount keeps the exact right edge of every figure above it.
-  #block(fill: panel, inset: (y: 7pt), outset: (x: 8pt), width: 100%,
+  // band, its edges on the text column like every other panel — the amount
+  // sits one inset in from the figures above.
+  #block(fill: panel, inset: (x: 8pt, y: 7pt), width: 100%,
     grid(columns: (1fr, auto), column-gutter: 6mm,
       align(horizon, text(size: 8pt, weight: "medium", tracking: 0.1em, fill: accent)[
         #upper(if d.advances.len() > 0 { L.amount_due } else { L.grand_total })

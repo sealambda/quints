@@ -166,6 +166,11 @@
           "title": "Logo Height",
           "type": "number"
         },
+        "credit": {
+          "default": true,
+          "title": "Credit",
+          "type": "boolean"
+        },
         "ink": {
           "default": "#1c1618",
           "pattern": "^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",

@@ -660,7 +660,9 @@ def test_brand_tokens_reach_the_template_context():
         "font_display",
         "display_stretch",
         "logo_height",
+        "credit",
     } <= set(brand)
+    assert brand["credit"] is True  # the quints credit line is on unless switched off
 
 
 def test_brand_font_families_fall_back_to_the_body_face():
