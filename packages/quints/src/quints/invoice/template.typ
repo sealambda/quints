@@ -94,7 +94,8 @@
   ],
 )
 #v(4mm)
-#line(length: 100%, stroke: 0.5pt + rule)
+// Rules run to the same edge as the panel tints: the text column plus `bleed`.
+#pad(x: -bleed, line(length: 100%, stroke: 0.5pt + rule))
 
 // ── Recipient (right, window-envelope position) ───────────────────────
 // Postal lines only: what shows through the window. Width keeps it inside
@@ -131,9 +132,11 @@
 }
 
 // ── Line items ────────────────────────────────────────────────────────
-#table(
+// Widened by `bleed` so its rules meet the panel edges; the outer columns
+// pad it back, so the text stays on the column.
+#pad(x: -bleed, table(
   columns: (auto, 1fr, auto, auto, auto),
-  inset: (x: 0pt, y: 7pt),
+  inset: (x, y) => (left: if x == 0 { bleed } else { 0pt }, right: if x == 4 { bleed } else { 0pt }, y: 7pt),
   column-gutter: 6mm,
   align: (x, y) => if x >= 2 { right } else { left },
   stroke: none,
@@ -154,7 +157,7 @@
     fig(it.total),
   )).flatten(),
   table.hline(stroke: 0.5pt + rule),
-)
+))
 
 // ── Totals ────────────────────────────────────────────────────────────
 // One right-aligned column of bare figures ending where the line-item total
