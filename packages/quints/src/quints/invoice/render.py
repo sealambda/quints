@@ -7,7 +7,7 @@ import re
 import shutil
 import tempfile
 from collections.abc import Mapping
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import TypedDict
@@ -97,6 +97,11 @@ def build_context(
         ),
         *({"label": r.label, "value": r.value} for r in inv.references),
     ]
+    due = (
+        _fmt_date(inv.issue_date + timedelta(days=inv.terms_days), inv.locale)
+        if inv.terms_days is not None and totals.amount_due
+        else ""
+    )
     return {
         "proforma": inv.proforma,
         "reverse_charge": reverse_charge,
@@ -118,12 +123,17 @@ def build_context(
             "name": customer.name,
             "address": customer.address,
             "country": customer.country,
+            # Postal convention: the country spelled out, in capitals, last line.
+            "country_name": Locale.parse(inv.locale)
+            .territories.get(customer.country, customer.country)
+            .upper(),
             "vat_id": customer.vat_id,
         },
         "invoice": {
             "number": inv.number,
             "supply": inv.supply.text(inv.locale),
             "issue_date": _fmt_date(inv.issue_date, inv.locale),
+            "due_date": due,
         },
         # The customer's own reference, then whatever else their side demands —
         # printed in the title meta grid, under the invoice number and date.
@@ -179,6 +189,8 @@ def _document_metadata(
         f"{due_label} {inv.currency} {money(totals.amount_due, inv.locale)}",
     ]
     if inv.terms_days is not None and totals.amount_due:
+        due = inv.issue_date + timedelta(days=inv.terms_days)
+        parts.append(f"{lbl['due_date']} {_fmt_date(due, inv.locale)}")
         parts.append(lbl["terms"].format(days=inv.terms_days))
     # Identifiers only: what a payer searches or matches the invoice on. The
     # payment reference compact, as it comes back on the bank statement.
@@ -352,6 +364,7 @@ def _sepa_payment(
     # The EPC code is SEPA credit transfers in euro only; anything else is
     # paid from the printed fields.
     scan = inv.currency == "EUR" and amount > 0
+    lbl = get_labels(inv.language)
     return {
         "type": "sepa",
         "beneficiary": beneficiary,
@@ -360,6 +373,10 @@ def _sepa_payment(
         "bank_name": account.bank_name,
         "reference": ref.formatted,
         "epc": epc.payload(beneficiary, account.iban, account.bic, amount, ref) if scan else None,
+        # What the code pre-fills, for whoever cannot scan it.
+        "alt": f"{lbl['scan_to_pay']} · {inv.currency} {money(amount, inv.locale)}"
+        f" · {lbl['payment_to']} {beneficiary} · IBAN {bank.format_iban(account.iban)}"
+        f" · {lbl['reference']} {ref.formatted}",
     }
 
 

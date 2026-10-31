@@ -6,12 +6,22 @@ import re
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 from qrbill import QRBill
 
 from . import reference as ref_mod
 from . import swico
 from .model import BankAccount, Invoice, Issuer, Totals
+
+# The languages the Implementation Guidelines print the payment part in; any
+# other invoice language gets the English slip.
+_SLIP_LANGUAGES: dict[str, Literal["en", "de", "fr", "it"]] = {
+    "en": "en",
+    "de": "de",
+    "fr": "fr",
+    "it": "it",
+}
 
 
 def _structured(name: str, lines: Sequence[str], country: str) -> dict[str, str | None]:
@@ -78,6 +88,7 @@ def build_bill(inv: Invoice, issuer: Issuer, account: BankAccount, totals: Total
             reference_number=payment_ref.value,
             additional_information=message,
             billing_information=billing,
+            language=_SLIP_LANGUAGES.get(inv.language, "en"),
         )
     # The Implementation Guidelines allow Arial, Frutiger, Helvetica and
     # Liberation Sans in the payment part, and nothing else. qrbill asks for
