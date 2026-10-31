@@ -725,6 +725,26 @@ def test_render_produces_pdf(tmp_path: Path):
     assert payload.startswith("SPC") and totals.grand_total == Decimal("5059.10")
 
 
+def test_render_is_archival_accessible_and_described(tmp_path: Path):
+    from quints.invoice import render
+
+    inv = _domestic().model_copy(update={"customer_reference": "PO-4711"})
+    first, again = tmp_path / "a.pdf", tmp_path / "b.pdf"
+    render.render(inv, ISSUER, first)
+    render.render(inv, ISSUER, again)
+    pdf = first.read_bytes()
+    assert pdf == again.read_bytes()  # dated the issue date: re-rendering verifies a copy
+    # XMP, not the Info dict: Typst hex-encodes non-ASCII Info strings.
+    xmp = pdf[pdf.index(b"<x:xmpmeta") : pdf.index(b"</x:xmpmeta>")].decode()
+    assert "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>A<" in xmp
+    assert "<pdfuaid:part>1</pdfuaid:part>" in xmp
+    assert "<rdf:li>de-CH</rdf:li>" in xmp
+    assert ">Muster GmbH – Rechnung ACME202606<" in xmp
+    assert "ACME AG · Leistungsperiode Juni 2026 · Rechnungstotal CHF 5&apos;059.10" in xmp
+    assert "<pdf:Keywords>ACME202606, PO-4711, 000000102593170000002026063<" in xmp
+    assert "2026-07-02T00:00:00" in xmp
+
+
 # ── localization ──────────────────────────────────────────────────────────────
 
 
