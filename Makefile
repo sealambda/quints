@@ -3,7 +3,7 @@
 
 PKG_DIRS := packages/quints packages/beangulp-mt940 packages/beangulp-stripe packages/beangulp-wise packages/beangulp-yapeal packages/beanprice-bazg
 
-.PHONY: check static test format typebaseline docs docs-serve media
+.PHONY: check static test format typebaseline docs docs-serve media pdfcheck
 
 check: static test
 
@@ -48,3 +48,8 @@ docs-serve:
 # poppler — see media/generate.sh. Run before a release so visuals track the CLI.
 media:
 	./media/generate.sh
+
+# Validate the sample invoices as PDF/A-2a + PDF/UA-1 with veraPDF (docker).
+# Not part of `check`: it needs docker and takes longer than the test suite.
+pdfcheck:
+	./media/pdfcheck.sh
