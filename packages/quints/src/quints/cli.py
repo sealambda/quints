@@ -863,10 +863,13 @@ def invoice(
 
 
 def _qr_payload_ok(payload: str | None) -> bool | None:
-    """SPC first, EPD present — or, after it, the Swico billing information."""
+    """QR-bill: SPC first, EPD present — or, after it, the Swico billing
+    information. EPC QR (EUR export): BCD first, SCT fourth."""
     if not payload:
         return None
     lines = payload.splitlines()
+    if lines[:1] == ["BCD"]:
+        return lines[3:4] == ["SCT"]
     return lines[:1] == ["SPC"] and "EPD" in lines
 
 
@@ -922,8 +925,9 @@ def _print_rendered(
             f"[muted]not VAT-registered on {inv.issue_date}: no VAT charged or shown[/]"
         )
     if payload:
+        name, shape = ("EPC QR", "BCD…SCT") if payload.startswith("BCD") else ("QR-bill", "SPC…EPD")
         ui.console.print(
-            f"[muted]QR-bill payload: {'SPC…EPD ✓' if qr_ok else 'CHECK!'} "
+            f"[muted]{name} payload: {f'{shape} ✓' if qr_ok else 'CHECK!'} "
             f"({len(payload.splitlines())} lines)[/]"
         )
 

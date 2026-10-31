@@ -290,7 +290,7 @@ def test_sample_invoices_render_and_reconcile(tmp_path: Path):
 
     export = im.load_invoice(tmp_path / "invoicing/globex-2026-08.yaml", registry)
     _path, totals, payload = ir.render(export, issuer, tmp_path / "globex.pdf")
-    assert payload is None  # no QR-bill on a foreign invoice
+    assert payload is not None and payload.splitlines()[0] == "BCD"  # EPC QR, not a QR-bill
     cc = iv.cross_check(main, export, totals)
     assert cc.found and cc.ok and cc.date_ok
 

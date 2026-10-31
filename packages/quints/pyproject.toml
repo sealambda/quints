@@ -22,6 +22,7 @@ dependencies = [
     "python-stdnum>=1.20",
     "pyyaml>=6.0.3",
     "qrbill>=1.2.0",
+    "qrcode>=8.0",
     "rich>=13",
     "tomli>=2; python_version < '3.11'",
     "typer>=0.12",
