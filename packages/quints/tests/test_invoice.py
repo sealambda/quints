@@ -994,6 +994,9 @@ def test_export_payment_block_carries_the_full_instruction(
             "bank_name": "Commerzbank AG, Köln",
             "reference": "RF12 KEI2 0260 5",  # SCOR of the invoice number, grouped
             "epc": epc,
+            # The code's alt text says what it pre-fills, not just "scan me".
+            "alt": "Mit der Banking-App scannen · EUR 771.16 · Zahlbar an Muster GmbH"
+            " · IBAN DE89 3704 0044 0532 0130 00 · Referenz RF12 KEI2 0260 5",
         }
     ]
 
@@ -1116,3 +1119,27 @@ def test_epc_qr_only_for_euro_and_never_truncates_the_name(tmp_path: Path):
     usd = ISSUER.model_copy(update={"bank": {**ISSUER.bank, "USD": ISSUER.account("EUR")}})
     _, _, payload = render.render(_export(currency="USD"), usd, tmp_path / "x.pdf")
     assert payload is None  # SEPA credit transfers are euro only
+
+
+def test_context_prints_due_date_and_country_name():
+    from quints.invoice.render import build_context
+
+    inv = _export(locale="en_GB")  # issued 17 Jun 2026, 30 days net
+    ctx = build_context(inv, ISSUER, compute(inv), {"type": "sepa"})
+    assert ctx["invoice"]["due_date"] == "17 Jul 2026"
+    assert ctx["customer"]["country_name"] == "ESTONIA"  # postal last line, not "EE"
+    no_terms = _export(terms_days=None)
+    assert build_context(no_terms, ISSUER, compute(no_terms), {})["invoice"]["due_date"] == ""
+
+
+def test_qr_bill_slip_speaks_the_invoice_language(tmp_path: Path):
+    def slip(inv: Invoice) -> str:
+        qr.write_svg(
+            qr.build_bill(inv, ISSUER, ISSUER.account("CHF"), compute(inv)), tmp_path / "s.svg"
+        )
+        return (tmp_path / "s.svg").read_text()
+
+    inv = _domestic()  # de_CH
+    assert "Empfangsschein" in slip(inv)
+    inv.locale = "es_ES"  # no Spanish slip in the guidelines → English
+    assert "Receipt" in slip(inv)
