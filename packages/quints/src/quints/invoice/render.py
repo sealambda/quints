@@ -61,7 +61,7 @@ class InvoiceContext(TypedDict):
     totals: dict[str, str | bool]
     payment: Mapping[str, str | None]
     notes: list[str]
-    brand: dict[str, str | float | None]
+    brand: dict[str, str | float | bool | None]
 
 
 def _fmt_date(d: date, locale: str) -> str:
@@ -219,7 +219,7 @@ def _totals_context(inv: Invoice, totals: Totals) -> dict[str, str | bool]:
     }
 
 
-def _brand_context(issuer: Issuer, logo: str | None) -> dict[str, str | float | None]:
+def _brand_context(issuer: Issuer, logo: str | None) -> dict[str, str | float | bool | None]:
     brand = issuer.brand
     return {
         "accent": brand.accent,
@@ -234,6 +234,7 @@ def _brand_context(issuer: Issuer, logo: str | None) -> dict[str, str | float | 
         "panel": brand.panel,
         "logo": logo,
         "logo_height": brand.logo_height,
+        "credit": brand.credit,
     }
 
 

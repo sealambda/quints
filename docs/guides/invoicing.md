@@ -308,6 +308,7 @@ brand:
   accent: "#6b1f4a"        # title, amount due, leading rules
   logo: invoicing/wordmark.svg
   logo_height: 9           # mm
+  credit: true             # "Made with quints" line under the body
 ```
 
 `font_mono` is what keeps amount columns aligned on the digit — point it at
@@ -317,7 +318,8 @@ ship with quints, so an issuer that configures nothing still renders
 identically on every machine. Set `font_dir` to use families of your own;
 that also switches machine-installed fonts off, so a designer's locally
 installed variable font can never change how the same invoice renders
-elsewhere. The full token list (ink, subtle, rule, panel, display weight and
+elsewhere. `credit: false` drops the small "Made with quints" line under
+the body. The full token list (ink, subtle, rule, panel, display weight and
 stretch) is in the [issuer schema](https://sealambda.github.io/quints/schema/issuer.schema.json).
 
 ## Not VAT-registered

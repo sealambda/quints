@@ -615,6 +615,7 @@ class Brand(BaseModel):
     font_dir: str | None = None  # bundled fonts dir passed to typst (repo-relative)
     logo: str | None = None
     logo_height: float = 12.0  # mm, as placed in the header
+    credit: bool = True  # the small "Made with quints" line under the body; false drops it
 
     ink: HexColor = "#1c1618"  # body copy
     subtle: HexColor = "#655753"  # labels and secondary text
