@@ -30,6 +30,17 @@ jobs:
       - run: uv sync --all-packages
       - run: uv run pytest packages -q
 
+  # The invoices claim PDF/A-2a + PDF/UA-1; veraPDF checks they are.
+  pdf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - run: uv sync --all-packages
+      - run: make pdfcheck
+
   build:
     runs-on: ubuntu-latest
     steps:

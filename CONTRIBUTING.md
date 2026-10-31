@@ -28,6 +28,13 @@ make format      # apply ruff autofixes (format + safe lint fixes)
 make test        # uv run pytest packages -q
 ```
 
+Touching the invoice template or its PDF export? CI also validates the sample
+invoices as PDF/A-2a + PDF/UA-1 with veraPDF; run it locally with Docker:
+
+```bash
+make pdfcheck
+```
+
 What each tool guards:
 
 - **ruff** — formatting and lint.
