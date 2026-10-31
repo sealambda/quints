@@ -39,19 +39,22 @@
   font: mono, size: size, weight: weight, fill: fill, number-width: "tabular",
 )[#it]
 
-#set document(title: L.invoice + " " + d.invoice.number, author: d.issuer.name)
+#set document(
+  title: d.document.title, author: d.issuer.name,
+  description: d.document.description, keywords: d.document.keywords,
+)
 #set page(
   paper: "a4",
   margin: (x: 20mm, top: 16mm, bottom: if qrbill { 108mm } else { 24mm }),
 )
-#set text(font: body, size: 9.5pt, fill: ink)
+#set text(font: body, size: 9.5pt, fill: ink, lang: d.lang, region: d.region)
 #set par(justify: false, leading: 0.65em)
 
 // ── Header: wordmark left, issuer identity right (Art. 26 Abs. 2 lit. a MWSTG) ─
 #grid(columns: (1fr, auto), column-gutter: 10mm,
   align(left + top,
     if d.brand.logo != none {
-      image(d.brand.logo, height: d.brand.logo_height * 1mm)
+      image(d.brand.logo, height: d.brand.logo_height * 1mm, alt: d.issuer.name)
     } else {
       disp(d.issuer.name, size: 17pt)
     }
@@ -198,7 +201,7 @@
   // Full-width Swiss QR-bill payment part, flush at the page bottom. Its
   // layout and typography are prescribed by the Implementation Guidelines —
   // it is rendered by qr.py and deliberately left unstyled here.
-  place(bottom + left, dx: -20mm, dy: 108mm, image("qrbill.svg", width: 210mm))
+  place(bottom + left, dx: -20mm, dy: 108mm, image("qrbill.svg", width: 210mm, alt: d.payment.alt))
 } else if d.payment.type == "sepa" {
   v(8mm)
   // Unbreakable: the code and the fields it encodes stay side by side.
@@ -226,7 +229,7 @@
     // banking app. Febelfin asks for at least 2 × 2 cm.
     if d.payment.at("epc", default: none) != none {
       align(center + horizon, stack(spacing: 3pt,
-        image("epc.svg", width: 26mm),
+        image("epc.svg", width: 26mm, alt: L.scan_to_pay),
         text(size: 6.5pt, fill: subtle)[#L.scan_to_pay],
       ))
     },

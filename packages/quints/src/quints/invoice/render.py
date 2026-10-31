@@ -7,12 +7,13 @@ import re
 import shutil
 import tempfile
 from collections.abc import Mapping
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import TypedDict
 
 import typst
+from babel import Locale
 from babel.dates import format_date
 
 from . import bank, epc, qr
@@ -45,6 +46,8 @@ class InvoiceContext(TypedDict):
     reverse_charge: bool
     proforma: bool
     lang: str
+    region: str | None
+    document: dict[str, str | list[str]]
     kind: str
     currency: str
     labels: dict[str, str]
@@ -86,10 +89,20 @@ def build_context(
             "grand_total": lbl["amount_due"],
         }
     customer = inv.resolved_customer
+    references = [
+        *(
+            [{"label": lbl["your_reference"], "value": inv.customer_reference}]
+            if inv.customer_reference
+            else []
+        ),
+        *({"label": r.label, "value": r.value} for r in inv.references),
+    ]
     return {
         "proforma": inv.proforma,
         "reverse_charge": reverse_charge,
         "lang": inv.language,
+        "region": Locale.parse(inv.locale).territory,
+        "document": _document_metadata(inv, issuer, totals, lbl, payment, references),
         "kind": inv.kind,
         "currency": inv.currency,
         "labels": lbl,
@@ -114,14 +127,7 @@ def build_context(
         },
         # The customer's own reference, then whatever else their side demands —
         # printed in the title meta grid, under the invoice number and date.
-        "references": [
-            *(
-                [{"label": lbl["your_reference"], "value": inv.customer_reference}]
-                if inv.customer_reference
-                else []
-            ),
-            *({"label": r.label, "value": r.value} for r in inv.references),
-        ],
+        "references": references,
         "terms": (
             lbl["terms"].format(days=inv.terms_days)
             if inv.terms_days is not None and totals.amount_due
@@ -150,6 +156,39 @@ def build_context(
         "payment": payment,
         "notes": list(inv.notes),
         "brand": _brand_context(issuer, logo),
+    }
+
+
+def _document_metadata(
+    inv: Invoice,
+    issuer: Issuer,
+    totals: Totals,
+    lbl: Mapping[str, str],
+    payment: Mapping[str, str | None],
+    references: list[dict[str, str]],
+) -> dict[str, str | list[str]]:
+    """The PDF's title, subject and keywords — what a mail client, file browser
+    or the payer's accounts-payable system shows and indexes without opening
+    the page. The title leads with the issuer: it is the tab title, and how a
+    payer tells one supplier's PDF from the next."""
+    due_label = lbl["amount_due"] if inv.advances else lbl["grand_total"]
+    parts = [
+        f"{lbl['invoice']} {inv.number}",
+        inv.resolved_customer.name,
+        f"{lbl['supply']} {inv.supply.text(inv.locale)}",
+        f"{due_label} {inv.currency} {money(totals.amount_due, inv.locale)}",
+    ]
+    if inv.terms_days is not None and totals.amount_due:
+        parts.append(lbl["terms"].format(days=inv.terms_days))
+    # Identifiers only: what a payer searches or matches the invoice on. The
+    # payment reference compact, as it comes back on the bank statement.
+    keywords = [inv.number, *(r["value"] for r in references)]
+    if payment.get("reference"):
+        keywords.append(str(payment["reference"]).replace(" ", ""))
+    return {
+        "title": f"{issuer.name} – {lbl['invoice']} {inv.number}",
+        "description": " · ".join(parts),
+        "keywords": keywords,
     }
 
 
@@ -199,10 +238,19 @@ def _brand_context(issuer: Issuer, logo: str | None) -> dict[str, str | float | 
 
 
 def _compile(
-    main: Path, output: Path, root: Path, font_paths: list[Path], only_bundled: bool
+    main: Path,
+    output: Path,
+    root: Path,
+    font_paths: list[Path],
+    only_bundled: bool,
+    issued: date,
 ) -> None:
-    """Compile to PDF/A-2b (archival) — never a silent plain-PDF fallback: an
+    """Compile to PDF/A-2a + PDF/UA-1 — never a silent plain-PDF fallback: an
     invoice is kept, readable, for ten years (Art. 958f OR, Art. 70 MWSTG).
+    Level A (tagged, Unicode text, alt text on every image) over B: the archive
+    copy stays searchable and its text extractable, and the payer's screen
+    reader can read it. Not A-3: its only addition is embedded files, which
+    only matters once a machine-readable invoice (Factur-X/ZUGFeRD) rides along.
 
     `only_bundled` switches machine-installed families off. Without it, a
     variable font installed on the designer's machine shadows the bundled (or
@@ -210,6 +258,10 @@ def _compile(
     collapses to the variable font's default instance, so the same invoice
     renders differently on a colleague's machine. Only an issuer who names a
     family that neither we nor they ship keeps system fonts on.
+
+    The PDF is dated the issue date, not the moment of rendering: the same
+    invoice then renders to the same bytes, so an archived copy can be checked
+    by rendering it again.
     """
     typst.compile(
         str(main),
@@ -217,7 +269,10 @@ def _compile(
         root=str(root),
         font_paths=[str(p) for p in font_paths],
         ignore_system_fonts=only_bundled,
-        pdf_standards="a-2b",
+        pdf_standards=["a-2a", "ua-1"],
+        timestamp=int(
+            datetime(issued.year, issued.month, issued.day, tzinfo=timezone.utc).timestamp()
+        ),
     )
 
 
@@ -340,7 +395,16 @@ def render(
             bill = qr.build_bill(inv, issuer, account, totals)
             qr.write_svg(bill, work / "qrbill.svg")
             qr_payload = qr.payload(bill)
-            payment = {"type": "qrbill"}
+            ref = ref_mod.payment_reference(inv, account).formatted
+            lbl = get_labels(inv.language)
+            # The payment part is an image: its alt text is the only way a
+            # screen reader, or text extraction, gets at what it says.
+            alt = (
+                f"{lbl['qr_bill']} · {inv.currency} {money(totals.amount_due, inv.locale)}"
+                f" · {lbl['payment_to']} {account.holder or issuer.name}"
+                f" · IBAN {bank.format_iban(bill.account)} · {lbl['reference']} {ref}"
+            )
+            payment = {"type": "qrbill", "reference": ref, "alt": alt}
         else:
             payment = _sepa_payment(inv, issuer, account, totals.amount_due)
             qr_payload = payment["epc"]
@@ -361,7 +425,7 @@ def render(
         font_paths, only_bundled = _fonts(issuer)
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        _compile(work / "template.typ", out_path, work, font_paths, only_bundled)
+        _compile(work / "template.typ", out_path, work, font_paths, only_bundled, inv.issue_date)
         return out_path, totals, qr_payload
     finally:
         shutil.rmtree(work, ignore_errors=True)
