@@ -953,7 +953,16 @@ def test_export_payment_block_carries_the_full_instruction(
 
     monkeypatch.setattr(render, "build_context", spy)
     path, _, qr_payload = render.render(_export(), ISSUER, tmp_path / "x.pdf")
-    assert path.exists() and qr_payload is None  # export: no QR part
+    # The EPC QR code carries the same transfer: version 002, UTF-8, BIC kept
+    # (mandatory outside the EEA), RF reference in the structured field, and
+    # no separator after the last element (EPC069-12 v3.1 §2.2).
+    epc = "\n".join(
+        [
+            *("BCD", "002", "1", "SCT", "COBADEFFXXX", "Muster GmbH"),
+            *("DE89370400440532013000", "EUR771.16", "", "RF12KEI202605"),
+        ]
+    )
+    assert path.exists() and qr_payload == epc
     assert seen == [
         {
             "type": "sepa",
@@ -962,6 +971,7 @@ def test_export_payment_block_carries_the_full_instruction(
             "bic": "COBADEFFXXX",
             "bank_name": "Commerzbank AG, Köln",
             "reference": "RF12 KEI2 0260 5",  # SCOR of the invoice number, grouped
+            "epc": epc,
         }
     ]
 
@@ -1072,3 +1082,15 @@ def test_qr_address_says_which_lines_it_leaves_off():
         "1",
         "8001",
     )
+
+
+def test_epc_qr_only_for_euro_and_never_truncates_the_name(tmp_path: Path):
+    from quints.invoice import epc, render
+
+    ref = PaymentReference("SCOR", "RF12KEI202605", "RF12 KEI2 0260 5")
+    with pytest.raises(ValueError, match="70 characters"):
+        epc.payload("X" * 71, "DE89370400440532013000", "COBADEFFXXX", Decimal("1"), ref)
+
+    usd = ISSUER.model_copy(update={"bank": {**ISSUER.bank, "USD": ISSUER.account("EUR")}})
+    _, _, payload = render.render(_export(currency="USD"), usd, tmp_path / "x.pdf")
+    assert payload is None  # SEPA credit transfers are euro only

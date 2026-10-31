@@ -27,8 +27,8 @@ later matches the payment to it.
 quints invoice invoicing/acme-2026-07.yaml
 ```
 
-Writes a Swiss QR-bill PDF (domestic, or export/reverse-charge without QR
-part) and cross-checks the total against your ledger: if the invoice is
+Writes a Swiss QR-bill PDF (domestic), or an export invoice with the SEPA
+payment details printed — plus a scan-to-pay EPC QR code when it is in EUR — and cross-checks the total against your ledger: if the invoice is
 already booked at a different amount, you get a conflict, not a silent
 divergence. If it isn't booked yet, quints prints the draft transaction to
 paste into `books/<year>.bean`. On a EUR invoice the draft's VAT leg is in
@@ -53,7 +53,7 @@ An invoice is one YAML file:
 
 ```yaml
 number: INV2026014
-kind: domestic          # or export (reverse charge, no QR part)
+kind: domestic          # or export (reverse charge; EPC QR code in EUR)
 currency: CHF
 issue_date: 2026-07-02
 supply: 2026-07          # the supply period — see below
@@ -141,6 +141,31 @@ of looking one up — a guessed BIC is how a SEPA transfer comes back. quints
 never derives it from the IBAN: that mapping lives in a bank registry that
 changes, and a wrong-but-plausible BIC would be worse than none. Ask the bank
 that holds the account.
+
+**A EUR export invoice also carries an EPC QR code** next to those fields.
+The payer scans it in their banking app and gets the transfer pre-filled:
+beneficiary, IBAN, BIC, amount and the RF reference.[^epc] Support is
+optional for banks and uneven across countries; where an app doesn't read it,
+the payer types the printed fields as before. Other currencies get no code —
+the standard covers euro credit transfers only.
+
+The beneficiary in the code is the account's `holder` (else your company
+name). Set it to the name the bank holds the account under, letter for
+letter, legal form included: an EU payer's bank checks that name against the
+IBAN before sending, wherever the payee's bank takes part in the check.[^vop]
+
+[^epc]: European Payments Council,
+    [EPC069-12 v3.1](https://www.europeanpaymentscouncil.eu/sites/default/files/kb/file/2024-03/EPC069-12%20v3.1%20Quick%20Response%20Code%20-%20Guidelines%20to%20Enable%20the%20Data%20Capture%20for%20the%20Initiation%20of%20an%20SCT.pdf),
+    *Quick Response Code: Guidelines to Enable the Data Capture for the
+    Initiation of a SEPA Credit Transfer*, §2.2. The BIC stays mandatory for
+    accounts outside the EEA, so a Swiss account always includes it. The
+    guideline itself is optional for banks to implement (§1).
+
+[^vop]: [Regulation (EU) 2024/886](https://eur-lex.europa.eu/eli/reg/2024/886/oj),
+    Art. 5c (verification of the payee). It binds banks in the EU; a Swiss
+    bank answers the check only if it has joined the EPC's Verification of
+    Payee scheme — ask yours. Where it hasn't, the payer sees that no check
+    was possible.
 
 To check a pair before it ships — or every account in the issuer config:
 
@@ -341,7 +366,7 @@ the customer's VAT number in the registry.[^reverse] Set
 the US). The currency's account needs both a regular `iban` (a QR-IBAN can't
 receive an ordinary credit transfer) and a `bic`.
 
-![The generated export invoice PDF — no QR part, SEPA IBAN and reverse-charge note instead](../assets/invoice-export.png){ width="480" }
+![The generated export invoice PDF — SEPA payment details with an EPC QR code, and the reverse-charge note](../assets/invoice-export.png){ width="480" }
 
 A project scaffolded with `quints init --samples` includes both flavours:
 `invoicing/acme-<year>-07.yaml` (domestic QR-bill) and

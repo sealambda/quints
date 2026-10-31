@@ -201,22 +201,34 @@
   place(bottom + left, dx: -20mm, dy: 108mm, image("qrbill.svg", width: 210mm))
 } else if d.payment.type == "sepa" {
   v(8mm)
-  block(fill: panel, inset: (x: 10pt, y: 9pt), width: 100%)[
-    #text(size: 8pt, weight: "medium", tracking: 0.1em, fill: accent)[#upper(L.payment_to)]
-    #v(4pt)
-    // Beneficiary, IBAN, BIC — the three fields a payer retypes into their
-    // banking form, and the three a mismatch bounces the transfer on. The BIC
-    // is mandatory on this branch (render.py refuses without one); the bank's
-    // name sits next to it so the payer can sanity-check the code instead of
-    // looking up their own.
-    #grid(columns: (auto, 1fr), column-gutter: 7mm, row-gutter: 4pt,
-      align(horizon, label(L.beneficiary)), text(size: 9.5pt)[#d.payment.beneficiary],
-      align(horizon, label("IBAN")), fig(d.payment.iban),
-      align(horizon, label("BIC/SWIFT")), fig(d.payment.bic, weight: "medium"),
-      ..(if d.payment.bank_name != none {
-        (align(horizon, label(L.bank)), text(size: 9.5pt)[#d.payment.bank_name])
-      } else { () }),
-      align(horizon, label(L.reference)), fig(d.payment.reference),
-    )
-  ]
+  // Unbreakable: the code and the fields it encodes stay side by side.
+  block(fill: panel, inset: (x: 10pt, y: 9pt), width: 100%, breakable: false, grid(
+    columns: (1fr, auto), column-gutter: 7mm,
+    [
+      #text(size: 8pt, weight: "medium", tracking: 0.1em, fill: accent)[#upper(L.payment_to)]
+      #v(4pt)
+      // Beneficiary, IBAN, BIC — the three fields a payer retypes into their
+      // banking form, and the three a mismatch bounces the transfer on. The BIC
+      // is mandatory on this branch (render.py refuses without one); the bank's
+      // name sits next to it so the payer can sanity-check the code instead of
+      // looking up their own.
+      #grid(columns: (auto, 1fr), column-gutter: 7mm, row-gutter: 4pt,
+        align(horizon, label(L.beneficiary)), text(size: 9.5pt)[#d.payment.beneficiary],
+        align(horizon, label("IBAN")), fig(d.payment.iban),
+        align(horizon, label("BIC/SWIFT")), fig(d.payment.bic, weight: "medium"),
+        ..(if d.payment.bank_name != none {
+          (align(horizon, label(L.bank)), text(size: 9.5pt)[#d.payment.bank_name])
+        } else { () }),
+        align(horizon, label(L.reference)), fig(d.payment.reference),
+      )
+    ],
+    // EUR only: the EPC QR code pre-fills this same transfer in the payer's
+    // banking app. Febelfin asks for at least 2 × 2 cm.
+    if d.payment.at("epc", default: none) != none {
+      align(center + horizon, stack(spacing: 3pt,
+        image("epc.svg", width: 26mm),
+        text(size: 6.5pt, fill: subtle)[#L.scan_to_pay],
+      ))
+    },
+  ))
 }

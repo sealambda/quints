@@ -8,13 +8,14 @@ import shutil
 import tempfile
 from collections.abc import Mapping
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import TypedDict
 
 import typst
 from babel.dates import format_date
 
-from . import bank, qr
+from . import bank, epc, qr
 from . import reference as ref_mod
 from .labels import labels as get_labels
 from .model import (
@@ -266,8 +267,11 @@ def _reverse_charge(inv: Invoice) -> bool:
     return reverse_charge
 
 
-def _sepa_payment(inv: Invoice, issuer: Issuer, account: BankAccount) -> dict[str, str | None]:
-    """The cross-border payment block: IBAN, BIC and reference."""
+def _sepa_payment(
+    inv: Invoice, issuer: Issuer, account: BankAccount, amount: Decimal
+) -> dict[str, str | None]:
+    """The cross-border payment block: IBAN, BIC and reference — plus, in EUR,
+    the EPC QR payload that pre-fills the same transfer in a banking app."""
     # Cross-border: a QR-IBAN only works inside the QR-bill scheme —
     # foreign transfers need the regular IBAN.
     if not account.iban:
@@ -287,13 +291,19 @@ def _sepa_payment(inv: Invoice, issuer: Issuer, account: BankAccount) -> dict[st
             f"bank.{inv.currency} in the issuer config; "
             f"`quints iban {account.iban}` shows what to ask the bank for"
         )
+    beneficiary = account.holder or issuer.name
+    ref = ref_mod.payment_reference(inv, account)
+    # The EPC code is SEPA credit transfers in euro only; anything else is
+    # paid from the printed fields.
+    scan = inv.currency == "EUR" and amount > 0
     return {
         "type": "sepa",
-        "beneficiary": account.holder or issuer.name,
+        "beneficiary": beneficiary,
         "iban": bank.format_iban(account.iban),
         "bic": account.bic,
         "bank_name": account.bank_name,
-        "reference": ref_mod.payment_reference(inv, account).formatted,
+        "reference": ref.formatted,
+        "epc": epc.payload(beneficiary, account.iban, account.bic, amount, ref) if scan else None,
     }
 
 
@@ -332,7 +342,10 @@ def render(
             qr_payload = qr.payload(bill)
             payment = {"type": "qrbill"}
         else:
-            payment = _sepa_payment(inv, issuer, account)
+            payment = _sepa_payment(inv, issuer, account, totals.amount_due)
+            qr_payload = payment["epc"]
+            if qr_payload:
+                epc.write_svg(qr_payload, work / "epc.svg")
 
         logo = issuer.brand.logo
         logo_name = None

@@ -389,6 +389,33 @@ def test_invoice_json_reports_the_reference_it_used(tmp_path: Path) -> None:
     assert d["qr_payload_ok"] is True
 
 
+def test_invoice_json_checks_the_epc_payload_of_a_euro_export(tmp_path: Path) -> None:
+    issuer = tmp_path / "issuer.yaml"
+    issuer.write_text(
+        "name: Muster GmbH\n"
+        "address: [Musterstrasse 1, 3000 Bern]\n"
+        "vat_id: CHE-267.359.056 MWST\n"
+        "bank:\n"
+        "  EUR: {iban: DE89 3704 0044 0532 0130 00, bic: COBADEFFXXX}\n"
+    )
+    inv = tmp_path / "inv.yaml"
+    inv.write_text(
+        "number: INV2026015\nkind: export\ncurrency: EUR\nissue_date: 2026-08-05\n"
+        "supply: 2026-08\n"
+        "customer: {name: Globex Ltd, address: [1 Liffey Street, Dublin 1], country: IE,"
+        " vat_id: IE1234567T}\n"
+        "items:\n  - {description: Consulting, quantity: 1, unit_price: 500.00}\n"
+    )
+    out = tmp_path / "out.pdf"
+    args = ["invoice", str(inv), "--issuer", str(issuer), "--out", str(out), "--no-verify"]
+    res = runner.invoke(app, [*args, "--json"])
+    assert res.exit_code == 0, res.output
+    assert json.loads(res.output)["qr_payload_ok"] is True
+    res = runner.invoke(app, args)
+    assert res.exit_code == 0, res.output
+    assert "EPC QR payload: BCD…SCT ✓" in res.output
+
+
 def test_iban_json_checks_a_pair(tmp_path: Path) -> None:
     args = ["iban", "DE89 3704 0044 0532 0130 00", "--bic", "COBADEFFXXX", "--json"]
     res = runner.invoke(app, args)

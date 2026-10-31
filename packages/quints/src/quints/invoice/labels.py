@@ -32,6 +32,7 @@ LABELS = {
         "beneficiary": "Begünstigter",
         "bank": "Bank",
         "reference": "Referenz",
+        "scan_to_pay": "Mit der Banking-App scannen",
         "terms": "Zahlbar innert {days} Tagen netto.",
         "export_note": "Nicht der schweizerischen MWST unterliegend: Ort der "
         "Leistung im Ausland (Art. 8 Abs. 1 MWSTG).",
@@ -65,6 +66,7 @@ LABELS = {
         "beneficiary": "Beneficiary",
         "bank": "Bank",
         "reference": "Reference",
+        "scan_to_pay": "Scan with your banking app",
         "terms": "Payable within {days} days net.",
         "export_note": "Not subject to Swiss VAT: place of supply abroad "
         "(Art. 8 para. 1 Swiss VAT Act).",
@@ -98,6 +100,7 @@ LABELS = {
         "beneficiary": "Beneficiario",
         "bank": "Banco",
         "reference": "Referencia",
+        "scan_to_pay": "Escanee con la app de su banco",
         "terms": "A pagar en un plazo de {days} días netos.",
         "export_note": "No sujeto al IVA suizo: lugar de la prestación en el "
         "extranjero (art. 8 apdo. 1 de la Ley suiza del IVA).",
