@@ -4,7 +4,7 @@ import io
 import os
 import threading
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -50,7 +50,7 @@ def test_parse_per_unit_currency(monkeypatch: pytest.MonkeyPatch):
     sp = bazg.Source().get_latest_price("USD")
     assert sp.price == Decimal("0.79588")
     assert sp.quote_currency == "CHF"
-    assert sp.time == datetime(2026, 6, 3, tzinfo=timezone.utc)
+    assert sp.time == datetime(2026, 6, 3, tzinfo=UTC)
 
 
 def test_ticker_is_case_insensitive(monkeypatch: pytest.MonkeyPatch):
@@ -113,7 +113,7 @@ def test_series_dedupes_by_actual_rate_date(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(bazg, "_http_get", fake)
     series = bazg.Source().get_prices_series("USD", datetime(2026, 6, 5), datetime(2026, 6, 7))
     assert len(series) == 1
-    assert series[0].time == datetime(2026, 6, 5, tzinfo=timezone.utc)
+    assert series[0].time == datetime(2026, 6, 5, tzinfo=UTC)
 
 
 @pytest.mark.skipif(

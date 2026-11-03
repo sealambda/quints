@@ -276,7 +276,7 @@ class Importer(beangulp.Importer):
         if transactions:
             newest = max(t.get("created") or 0 for t in transactions)
             if newest:
-                return dt.datetime.fromtimestamp(newest, tz=dt.timezone.utc).date()
+                return dt.datetime.fromtimestamp(newest, tz=dt.UTC).date()
         return None
 
     def filename(self, filepath: str) -> str:
@@ -320,7 +320,7 @@ class Importer(beangulp.Importer):
             if counter is not None:
                 postings.append(counter)
 
-            date = dt.datetime.fromtimestamp(created, tz=dt.timezone.utc).date()
+            date = dt.datetime.fromtimestamp(created, tz=dt.UTC).date()
             entries.append(
                 data.Transaction(
                     meta,

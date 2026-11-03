@@ -11,8 +11,8 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from datetime import date as Date
-from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
@@ -223,7 +223,7 @@ def compute(
     """Open invoices at ``at``. Pass ``entries`` from :func:`ledger.load` to
     report its loader errors — this function has no channel for them."""
     cfg = cfg or config.get()
-    at = at or datetime.now(timezone.utc).date()
+    at = at or datetime.now(UTC).date()
     if entries is None:
         entries, _ = ledger.load_entries(ledger_path)
     open_invoices = compute_from_entries(entries, at, cfg)

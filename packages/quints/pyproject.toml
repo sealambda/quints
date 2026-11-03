@@ -3,7 +3,7 @@ name = "quints"
 version = "0.21.0"
 description = "Swiss VAT & accounting toolkit for plain-text (beancount) books: MWST reports and quarterly settlement, Bezugsteuer helpers, BAZG daily FX rates, QR-bill invoicing, KMU statutory statements, and statement importers (UBS MT940, Yapeal, Wise, Stripe) that draft into a staging area"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "GPL-2.0-only" }
 keywords = [
     "beancount", "fava", "accounting", "plain-text-accounting",
@@ -24,7 +24,6 @@ dependencies = [
     "qrbill>=1.2.0",
     "qrcode>=8.0",
     "rich>=13",
-    "tomli>=2; python_version < '3.11'",
     "typer>=0.12",
     "typst>=0.15.0",
 ]

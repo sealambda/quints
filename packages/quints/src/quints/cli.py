@@ -6,6 +6,7 @@ import os
 import re
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC
 from datetime import date as Date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -611,10 +612,10 @@ def vat_liability(
     and says whether registration is due and by when — or, once registered,
     whether you may deregister.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     _require_ledger(file)
-    on = _parse_date(at) if at else datetime.now(timezone.utc).date()
+    on = _parse_date(at) if at else datetime.now(UTC).date()
     result = liability_mod.compute(file, on)
     if as_json:
         import dataclasses

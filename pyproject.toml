@@ -2,7 +2,7 @@
 [project]
 name = "quints-monorepo"
 version = "0"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "quints",
     "beangulp-mt940",
@@ -49,7 +49,7 @@ beanprice-bazg = { workspace = true }
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 src = [
     "packages/quints/src",
     "packages/beangulp-mt940/src",
@@ -87,7 +87,7 @@ filterwarnings = ["error"]
 [tool.basedpyright]
 include = ["packages"]
 exclude = ["**/.venv", "**/__pycache__", "dist"]
-pythonVersion = "3.10"
+pythonVersion = "3.11"
 typeCheckingMode = "strict"
 # beancount/beangulp/fava ship no type stubs — Unknown-type diagnostics on their
 # APIs are unfixable noise, so only the Unknown* family is relaxed from strict.

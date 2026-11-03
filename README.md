@@ -29,7 +29,7 @@ uv tool install quints        # or: pipx install quints  /  pip install quints
 quints --help
 ```
 
-Needs Python 3.10+ (uv installs it for you if missing). Typst — for the PDFs —
+Needs Python 3.11+ (uv installs it for you if missing). Typst — for the PDFs —
 and everything else come bundled; nothing more to install.
 
 ## Quick start

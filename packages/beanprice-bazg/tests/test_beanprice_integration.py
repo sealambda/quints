@@ -60,5 +60,5 @@ def test_bean_price_fetch_pipeline_end_to_end(monkeypatch: pytest.MonkeyPatch):
     # holds in any timezone.
     from dateutil import tz
 
-    src_time = dt.datetime(2026, 6, 3, tzinfo=dt.timezone.utc)
+    src_time = dt.datetime(2026, 6, 3, tzinfo=dt.UTC)
     assert entry.date == src_time.astimezone(tz.tzlocal()).date()

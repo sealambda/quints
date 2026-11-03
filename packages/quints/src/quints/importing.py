@@ -790,7 +790,7 @@ def fetch_stripe(
         )
 
     def _ts(day: str, end: bool) -> int:
-        moment = dt.datetime.fromisoformat(day).replace(tzinfo=dt.timezone.utc)
+        moment = dt.datetime.fromisoformat(day).replace(tzinfo=dt.UTC)
         if end:
             moment += dt.timedelta(days=1)
         return int(moment.timestamp()) - (1 if end else 0)
@@ -864,7 +864,7 @@ def _fee_tax_periods(statements: Sequence[Path]) -> list[str]:
             continue
         created = txn.get("created")
         if isinstance(created, int):
-            periods.add(dt.datetime.fromtimestamp(created, tz=dt.timezone.utc).strftime("%Y-%m"))
+            periods.add(dt.datetime.fromtimestamp(created, tz=dt.UTC).strftime("%Y-%m"))
     return sorted(periods)
 
 
@@ -967,7 +967,7 @@ def _file_invoice(client: StripeClient, match: InvoiceMatch, root: Path) -> Invo
     """One invoice PDF into ``inbox/`` — unless a complete copy is filed already."""
     import datetime as dt
 
-    date = dt.datetime.fromtimestamp(match.created, tz=dt.timezone.utc).date()
+    date = dt.datetime.fromtimestamp(match.created, tz=dt.UTC).date()
     number = _FILENAME_SAFE.sub("-", match.number)
     name = f"{date.isoformat()}.{slugify(match.customer)}.{number}.pdf"
     filed = already_filed(root, name)

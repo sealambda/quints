@@ -1,6 +1,7 @@
 """JSON-output contract for the CLI (plan 5.2: machine-readable everywhere)."""
 
 import json
+from datetime import UTC
 from pathlib import Path
 
 import pytest
@@ -273,7 +274,7 @@ def test_prices_sync_json_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyP
     The file is pre-seeded as verified through five days ago, so the sync
     fetches exactly the five-day tail per currency.
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from beanprice_bazg import bazg
 
@@ -287,7 +288,7 @@ def test_prices_sync_json_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyP
         )
 
     monkeypatch.setattr(bazg, "_http_get", fake_http)
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     seeded = today - timedelta(days=5)
     out = tmp_path / "prices.bean"
     out.write_text(
@@ -317,7 +318,7 @@ def test_prices_sync_reads_ledger_metadata_like_bean_price(
 ) -> None:
     """With commodity `price:` metadata in the ledger, sync fetches exactly the
     declared jobs (here: EUR only — not the USD/EUR config default)."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from beanprice_bazg import bazg
 
@@ -334,7 +335,7 @@ def test_prices_sync_reads_ledger_metadata_like_bean_price(
         '2024-01-01 commodity EUR\n  price: "CHF:beanprice_bazg/EUR"\n'
     )
     (tmp_path / "quints.toml").write_text(f'[ledger]\nmain = "{tmp_path}/main.bean"\n')
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     seeded = today - timedelta(days=5)
     out = tmp_path / "prices.bean"
     out.write_text(f"; quints: verified EUR/CHF 2024-01-01..{seeded}\n")

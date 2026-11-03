@@ -3,7 +3,7 @@ name = "beangulp-stripe"
 version = "0.3.0"
 description = "beangulp importer for Stripe balance transactions, with a thin API client: idempotent drafts via balance-transaction ids, minor-unit conversion, fee splitting, balance-snapshot assertions, and invoice-to-charge correlation for filing customer invoice PDFs"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "GPL-2.0-only" }
 keywords = ["beancount", "beangulp", "importer", "stripe", "psp", "balance-transactions"]
 dependencies = [

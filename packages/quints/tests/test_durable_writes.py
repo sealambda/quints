@@ -10,7 +10,7 @@ import json
 import os
 import subprocess
 from collections.abc import Callable
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -89,7 +89,7 @@ def test_cli_import_warns_when_drafts_are_already_staged(tmp_path: Path) -> None
 
 
 def _utc(d: date) -> datetime:
-    return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+    return datetime(d.year, d.month, d.day, tzinfo=UTC)
 
 
 class Weekdays:
