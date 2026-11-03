@@ -20,6 +20,7 @@ nav = [
         { "Import statements" = "guides/importing.md" },
         { "Invoicing" = "guides/invoicing.md" },
         { "Payment references" = "guides/payment-references.md" },
+        { "Allocate customer payments" = "guides/receivables.md" },
         { "Statutory reports" = "guides/reports.md" },
         { "Close the year" = "guides/year-end.md" },
         { "FX rates" = "guides/fx.md" },

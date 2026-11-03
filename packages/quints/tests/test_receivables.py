@@ -141,3 +141,41 @@ def test_consolidation_missing_rate_is_excluded_and_reported(tmp_path: Path) -> 
     assert cons.grand_total == Decimal("500.00")  # the CHF part only
     eur = next(ct for ct in cons.totals if ct.currency == "EUR")
     assert eur.converted is None and eur.rate is None
+
+
+_OFFSET = """
+2024-01-01 open Assets:CH:GmbH:Receivable:Trade
+2024-01-01 open Assets:CH:GmbH:Current:UBS:CHF
+2024-01-01 open Income:CH:GmbH:Consulting:External:Domestic CHF
+
+2026-03-02 * "ACME" "February invoiced" ^ACME202602
+  Assets:CH:GmbH:Receivable:Trade       5691.47 CHF
+  Income:CH:GmbH:Consulting:External:Domestic
+2026-04-01 * "ACME" "March invoiced" ^ACME202603
+  Assets:CH:GmbH:Receivable:Trade       4075.37 CHF
+  Income:CH:GmbH:Consulting:External:Domestic
+2026-04-02 * "ACME" "April invoiced" ^ACME202604
+  Assets:CH:GmbH:Receivable:Trade        800.00 CHF
+  Income:CH:GmbH:Consulting:External:Domestic
+2026-04-08 * "ACME" "February received" ^ACME202602
+  Assets:CH:GmbH:Current:UBS:CHF        5691.00 CHF
+  Assets:CH:GmbH:Receivable:Trade
+2026-04-30 * "ACME" "March received" ^ACME202603
+  Assets:CH:GmbH:Current:UBS:CHF        4075.84 CHF
+  Assets:CH:GmbH:Receivable:Trade
+"""
+
+
+def test_overpaid_invoice_and_its_offsetting_leftover_are_pointed_out(tmp_path: Path) -> None:
+    from rich.console import Console
+
+    p = tmp_path / "l.bean"
+    p.write_text(_OFFSET)
+    opens, consolidation, at = receivables.compute(p, date(2026, 5, 31), config.Config())
+    console = Console(record=True, width=200)
+    receivables.render(opens, at, consolidation, console)
+    out = console.export_text()
+    assert "-0.47 CHF overpaid" in out
+    assert "800.00 CHF overpaid" not in out
+    assert "ACME202602 (0.47) and ACME202603 (-0.47) CHF offset" in out
+    assert out.count("offset") == 1  # ACME202604 is a normal open item, not part of it

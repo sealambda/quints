@@ -1306,6 +1306,7 @@ def _import_payload(
             "narration": t.narration,
             "amount": u.number if u else None,
             "currency": u.currency if u else None,
+            "note": importing_mod.note(t),  # set on every `!` match: what to confirm
         }
 
     return {
@@ -1353,7 +1354,9 @@ def _print_import_matches(result: importing_mod.ImportResult) -> None:
             continue
         typer.secho(f"{len(matches)} payment(s) matched {what}:", fg="green")
         for number, draft in matches:
-            typer.echo(f"  {draft.date}  {draft.postings[0].units}  ^{number}")
+            line = f"  {draft.date}  {draft.postings[0].units}  ^{number}"
+            note = importing_mod.note(draft)
+            typer.echo(line + (f"  ! {note}" if note else ""))
 
 
 @app.command(rich_help_panel=PANEL_BANK)
