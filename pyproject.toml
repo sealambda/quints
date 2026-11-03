@@ -83,6 +83,7 @@ ignore = [
 [tool.pytest.ini_options]
 # A warning in our code or a dependency is a defect until triaged.
 filterwarnings = ["error"]
+addopts = "-ra --strict-markers"
 
 [tool.basedpyright]
 include = ["packages"]
@@ -139,3 +140,11 @@ name = "building blocks never depend on quints"
 type = "forbidden"
 source_modules = ["beangulp_mt940", "beangulp_stripe", "beangulp_wise", "beangulp_yapeal", "beanprice_bazg"]
 forbidden_modules = ["quints"]
+
+# Modules sharing a layer (":") may import each other, but never in a cycle.
+[[tool.importlinter.contracts]]
+name = "no import cycles between quints modules"
+type = "acyclic_siblings"
+ancestors = ["quints"]
+# Type-only import (under TYPE_CHECKING): no runtime cycle.
+ignore_imports = ["quints.invoice.reference -> quints.invoice.model"]
