@@ -1,13 +1,14 @@
 """Statutory statements as one PDF artifact (Typst) — plan 3 step 4.
 
-Bilanz + Erfolgsrechnung in the requested language, issuer identity from
-``invoicing/issuer.yaml``, with the prior year's figures (Art. 958d Abs. 2 OR)
+Bilanz + Erfolgsrechnung in the requested language, issuer identity and brand
+from ``invoicing/issuer.yaml`` (the invoice's tokens, fonts and wordmark), with
+the prior year's figures (Art. 958d Abs. 2 OR)
 and lines for the signatures (Art. 958 Abs. 3 OR). The notes (Anhang, Art.
 959c OR) are not part of it, and the PDF says so.
 
 All structure lives here as flat display lines (indent/code/label/amount/
 emphasis); the Typst template just lays them out. Same pipeline as the
-invoice: context → ``data.json`` → ``typst.compile`` (PDF/A-2b).
+invoice: context → ``data.json`` → ``typst.compile`` (PDF/A-2a + PDF/UA-1).
 """
 
 from __future__ import annotations
@@ -15,14 +16,17 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import TypedDict
 
 import typst
-import yaml
+from babel.dates import format_date
 
 from . import ui
+from .invoice.model import Brand, Issuer, load_issuer
+from .invoice.render import brand_context, fonts
 from .kmu import BilanzReport, ErfolgReport, RowLine, kmu_name, label
 
 TEMPLATE = Path(__file__).parent / "report.typ"
@@ -193,16 +197,27 @@ def erfolg_lines(report: ErfolgReport, lang: str) -> list[Line]:
     return lines
 
 
-def _load_issuer(path: Path) -> dict[str, object]:
-    data = yaml.safe_load(path.read_text()) if path.exists() else {}
-    return {
-        "name": data.get("name", ""),
-        "address": data.get("address", []),
-        "vat_id": data.get("vat_id", ""),
-        "accent": (data.get("brand") or {}).get("accent", "#123c3a"),
-        "font": (data.get("brand") or {}).get("font", "Liberation Sans"),
-    }
+def _date(iso: str, lang: str) -> str:
+    """CLDR medium date, as on the invoice (de → 31.12.2026, en → 31 Dec 2026)."""
+    return format_date(date.fromisoformat(iso), format="medium", locale=f"{lang}_CH")
 
+
+# The document is Bilanz + Erfolgsrechnung, not the whole Jahresrechnung: that
+# includes the notes (Art. 958 Abs. 2 OR), which this PDF leaves out.
+_TEXT = {
+    "en": {
+        "title": "Balance sheet and income statement",
+        "code": "Account",
+        "item": "Item",
+        "law": "CO",
+    },
+    "de": {
+        "title": "Bilanz und Erfolgsrechnung",
+        "code": "Konto",
+        "item": "Position",
+        "law": "OR",
+    },
+}
 
 _SIGNATURES = {
     "en": {
@@ -229,16 +244,18 @@ def build_context(
     bilanz: BilanzReport,
     erfolg: ErfolgReport,
     lang: str,
-    issuer_path: Path = DEFAULT_ISSUER,
+    issuer: Issuer | None = None,
     prior: tuple[BilanzReport, ErfolgReport] | None = None,
+    logo: str | None = None,
 ) -> dict[str, object]:
-    """`prior` adds the comparative column; leave it out for a first year."""
+    """`prior` adds the comparative column; leave it out for a first year.
+    Without an issuer the statements carry no identity and the default brand."""
     fx_note = ""
     if bilanz.converted:
         parts = ", ".join(f"{_money(v, lang)} {c}" for c, v in sorted(bilanz.converted.items()))
         fx_note = {
-            "en": f"Non-CHF balances valued at the {bilanz.at} rate: {parts}.",
-            "de": f"Fremdwährungsbestände zum Kurs per {bilanz.at} bewertet: {parts}.",
+            "en": f"Non-CHF balances valued at the {_date(bilanz.at, lang)} rate: {parts}.",
+            "de": f"Fremdwährungsbestände zum Kurs per {_date(bilanz.at, lang)} bewertet: {parts}.",
         }.get(lang, "")
     if bilanz.unrealized_fx:
         fx_note += f" {label('unrealized_fx', lang)}: {_money(bilanz.unrealized_fx, lang)}."
@@ -249,27 +266,40 @@ def build_context(
         if item not in problems:
             problems.append(item)
     b_lines, e_lines = bilanz_lines(bilanz, lang), erfolg_lines(erfolg, lang)
-    columns: list[str] = []
+    # Every amount column is headed by its year: the PDF/UA table needs a
+    # header, and the year says which figures are this year's.
+    columns = [bilanz.at[:4]]
     if prior:
         b_lines = with_prior(b_lines, bilanz_lines(prior[0], lang))
         e_lines = with_prior(e_lines, erfolg_lines(prior[1], lang))
-        columns = [bilanz.at[:4], prior[0].at[:4]]
+        columns.append(prior[0].at[:4])
+    text = _TEXT.get(lang, _TEXT["en"])
+    title = f"{text['title']} {bilanz.at[:4]}"
     return {
         "lang": lang,
         "columns": columns,
+        "head": {"code": text["code"], "item": text["item"]},
+        "document": {"title": f"{title} · {issuer.name}" if issuer else title},
         "signatures": _SIGNATURES.get(lang, _SIGNATURES["en"]),
-        "issuer": _load_issuer(issuer_path),
+        "issuer": {
+            "name": issuer.name if issuer else "",
+            "address": issuer.address if issuer else [],
+            "vat_id": issuer.vat_id if issuer else None,
+        },
+        "brand": brand_context(issuer.brand if issuer else Brand(), logo),
         "violations": problems,
         "violations_title": _PROBLEMS_TITLE.get(lang, _PROBLEMS_TITLE["en"]),
         "bilanz": {
             "title": label("bilanz_title", lang),
-            "subtitle": f"{label('as_at', lang)} {bilanz.at} · OR Art. 959a · CHF",
+            "subtitle": f"{label('as_at', lang)} {_date(bilanz.at, lang)}"
+            f" · Art. 959a {text['law']} · CHF",
             "lines": b_lines,
             "note": fx_note,
         },
         "erfolg": {
             "title": label("erfolg_title", lang),
-            "subtitle": f"{erfolg.date_from} – {erfolg.date_to} · OR Art. 959b · CHF",
+            "subtitle": f"{_date(erfolg.date_from, lang)} – {_date(erfolg.date_to, lang)}"
+            f" · Art. 959b {text['law']} · CHF",
             "lines": e_lines,
         },
     }
@@ -283,17 +313,31 @@ def render_pdf(
     issuer_path: Path = DEFAULT_ISSUER,
     prior: tuple[BilanzReport, ErfolgReport] | None = None,
 ) -> Path:
-    ctx = build_context(bilanz, erfolg, lang, issuer_path, prior)
+    issuer = load_issuer(issuer_path) if issuer_path.exists() else None
+    brand = issuer.brand if issuer else Brand()
     work = Path(tempfile.mkdtemp(prefix="quints-report-"))
     try:
+        logo = None
+        if brand.logo and Path(brand.logo).exists():
+            logo = "logo" + Path(brand.logo).suffix
+            shutil.copy(brand.logo, work / logo)
+        ctx = build_context(bilanz, erfolg, lang, issuer, prior, logo)
         (work / "data.json").write_text(json.dumps(ctx, ensure_ascii=False, indent=2))
         shutil.copy(TEMPLATE, work / "report.typ")
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        # Archival PDF/A-2b, never a silent plain-PDF fallback: the books' PDFs
-        # must stay readable for the ten years they are kept (Art. 958f OR).
+        # Same families, same machine-independence as the invoice (see
+        # `invoice.render._compile`). Archival PDF/A-2a + PDF/UA-1, never a
+        # silent plain-PDF fallback: the books' PDFs must stay readable — and
+        # their text extractable — for the ten years they are kept (Art. 958f OR).
+        font_paths, only_bundled = fonts(brand)
         typst.compile(
-            str(work / "report.typ"), output=str(out_path), root=str(work), pdf_standards="a-2b"
+            str(work / "report.typ"),
+            output=str(out_path),
+            root=str(work),
+            font_paths=[str(p) for p in font_paths],
+            ignore_system_fonts=only_bundled,
+            pdf_standards=["a-2a", "ua-1"],
         )
         return out_path
     finally:

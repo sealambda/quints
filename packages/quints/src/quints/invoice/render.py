@@ -22,6 +22,7 @@ from .labels import labels as get_labels
 from .model import (
     Advance,
     BankAccount,
+    Brand,
     Invoice,
     Issuer,
     Totals,
@@ -165,7 +166,7 @@ def build_context(
         ],
         "payment": payment,
         "notes": list(inv.notes),
-        "brand": _brand_context(issuer, logo),
+        "brand": brand_context(issuer.brand, logo),
     }
 
 
@@ -231,8 +232,8 @@ def _totals_context(inv: Invoice, totals: Totals) -> dict[str, str | bool]:
     }
 
 
-def _brand_context(issuer: Issuer, logo: str | None) -> dict[str, str | float | bool | None]:
-    brand = issuer.brand
+def brand_context(brand: Brand, logo: str | None) -> dict[str, str | float | bool | None]:
+    """The brand tokens a template reads (`logo` is the copied file's name)."""
     return {
         "accent": brand.accent,
         "font": brand.font,
@@ -380,13 +381,12 @@ def _sepa_payment(
     }
 
 
-def _fonts(issuer: Issuer) -> tuple[list[Path], bool]:
+def fonts(brand: Brand) -> tuple[list[Path], bool]:
     """(font search path, whether only the bundled families may be used)."""
-    font_dir = issuer.brand.font_dir
+    font_dir = brand.font_dir
     issuer_fonts = [Path(font_dir)] if font_dir and Path(font_dir).is_dir() else []
     # Ours first so the guaranteed fallback is always resolvable; the
     # issuer's own families win on name, not on search order.
-    brand = issuer.brand
     named = {brand.font, brand.font_display or brand.font, brand.font_mono or brand.font}
     return [BUNDLED_FONTS, *issuer_fonts], bool(issuer_fonts) or named <= BUNDLED_FAMILIES
 
@@ -440,7 +440,7 @@ def render(
         (work / "data.json").write_text(json.dumps(ctx, ensure_ascii=False, indent=2))
         shutil.copy(TEMPLATE, work / "template.typ")
 
-        font_paths, only_bundled = _fonts(issuer)
+        font_paths, only_bundled = fonts(issuer.brand)
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         _compile(work / "template.typ", out_path, work, font_paths, only_bundled, inv.issue_date)

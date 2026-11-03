@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate the sample invoices against the standards `quints invoice` claims
+# Validate the sample invoices and statements against the standards they claim
 # (PDF/A-2a + PDF/UA-1, see invoice/render.py `_compile`) with veraPDF, the
 # reference validator. Typst accepting the export is not proof of conformance.
 # Entry point: `make pdfcheck`; CI runs it on every PR.
@@ -25,9 +25,10 @@ trap 'rm -rf "$work"' EXIT
     # Both layouts: the Swiss QR-bill page and the EUR export with its EPC code.
     quints invoice invoicing/acme-2026-07.yaml -o "$work/out/qr-bill.pdf" >/dev/null
     quints invoice invoicing/globex-2026-08.yaml -o "$work/out/export.pdf" >/dev/null
+    quints report statements --year 2026 -o "$work/out/statements.pdf" >/dev/null
 )
 # veraPDF exits non-zero when any file fails a profile.
 for flavour in 2a ua1; do
     docker run --rm --platform linux/amd64 -v "$work/out:/data" "$VERAPDF" \
-        -f "$flavour" --format text /data/qr-bill.pdf /data/export.pdf
+        -f "$flavour" --format text /data/qr-bill.pdf /data/export.pdf /data/statements.pdf
 done

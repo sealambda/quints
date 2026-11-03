@@ -108,8 +108,10 @@ What the law asks of the annual accounts, and what the PDF does about it:
 - **The notes (Anhang).** Not included, and the PDF says so. You write them
   separately (see [below](#what-quints-doesnt-do-here)).
 
-The PDF is PDF/A-2b, the archival format, so it stays readable for the ten
-years you keep it ([Close the year](year-end.md#keep-the-books-for-ten-years)).
+It carries the same wordmark, colours and typefaces as your invoices
+(`brand` in `invoicing/issuer.yaml`). The PDF is PDF/A-2a, the archival
+format, and PDF/UA-1, so it stays readable and searchable for the ten years
+you keep it ([Close the year](year-end.md#keep-the-books-for-ten-years)).
 
 ![The Bilanz page of the generated statements PDF, grouped by KMU code](../assets/statements.png){ width="480" }
 

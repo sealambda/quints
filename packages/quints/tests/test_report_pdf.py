@@ -2,7 +2,10 @@
 
 from pathlib import Path
 
+import pytest
+
 from quints import kmu, report_pdf
+from quints.invoice.model import load_issuer
 
 LEDGER = """
 2024-01-01 open Assets:CH:GmbH:Current:UBS:CHF CHF
@@ -117,3 +120,30 @@ def test_render_pdf_with_prior_year(tmp_path: Path):
     assert ctx["columns"] == ["2026", "2025"]
     out = report_pdf.render_pdf(bilanz, erfolg, "de", tmp_path / "s.pdf", prior=prior)
     assert out.read_bytes()[:5] == b"%PDF-"
+
+
+def test_statements_wear_the_issuer_brand(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Same bundled families and archival standards as the invoice: no
+    machine-installed font can stand in, and the issuer's accent leads."""
+    import typst
+
+    bilanz, erfolg = _reports(tmp_path)
+    issuer = tmp_path / "issuer.yaml"
+    issuer.write_text(
+        'name: Acme GmbH\naddress: ["Weg 1", "8000 Zürich"]\nbrand:\n  accent: "#224466"\n'
+    )
+    seen: dict[str, object] = {}
+
+    def spy(_main: str, **kwargs: object) -> None:
+        seen.update(kwargs)
+
+    monkeypatch.setattr(typst, "compile", spy)
+    report_pdf.render_pdf(bilanz, erfolg, "de", tmp_path / "s.pdf", issuer_path=issuer)
+    assert seen["ignore_system_fonts"] is True
+    assert seen["pdf_standards"] == ["a-2a", "ua-1"]
+
+    ctx = report_pdf.build_context(bilanz, erfolg, "de", load_issuer(issuer))
+    assert ctx["brand"]["accent"] == "#224466"  # pyright: ignore[reportIndexIssue]
+    assert "per 30.06.2026 · Art. 959a OR" in ctx["bilanz"]["subtitle"]  # pyright: ignore[reportIndexIssue]
+    english = report_pdf.build_context(bilanz, erfolg, "en")
+    assert "Art. 959a CO" in english["bilanz"]["subtitle"]  # pyright: ignore[reportIndexIssue]
