@@ -1,0 +1,6 @@
+# examples/ is `quints init` output, never hand-edited (test_init.py pins it
+# byte for byte), so markdownlint is off here. MD013 is named because the root
+# config sets it, which `default: false` doesn't override.
+config:
+  default: false
+  MD013: false

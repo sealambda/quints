@@ -1,0 +1,11 @@
+# Link check of every Sealambda repository.
+# https://lychee.cli.rs
+#
+# The check is offline: it resolves relative links and file paths. A check of
+# external links would fail on other people's outages and rate limits.
+offline = true
+
+exclude_path = [
+  ".git",
+  "node_modules",
+]

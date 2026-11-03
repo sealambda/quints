@@ -19,16 +19,16 @@ export GIT_COMMITTER_NAME=quints GIT_COMMITTER_EMAIL=quints@example.com
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 (
-    cd "$work"
-    quints init books --samples --yes >/dev/null
-    cd books
-    # Both layouts: the Swiss QR-bill page and the EUR export with its EPC code.
-    quints invoice invoicing/acme-2026-07.yaml -o "$work/out/qr-bill.pdf" >/dev/null
-    quints invoice invoicing/globex-2026-08.yaml -o "$work/out/export.pdf" >/dev/null
-    quints report statements --year 2026 -o "$work/out/statements.pdf" >/dev/null
+  cd "$work"
+  quints init books --samples --yes >/dev/null
+  cd books
+  # Both layouts: the Swiss QR-bill page and the EUR export with its EPC code.
+  quints invoice invoicing/acme-2026-07.yaml -o "$work/out/qr-bill.pdf" >/dev/null
+  quints invoice invoicing/globex-2026-08.yaml -o "$work/out/export.pdf" >/dev/null
+  quints report statements --year 2026 -o "$work/out/statements.pdf" >/dev/null
 )
 # veraPDF exits non-zero when any file fails a profile.
 for flavour in 2a ua1; do
-    docker run --rm --platform linux/amd64 -v "$work/out:/data" "$VERAPDF" \
-        -f "$flavour" --format text /data/qr-bill.pdf /data/export.pdf /data/statements.pdf
+  docker run --rm --platform linux/amd64 -v "$work/out:/data" "$VERAPDF" \
+    -f "$flavour" --format text /data/qr-bill.pdf /data/export.pdf /data/statements.pdf
 done

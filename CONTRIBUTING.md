@@ -11,6 +11,16 @@ uv sync          # installs every workspace package, editable, into .venv
 uv run quints --help
 ```
 
+With [Nix](https://nixos.org) and direnv, `direnv allow` enters the dev shell
+(uv, make, and the [Sealambda hub](https://github.com/sealambda/.github)'s
+linters) on `cd`. Nix is optional: uv alone runs `make check`. Nix adds the
+checks for everything that isn't Python:
+
+```bash
+nix flake check  # actionlint, zizmor, shellcheck, shfmt, nixfmt, typos, synced config
+nix fmt          # apply the formatters (typos rewrites in place: see _typos.toml)
+```
+
 ## The quality gate
 
 One command runs everything — CI and the local pre-finish hook both run exactly

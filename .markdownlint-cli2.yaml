@@ -1,0 +1,13 @@
+# Markdown lint settings of every Sealambda repository.
+# https://github.com/DavidAnson/markdownlint-cli2
+# Pass the files to lint as arguments: markdownlint-cli2 "**/*.md"
+gitignore: true
+noInlineConfig: true
+
+config:
+  # Tables and code blocks keep long lines.
+  MD013:
+    tables: false
+    code_blocks: false
+  # Tables stay compact.
+  MD060: false

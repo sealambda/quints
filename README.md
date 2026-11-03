@@ -92,12 +92,12 @@ quints report erfolg --year 2026                 # income statement (OR Art. 959
 quints report statements --year 2026 --lang de   # both, as one PDF
 ```
 
-<img src="docs/assets/statements.png" alt="Generated Bilanz page of the statements PDF, grouped by KMU code" width="440">
-
+![Generated Bilanz page of the statements PDF, grouped by KMU
+code](docs/assets/statements.png)
 
 ### Keep FX rates right
 
-<!-- no-test: prices sync needs network; fx revalue is covered by docs/guides/fx.md -->
+<!-- no-test: prices sync needs network; docs/guides/fx.md covers revalue -->
 ```bash
 quints prices sync                    # official BAZG/EZV daily CHF rates (needs network)
 quints fx revalue --at 2026-12-31     # year-end revaluation entry to paste (Art. 960 ff. OR)
@@ -111,9 +111,9 @@ quints import ubs <statement.mt940>   # → staging/, never straight into your b
 
 Yapeal, Wise and Stripe importers exist too (`import yapeal` for a CSV export;
 `import wise` / `import stripe` with `--fetch` to pull from their APIs, and
-`--invoices` to file each Stripe charge's customer invoice PDF into `inbox/`). Drafts land in `staging/` flagged
-for the VAT decision + a linked document; nothing reaches your books until you
-review it.
+`--invoices` to file each Stripe charge's customer invoice PDF into `inbox/`).
+Drafts land in `staging/` flagged for the VAT decision + a linked document;
+nothing reaches your books until you review it.
 
 ### Send a Swiss QR-bill invoice
 
@@ -126,8 +126,8 @@ total against the matching booking in your ledger, so an invoice can't silently
 diverge from your books. The PDF is filed under `documents/` in the income
 account's folder, date-prefixed — where beancount and Fava expect documents.
 
-<img src="docs/assets/invoice-qr-bill.png" alt="Generated Swiss QR-bill invoice PDF with payment part" width="440">
-
+![Generated Swiss QR-bill invoice PDF with payment
+part](docs/assets/invoice-qr-bill.png)
 
 > **Ready-to-run samples:** the repo's
 > [`packages/quints/examples/`](packages/quints/examples) ships a working

@@ -43,7 +43,7 @@ and, for the QR reference and the QR-IBAN specifically:
 
 > [The QR reference] can only be used in combination with a QR-IBAN … [and]
 > for invoicing in CHF. … The reference must not consist exclusively of zeros.
-
+>
 > [The QR-IBAN] can only be used for invoicing and payments in CHF.
 
 So **QR-IBAN + SCOR**, **IBAN + QRR** and **QR-IBAN in EUR** are all invalid.
