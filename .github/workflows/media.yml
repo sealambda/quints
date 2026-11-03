@@ -7,17 +7,25 @@ name: Media
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 jobs:
   regenerate:
+    name: Regenerate docs media
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the regenerated assets
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.13"
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.14"
       - run: uv sync --all-packages
       - name: Install vhs, ttyd, ffmpeg, poppler
         run: |
@@ -34,8 +42,12 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - run: make media
+      # Only this step holds the token: gh is git's credential helper here.
       - name: Commit regenerated assets
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          gh auth setup-git
           git add docs/assets
           git diff --cached --quiet && echo "assets unchanged" && exit 0
           git commit -m "chore: regenerate docs media"

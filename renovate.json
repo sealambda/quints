@@ -1,0 +1,11 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>sealambda/.github"],
+  "packageRules": [
+    {
+      "description": "The published packages declare ranges for their users: widen them only when a new release falls outside, and let uv.lock carry the exact versions.",
+      "matchManagers": ["pep621"],
+      "rangeStrategy": "widen"
+    }
+  ]
+}
