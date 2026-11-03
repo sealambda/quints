@@ -65,11 +65,11 @@ heuristic.
 ```python
 from beangulp_stripe import StripeClient
 
-client = StripeClient("rk_live_...")   # restricted key, read-only scopes
+client = StripeClient("rk_live_...")  # restricted key, read-only scopes
 txns = client.balance_transactions(created_gte, created_lte)
 snapshot = client.balance()
 invoices = client.invoices(created_gte, created_lte)
-pdf = client.document(invoices[0]["invoice_pdf"])   # bytes
+pdf = client.document(invoices[0]["invoice_pdf"])  # bytes
 ```
 
 Use a **restricted** API key with *Balance transaction sources: Read* and

@@ -42,7 +42,7 @@ from beangulp_wise import Importer, merge_conversions
 importer = Importer(
     {"EUR": "Assets:Wise:EUR", "USD": "Assets:Wise:USD"},
     fees_account="Expenses:BankFees:Wise",
-    holder="My GmbH",                       # a token may see several profiles
+    holder="My GmbH",  # a token may see several profiles
     payee_rules=((r"cloudflare", "Expenses:IT:Hosting", "!"),),
 )
 entries = merge_conversions(
@@ -65,8 +65,11 @@ client = WiseClient(token, private_key_pem=open("private.pem", "rb").read())
 pid = client.profile_id("My GmbH")
 for balance in client.balances(pid):
     statement = client.balance_statement(
-        pid, balance["id"], balance["currency"],
-        "2026-07-01T00:00:00.000Z", "2026-07-31T23:59:59.999Z",
+        pid,
+        balance["id"],
+        balance["currency"],
+        "2026-07-01T00:00:00.000Z",
+        "2026-07-31T23:59:59.999Z",
     )
 ```
 

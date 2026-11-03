@@ -35,10 +35,10 @@ from beangulp_mt940 import Importer
 
 importer = Importer(
     "Assets:Bank:Checking",
-    iban="CH93 0076 2011 6238 5295 7",   # identify() filter, optional
+    iban="CH93 0076 2011 6238 5295 7",  # identify() filter, optional
     payee_rules=(
         (r"client ag", "Assets:Receivable", "*"),
-        (r"hosting",   "Expenses:IT:Hosting", "!"),
+        (r"hosting", "Expenses:IT:Hosting", "!"),
     ),
 )
 entries = importer.extract("statement.mt940", existing=ledger_entries)
