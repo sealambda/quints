@@ -7,7 +7,7 @@ import re
 import shutil
 import tempfile
 from collections.abc import Mapping
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import TypedDict
@@ -284,9 +284,7 @@ def _compile(
         font_paths=[str(p) for p in font_paths],
         ignore_system_fonts=only_bundled,
         pdf_standards=["a-2a", "ua-1"],
-        timestamp=int(
-            datetime(issued.year, issued.month, issued.day, tzinfo=timezone.utc).timestamp()
-        ),
+        timestamp=int(datetime(issued.year, issued.month, issued.day, tzinfo=UTC).timestamp()),
     )
 
 

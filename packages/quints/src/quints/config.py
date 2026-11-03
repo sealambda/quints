@@ -18,7 +18,7 @@ fall back to :func:`get`, the process-wide config the CLI resolves once.
 from __future__ import annotations
 
 import difflib
-import sys
+import tomllib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import date as Date
@@ -26,11 +26,6 @@ from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from itertools import pairwise
 from pathlib import Path
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover
-    import tomli as tomllib
 
 DEFAULT_PATH = Path("quints.toml")
 

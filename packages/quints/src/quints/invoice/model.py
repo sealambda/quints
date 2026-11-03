@@ -11,7 +11,7 @@ from __future__ import annotations
 import calendar
 import json
 import re
-import sys
+import tomllib
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -33,11 +33,6 @@ from pydantic import (
 
 from .. import ledger
 from . import bank
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover
-    import tomli as tomllib
 
 
 def money(v: Decimal, locale: str = "de_CH") -> str:

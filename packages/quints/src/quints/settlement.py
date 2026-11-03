@@ -16,8 +16,8 @@ ledger. The emitted balance assertions make bean-check verify the flush.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from datetime import date as Date
-from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -185,7 +185,7 @@ def outstanding(
     """
     cfg = cfg or config.get()
     if today is None:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
     if entries is None:  # the CLI passes entries from ledger.load and lists their errors
         entries, _ = ledger.load_entries(ledger_path)
 

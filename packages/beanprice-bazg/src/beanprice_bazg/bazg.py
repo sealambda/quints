@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import NamedTuple
 from xml.etree import ElementTree
@@ -154,7 +154,7 @@ def _unit_multiplier(waehrung: str | None, code: str) -> Decimal:
 def _parse_date(text: str) -> datetime:
     """Parse BAZG's 'dd.mm.yyyy' into a UTC-aware datetime at midnight."""
     day, month, year = (int(p) for p in text.split("."))
-    return datetime(year, month, day, tzinfo=timezone.utc)
+    return datetime(year, month, day, tzinfo=UTC)
 
 
 class Source:

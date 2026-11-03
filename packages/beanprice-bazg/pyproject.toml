@@ -3,7 +3,7 @@ name = "beanprice-bazg"
 version = "0.2.2"
 description = "beanprice source for official Swiss BAZG/EZV (Federal Customs) daily FX rates, quoted in CHF"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "GPL-2.0-only" }
 keywords = ["beancount", "beanprice", "fx", "exchange-rates", "switzerland", "vat", "chf"]
 dependencies = [

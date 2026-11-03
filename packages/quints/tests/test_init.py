@@ -9,13 +9,8 @@ against it, asserting known figures. That is the end-to-end smoke test the CI
 import json
 import re
 import subprocess
-import sys
+import tomllib
 from datetime import date as Date
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
 from decimal import Decimal
 from pathlib import Path
 

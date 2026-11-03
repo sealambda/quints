@@ -3,7 +3,7 @@ name = "beangulp-yapeal"
 version = "0.1.2"
 description = "beangulp importer for Yapeal CSV bank statements: drafts transactions with stable bank references for idempotent re-imports"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "GPL-2.0-only" }
 keywords = ["beancount", "beangulp", "importer", "csv", "bank-statement", "yapeal"]
 dependencies = [

@@ -50,8 +50,8 @@ import inspect
 import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from datetime import date as Date
-from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
@@ -241,7 +241,7 @@ class SyncResult:
 
 
 def _utc(d: Date) -> datetime:
-    return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+    return datetime(d.year, d.month, d.day, tzinfo=UTC)
 
 
 def _merge(ranges: Iterable[Range]) -> list[Range]:
@@ -435,7 +435,7 @@ def sync(
     jobs: Sequence[SyncJob] | None = None,
 ) -> SyncResult:
     if today is None:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
     if jobs is None:  # config mode: one single-source job per currency
         src = resolve_source(source) if isinstance(source, str) else source
         jobs = [

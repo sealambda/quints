@@ -27,8 +27,8 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from datetime import date as Date
-from datetime import datetime, timezone
 from decimal import Decimal
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -298,7 +298,7 @@ def compute(
     cfg: config.Config | None = None,
 ) -> list[Match]:
     cfg = cfg or config.get()
-    today = today or datetime.now(timezone.utc).date()
+    today = today or datetime.now(UTC).date()
     root = ledger_path.resolve().parent
     staging_dir = staging_dir or root / "staging"
 

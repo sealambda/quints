@@ -8,6 +8,7 @@ errors next to its figures instead of dropping them.
 
 import json
 from collections.abc import Callable
+from datetime import UTC
 from pathlib import Path
 
 import pytest
@@ -170,7 +171,7 @@ def test_prices_sync_fails_on_unusable_price_metadata(
 ) -> None:
     """A broken `price:` spec used to warn and exit 0 — the currency silently
     went unfetched. The usable jobs still sync; the run then exits 1."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from beanprice_bazg import bazg
 
@@ -188,7 +189,7 @@ def test_prices_sync_fails_on_unusable_price_metadata(
         '2024-01-01 commodity GBP\n  price: "nonsense"\n'
     )
     (tmp_path / "quints.toml").write_text(f'[ledger]\nmain = "{tmp_path}/main.bean"\n')
-    seeded = datetime.now(timezone.utc).date() - timedelta(days=2)
+    seeded = datetime.now(UTC).date() - timedelta(days=2)
     out = tmp_path / "prices.bean"
     out.write_text(f"; quints: verified EUR/CHF 2024-01-01..{seeded}\n")
     argv = ["--config", str(tmp_path / "quints.toml"), "prices", "sync", "--out", str(out)]

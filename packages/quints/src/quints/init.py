@@ -36,17 +36,12 @@ tied to the demo quarter's bookings, so ``quints invoice`` reconciles clean.
 from __future__ import annotations
 
 import re
-import sys
+import tomllib
 from dataclasses import dataclass, field
 from datetime import date as Date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover
-    import tomli as tomllib
 
 from . import config, kmu, ledger
 
@@ -126,7 +121,7 @@ def answers_from_mapping(raw: dict[str, Any]) -> Answers:
 
 
 def load_answers(path: Path) -> Answers:
-    """Parse a TOML answer-file into :class:`Answers` (3.10-safe TOML)."""
+    """Parse a TOML answer-file into :class:`Answers`."""
     with open(path, "rb") as fh:
         return answers_from_mapping(tomllib.load(fh))
 
@@ -738,7 +733,7 @@ def _pyproject_toml(answers: Answers) -> str:
             "[project]",
             f'name = "{_slug(answers.entity_name)}"',
             'version = "0.1.0"',
-            'requires-python = ">=3.10"',
+            'requires-python = ">=3.11"',
             "dependencies = [",
             '    "quints",',
             "]",

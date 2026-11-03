@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from beancount.core import data
@@ -63,7 +63,7 @@ class QuintDashboard(FavaExtensionBase):
         )
 
     def today(self):
-        return datetime.now(timezone.utc).date()
+        return datetime.now(UTC).date()
 
     def vat_status(self):
         """(liabilities, unlinked_owed, total_owed, today) — see settlement."""

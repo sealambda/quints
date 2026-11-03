@@ -1,7 +1,7 @@
 """Tests for the resumable, gap-aware price sync (no network — fake sources)."""
 
 from collections.abc import Callable
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -21,7 +21,7 @@ def _days(begin: datetime, end: datetime) -> list[date]:
 
 
 def _utc(d: date) -> datetime:
-    return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+    return datetime(d.year, d.month, d.day, tzinfo=UTC)
 
 
 class BazgLikeSource:
