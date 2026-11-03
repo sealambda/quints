@@ -1,0 +1,44 @@
+# typos runs in `nix fmt` / `nix flake check` (the hub's treefmt) and rewrites
+# files in place. quints quotes Swiss law and labels documents in de/fr/it/es,
+# so foreign words are accepted here rather than "corrected" into English.
+[default.extend-words]
+# German: statute quotations, account names, invoice labels.
+aktive = "aktive"
+alle = "alle"
+als = "als"
+beginn = "beginn"
+deklaration = "deklaration"
+dezember = "dezember"
+dokument = "dokument"
+ein = "ein"
+ende = "ende"
+exporte = "exporte"
+frist = "frist"
+handel = "handel"
+januar = "januar"
+juli = "juli"
+juni = "juni"
+methode = "methode"
+oder = "oder"
+periode = "periode"
+probleme = "probleme"
+programm = "programm"
+referenz = "referenz"
+sie = "sie"
+unter = "unter"
+vor = "vor"
+ist = "ist"
+# Italian/Spanish invoice labels.
+cliente = "cliente"
+ser = "ser"
+# Currency code (Jordanian dinar).
+jod = "jod"
+# Correct English variants.
+mis = "mis"
+unparseable = "unparseable"
+# Deliberate misspellings: the "did you mean" tests and docs feed them in.
+acounts = "acounts"
+entitiy = "entitiy"
+methd = "methd"
+# OpenType axis tag (font width).
+wdth = "wdth"

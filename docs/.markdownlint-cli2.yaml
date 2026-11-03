@@ -1,0 +1,10 @@
+# Zensical pages, merged with the hub's root settings.
+config:
+  # Admonition and tab bodies are indented four spaces, which plain Markdown
+  # reads as code blocks: the code-block style looks mixed, and footnotes cited
+  # only inside those bodies look unused.
+  MD046: false
+  MD053: false
+  # The front matter `title` is the page's <title>, not a second H1.
+  MD025:
+    front_matter_title: ""

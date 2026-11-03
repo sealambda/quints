@@ -28,8 +28,9 @@ quints invoice invoicing/acme-2026-07.yaml
 ```
 
 Writes a Swiss QR-bill PDF (domestic), or an export invoice with the SEPA
-payment details printed — plus a scan-to-pay EPC QR code when it is in EUR — and cross-checks the total against your ledger: if the invoice is
-already booked at a different amount, you get a conflict, not a silent
+payment details printed — plus a scan-to-pay EPC QR code when it is in EUR —
+and cross-checks the total against your ledger: if the invoice is already
+booked at a different amount, you get a conflict, not a silent
 divergence. If it isn't booked yet, quints prints the draft transaction to
 paste into `books/<year>.bean`. On a EUR invoice the draft's VAT leg is in
 CHF at the issue date's rate (`-75.33 CHF @@ 81.00 EUR`), because the VAT
@@ -45,9 +46,11 @@ documents/Income/CH/GmbH/Consulting/External/Domestic/2026-07-02.acme.INV2026014
 The customer part is the registry key from `customers.yaml` (the slugified
 name for inline customers). `--out` overrides the location when you need to.
 
-![Rendering the two sample invoices — domestic QR-bill and EUR export — each cross-checked against the ledger](../assets/invoice.gif)
+![Rendering the two sample invoices — domestic QR-bill and EUR export —
+each cross-checked against the ledger](../assets/invoice.gif)
 
-![The generated Swiss QR-bill PDF, with receipt and payment part](../assets/invoice-qr-bill.png){ width="480" }
+![The generated Swiss QR-bill PDF, with receipt and payment
+part](../assets/invoice-qr-bill.png){ width="480" }
 
 An invoice is one YAML file:
 
@@ -361,14 +364,16 @@ abroad.[^place] That note is right for a service whose place of supply is the
 customer's seat. It is wrong for exported goods, which are exempt on other
 grounds and need an export record, and for the services the law places in
 Switzerland whatever the customer's seat, such as work on Swiss real estate,
-events held here, restaurant services and passenger transport.[^not-export] Don't use
-`kind: export` for those. It defaults to the EU B2B reverse-charge note, which requires
-the customer's VAT number in the registry.[^reverse] Set
+events held here, restaurant services and passenger
+transport.[^not-export] Don't use `kind: export` for those. It defaults to the
+EU B2B reverse-charge note, which requires the customer's VAT number in the
+registry.[^reverse] Set
 `reverse_charge: false` for customers outside a reverse-charge regime (e.g.
 the US). The currency's account needs both a regular `iban` (a QR-IBAN can't
 receive an ordinary credit transfer) and a `bic`.
 
-![The generated export invoice PDF — SEPA payment details with an EPC QR code, and the reverse-charge note](../assets/invoice-export.png){ width="480" }
+![The generated export invoice PDF — SEPA payment details with an EPC QR
+code, and the reverse-charge note](../assets/invoice-export.png){ width="480" }
 
 A project scaffolded with `quints init --samples` includes both flavours:
 `invoicing/acme-<year>-07.yaml` (domestic QR-bill) and
@@ -408,7 +413,8 @@ advances_domestic = "Liabilities:CH:GmbH:Advances:Domestic"
 advances_export = "Liabilities:CH:GmbH:Advances:Export"
 ```
 
-Open them in `accounts.bean` (a project scaffolded by `quints init` already has them):
+Open them in `accounts.bean` (a project scaffolded by `quints init` already
+has them):
 
 ```beancount
 2026-01-01 open Liabilities:CH:GmbH:Advances:Domestic
@@ -437,7 +443,7 @@ items:
     unit_price: 10000.00
 ```
 
-<!-- no-test: the whole pro forma flow runs in tests/test_proforma.py::test_cli_pro_forma_to_invoice_end_to_end -->
+<!-- no-test: the pro forma flow runs end to end in tests/test_proforma.py -->
 ```bash
 quints invoice invoicing/globex-pf2026001.yaml
 ```

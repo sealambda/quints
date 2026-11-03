@@ -10,3 +10,9 @@ site/
 .env
 .DS_Store
 .claude/settings.local.json
+# Nix and direnv
+.direnv/
+result
+# Vale: packages are installed by `vale sync`; the vocabularies are tracked.
+.vale/styles/*
+!.vale/styles/config/

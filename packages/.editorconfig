@@ -1,0 +1,4 @@
+# Python indents by 4 (PEP 8, ruff format). The root .editorconfig is the
+# hub's synced copy and must stay identical, so the override lives here.
+[*.py]
+indent_size = 4

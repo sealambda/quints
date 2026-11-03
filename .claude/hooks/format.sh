@@ -5,8 +5,8 @@
 set -u
 f=$(jq -r '.tool_input.file_path // empty')
 case "$f" in
-  *.py) [ -f "$f" ] || exit 0 ;;
-  *) exit 0 ;;
+*.py) [ -f "$f" ] || exit 0 ;;
+*) exit 0 ;;
 esac
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 uv run ruff check --fix -q "$f" >/dev/null 2>&1

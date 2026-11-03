@@ -113,7 +113,8 @@ It carries the same wordmark, colours and typefaces as your invoices
 format, and PDF/UA-1, so it stays readable and searchable for the ten years
 you keep it ([Close the year](year-end.md#keep-the-books-for-ten-years)).
 
-![The Bilanz page of the generated statements PDF, grouped by KMU code](../assets/statements.png){ width="480" }
+![The Bilanz page of the generated statements PDF, grouped by KMU
+code](../assets/statements.png){ width="480" }
 
 All report commands take `--lang` and `--json`.
 

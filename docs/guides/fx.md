@@ -97,9 +97,9 @@ around the fetch:
   `display_precision`; sync writes the raw source rate (BAZG publishes five
   decimals), which is what the ESTV-accepted daily rate actually is.
 - **Daily rates, by day.** quints converts at the official rate of the
-  transaction day (the daily option of Art. 45 MWSTV), not the latest quote — so the unit of work here is "keep
-  a complete daily series current", which is a loop and a file format, not
-  a one-shot fetch.
+  transaction day (the daily option of Art. 45 MWSTV), not the latest
+  quote — so the unit of work here is "keep a complete daily series
+  current", which is a loop and a file format, not a one-shot fetch.
 
 ## Year-end revaluation
 

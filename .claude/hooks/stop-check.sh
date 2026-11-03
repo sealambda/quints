@@ -9,8 +9,7 @@ cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 if [ -z "$(git status --porcelain -- '*.py' '*.toml' Makefile 2>/dev/null)" ]; then
   exit 0
 fi
-out=$(make check 2>&1)
-if [ $? -ne 0 ]; then
+if ! out=$(make check 2>&1); then
   printf '%s\n' "$out" | grep -vE '^(uv run|make|Scanning|Assuming)' | tail -25 >&2
   echo "-- make check failed; fix the errors above before finishing." >&2
   exit 2
