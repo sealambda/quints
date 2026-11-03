@@ -1239,8 +1239,11 @@ account with no valid `kmu:` code.
    Not booked yet? It prints the receivable draft to paste into
    `books/{year}.bean`.
 3. The payment arrives with the next bank import; the draft is matched to
-   the open invoice by its QR/SCOR reference. `quints receivables` shows
-   what is still open.
+   the open invoice by its QR/SCOR reference. Only an exact amount is
+   drafted `*`. A short payment, an overpayment, or a payment with no
+   reference is drafted `!` with a `;` comment saying how it was allocated:
+   confirm it with a human before it moves to books. `quints receivables`
+   shows what is still open.
 
 Export invoices carry a full SEPA/SWIFT instruction and will not render
 without a `bic` under the currency's account in `invoicing/issuer.yaml` —

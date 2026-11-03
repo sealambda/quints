@@ -43,6 +43,7 @@ class OpenInvoice:
     currency: str
     open_amount: Decimal
     age_days: int
+    due_date: Date | None = None  # the invoicing leg's `due:`, when the ledger records one
 
 
 def invoice_id(e: data.Transaction) -> str | None:
@@ -62,6 +63,7 @@ class _Group:
     net: Decimal = Decimal("0")
     invoice_date: Date | None = None
     payee: str = ""
+    due: Date | None = None
 
 
 def compute_from_entries(
@@ -86,6 +88,8 @@ def compute_from_entries(
             g.net += p.units.number
             if p.units.number > 0 and g.invoice_date is None:  # the invoicing leg
                 g.invoice_date, g.payee = e.date, e.payee or ""
+                due = (e.meta or {}).get("due")
+                g.due = due if isinstance(due, Date) else None
 
     out: list[OpenInvoice] = []
     for (number, currency), g in groups.items():
@@ -100,6 +104,7 @@ def compute_from_entries(
                 currency=currency,
                 open_amount=g.net,
                 age_days=(at - inv_date).days,
+                due_date=g.due,
             )
         )
     out.sort(key=lambda o: (o.invoice_date, o.number))
@@ -257,10 +262,44 @@ def render(
             o.payee,
             str(o.invoice_date),
             f"[{style}]{o.age_days} d[/]",
-            f"{ui.money(o.open_amount)} {o.currency}",
+            f"{ui.money(o.open_amount)} {o.currency}"
+            + (" [warn]overpaid[/]" if o.open_amount < 0 else ""),
         )
     t.add_section()
     render_totals(t, open_invoices, consolidation, at, console)
+    for pos, neg in offsetting(open_invoices):
+        console.print(
+            f"[warn]{pos.number} ({ui.money(pos.open_amount)}) and {neg.number} "
+            f"({ui.money(neg.open_amount)}) {pos.currency} offset — a payment went to the "
+            "wrong invoice; book a zero-sum relink entry to close both.[/]"
+        )
+
+
+def offsetting(
+    open_invoices: Sequence[OpenInvoice],
+) -> list[tuple[OpenInvoice, OpenInvoice]]:
+    """(open, overpaid) pairs of one payee and currency that net to zero.
+
+    Only reported, never booked: which payment belongs where is the
+    bookkeeper's call."""
+    pairs: list[tuple[OpenInvoice, OpenInvoice]] = []
+    taken: set[str] = set()
+    for neg in (o for o in open_invoices if o.open_amount < 0):
+        pos = next(
+            (
+                o
+                for o in open_invoices
+                if o.open_amount > 0
+                and o.number not in taken
+                and (o.payee, o.currency) == (neg.payee, neg.currency)
+                and abs(o.open_amount + neg.open_amount) <= _TOL
+            ),
+            None,
+        )
+        if pos is not None:
+            taken.add(pos.number)
+            pairs.append((pos, neg))
+    return pairs
 
 
 def render_totals(

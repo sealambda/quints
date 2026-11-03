@@ -37,10 +37,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date as TodayDate
 from decimal import Decimal
+from itertools import groupby
 from pathlib import Path
 from typing import TypeVar
 
 from beancount.core import data
+from beancount.core.amount import Amount
 from beancount.parser import printer
 
 from beangulp_mt940 import Importer as Mt940Importer
@@ -64,6 +66,9 @@ from .invoice.model import slugify
 
 LEGACY_WINDOW_DAYS = 3
 _PAYABLE_TOL = Decimal("0.005")  # Rappen-level equality on a cleared bill
+# What a human must confirm on a draft. The printer skips `__` keys;
+# _write_staging writes it above the entry as a `;` comment.
+_NOTE = "__note__"
 DEFAULT_STAGING = Path("staging")
 
 
@@ -215,45 +220,197 @@ def match_receivables(
 
     `quints invoice` derives the QRR (QR-bill) and SCOR/RF (SEPA) references
     deterministically from the invoice number, so a payment carrying either —
-    or the plain number — identifies its invoice exactly. On a match the
-    draft's counter leg becomes the receivable clearing, linked `^<number>`
-    and flagged `*` (complete as drafted). A reference that fits more than one
-    open invoice matches nothing: the draft stays flagged `!` for a human,
-    which is the only honest outcome."""
+    or the plain number — identifies its invoice exactly. A reference that
+    fits more than one open invoice matches nothing: the draft stays `!` for
+    a human, which is the only honest outcome.
+
+    Only a referenced payment of exactly the open amount is complete as
+    drafted (`*`). Every other allocation is drafted `!` with a `;` comment
+    saying what was assumed:
+
+    - an overpayment whose excess is exactly the customer's other open
+      invoices, oldest first, is split across them by posting-level
+      `invoice:`;
+    - any other amount stays on the referenced invoice (Art. 86 OR: the
+      debtor named the debt), its difference stated, never written off;
+    - a payment with no reference from a payee with open invoices goes to
+      the debt that fell due first (Art. 87 OR), what is left untagged so
+      `reconcile` still reports it.
+
+    Amounts allocated by earlier drafts of the same import are spent: two
+    payments never settle the same open amount twice."""
     from .match import find_invoice, payment_text, reference_index
 
     opens = recv_mod.compute_from_entries(existing, TodayDate.today(), cfg)
     if not opens:
         return
     index = reference_index(opens)
+    left = {(o.number, o.currency): o.open_amount for o in opens}
 
     for i, draft in enumerate(result.drafts):
         cash = draft.postings[0]
         if cash.units is None or cash.units.number is None or cash.units.number <= 0:
             continue  # only incoming payments clear receivables
+        paid, ccy = cash.units.number, cash.units.currency
         hit = find_invoice(index, *payment_text(draft))
-        if hit is None or hit.number is None:
-            continue
-        number = hit.number
-        postings = list(draft.postings)
-        if len(postings) == 1:
-            # Only the cash leg is known — add the elided receivable clearing
-            # posting so the matched draft still balances.
-            postings.append(data.Posting(cfg.receivable, None, None, None, None, None))
-        elif len(postings) == 2:
-            postings[1] = postings[1]._replace(account=cfg.receivable)
+        if hit is None:
+            # No reference: never overrule a payee rule that routed the leg elsewhere.
+            if len(draft.postings) == 2 and draft.postings[1].account != cfg.receivable:
+                continue
+            alloc, note = _by_due_date(draft.payee, opens, left, paid, ccy)
+        elif hit.number is None:
+            continue  # an ambiguous reference — `quints match` says why
         else:
-            continue  # ambiguous shape — leave the draft unmatched, still flagged for review
-        meta = dict(draft.meta or {})
-        meta["invoice"] = number
-        matched = draft._replace(
-            flag="*",
-            meta=meta,
-            links=frozenset(draft.links or ()) | {number},
-            postings=postings,
-        )
+            alloc, note = _by_reference(hit.number, opens, left, paid, ccy)
+        matched = _clear_invoices(draft, alloc, note, cfg) if alloc else None
+        if matched is None:
+            continue  # nothing to allocate, or an ambiguous shape — still flagged for review
+        for number, amount in alloc:
+            if (number, ccy) in left:
+                left[number, ccy] -= amount
         result.drafts[i] = matched
-        result.receivable_matches.append((number, matched))
+        result.receivable_matches.append((alloc[0][0], matched))
+
+
+def _oldest_first(invoices: Sequence[recv_mod.OpenInvoice]) -> list[recv_mod.OpenInvoice]:
+    """By the date each fell due — the invoice date where no `due:` is recorded."""
+    return sorted(invoices, key=lambda o: (o.due_date or o.invoice_date, o.number))
+
+
+def _by_reference(
+    number: str,
+    opens: Sequence[recv_mod.OpenInvoice],
+    left: dict[tuple[str, str], Decimal],
+    paid: Decimal,
+    ccy: str,
+) -> tuple[list[tuple[str, Decimal]], str | None]:
+    """A payment quoting ``number``: its allocation and what a human must confirm."""
+    inv = next((o for o in opens if o.number == number and o.currency == ccy), None)
+    if inv is None:
+        other = next(o.currency for o in opens if o.number == number)
+        return [(number, paid)], f"paid in {ccy}, {number} is open in {other} — check the amount"
+    diff = paid - left[number, ccy]
+    if abs(diff) <= _PAYABLE_TOL:
+        return [(number, paid)], None
+    if diff < 0:
+        return [(number, paid)], f"short-paid {number} by {-diff:.2f} {ccy}"
+    others = _oldest_first(
+        [
+            o
+            for o in opens
+            if o.payee == inv.payee
+            and o.currency == ccy
+            and o.number != number
+            and left[o.number, ccy] > _PAYABLE_TOL
+        ]
+    )
+    covered: list[tuple[str, Decimal]] = []
+    for o in others:
+        covered.append((o.number, left[o.number, ccy]))
+        total = sum((a for _, a in covered), Decimal("0"))
+        if abs(total - diff) <= _PAYABLE_TOL:
+            applied = ", ".join(f"{n} {a:.2f}" for n, a in covered)
+            note = f"overpaid {number} by {diff:.2f} {ccy} — applied to older open {applied}"
+            return [(number, paid - total), *covered], note
+        if total > diff:
+            break
+    return [(number, paid)], f"overpaid {number} by {diff:.2f} {ccy} — no open invoice explains it"
+
+
+def _by_due_date(
+    payee: str | None,
+    opens: Sequence[recv_mod.OpenInvoice],
+    left: dict[tuple[str, str], Decimal],
+    paid: Decimal,
+    ccy: str,
+) -> tuple[list[tuple[str, Decimal]], str | None]:
+    """An unreferenced payment, applied as Art. 87 OR applies it.
+
+    The payee is identified the way `match_payables` identifies a supplier:
+    its name contains, or is contained in, the invoice's payee. Open invoices
+    of more than one payee fitting the name identify none of them."""
+    from .match import similarity
+
+    fits = [
+        o
+        for o in opens
+        if o.currency == ccy
+        and left[o.number, ccy] > _PAYABLE_TOL
+        and similarity(payee, o.payee) == 1.0
+    ]
+    if not fits or len({o.payee for o in fits}) > 1:
+        return [], None
+    rest, shared = paid, False
+    alloc: list[tuple[str, Decimal]] = []
+    for _, same_day in groupby(_oldest_first(fits), key=lambda o: o.due_date or o.invoice_date):
+        group = list(same_day)
+        owed = sum((left[o.number, ccy] for o in group), Decimal("0"))
+        if rest >= owed:
+            alloc += [(o.number, left[o.number, ccy]) for o in group]
+            rest -= owed
+        else:  # Art. 87 Abs. 2: debts due the same day share the payment pro rata
+            shares = [(left[o.number, ccy] * rest / owed).quantize(Decimal("0.01")) for o in group]
+            shares[-1] = rest - sum(shares[:-1], Decimal("0"))
+            alloc += [(o.number, s) for o, s in zip(group, shares, strict=True) if s]
+            rest, shared = Decimal("0"), len(group) > 1
+        if rest <= _PAYABLE_TOL:
+            break
+    used = {n for n, _ in alloc}
+    applied = ", ".join(f"{n} {a:.2f}" for n, a in alloc)
+    note = (
+        f"no invoice reference — applied to the debt due first (Art. 87 Abs. 1 OR): {applied} {ccy}"
+    )
+    if shared:
+        note += "; same-day debts shared pro rata (Art. 87 Abs. 2 OR)"
+    if any(o.due_date is None for o in fits if o.number in used):
+        note += "; no due: recorded, ordered by invoice date"
+    if rest > _PAYABLE_TOL:
+        note += f"; {rest:.2f} {ccy} left without an invoice"
+    return alloc, note
+
+
+def _clear_invoices(
+    draft: data.Transaction,
+    alloc: list[tuple[str, Decimal]],
+    note: str | None,
+    cfg: config.Config,
+) -> data.Transaction | None:
+    """The draft as the payment clearing ``alloc``; None if its shape is ambiguous.
+
+    One invoice taking the whole payment keeps the elided clearing leg and the
+    transaction-level `invoice:`. Anything else gets one receivable posting
+    per invoice, each with its own `invoice:` (which overrides the
+    transaction's), plus an untagged posting for what no invoice took."""
+    cash = draft.postings[0]
+    if len(draft.postings) > 2 or cash.units is None or cash.units.number is None:
+        return None
+    ccy = cash.units.currency
+    alloc = list(alloc)
+    rest = cash.units.number - sum((a for _, a in alloc), Decimal("0"))
+    if abs(rest) <= _PAYABLE_TOL:
+        alloc[-1] = (alloc[-1][0], alloc[-1][1] + rest)  # Rappen dust rides on the last leg
+        rest = Decimal("0")
+    meta = dict(draft.meta or {})
+    if note:
+        meta[_NOTE] = note
+    if len(alloc) == 1 and not rest:
+        meta["invoice"] = alloc[0][0]
+        legs = [data.Posting(cfg.receivable, None, None, None, None, None)]
+    else:
+        legs = [
+            data.Posting(cfg.receivable, Amount(-a, ccy), None, None, None, {"invoice": n})
+            for n, a in alloc
+        ]
+        if rest:
+            legs.append(data.Posting(cfg.receivable, Amount(-rest, ccy), None, None, None, None))
+    # A lone ^link would claim the untagged remainder for its invoice.
+    links = set() if rest else {n for n, _ in alloc}
+    return draft._replace(
+        flag="!" if note else "*",
+        meta=meta,
+        links=frozenset(draft.links or ()) | links,
+        postings=[cash, *legs],
+    )
 
 
 def match_payables(
@@ -294,6 +451,13 @@ def match_payables(
         paid = -cash.units.number
         hit = find_invoice(index, *payment_text(draft))
         bill = by_number.get(hit.number) if hit and hit.number else None
+        note = None
+        if bill is not None and bill.currency != cash.units.currency:
+            note = f"paid in {cash.units.currency}, {bill.number} is open in {bill.currency}"
+        elif bill is not None and abs(paid - bill.open_amount) > _PAYABLE_TOL:
+            diff = paid - bill.open_amount
+            how = "overpaid" if diff > 0 else "short-paid"
+            note = f"{how} {bill.number} by {abs(diff):.2f} {cash.units.currency}"
         if bill is None:
             fits = [
                 b
@@ -306,7 +470,7 @@ def match_payables(
             if len(fits) != 1:
                 continue  # nothing, or nothing that tells two bills apart
             bill = fits[0]
-        matched = _clear_bill(draft, bill, cfg)
+        matched = _clear_bill(draft, bill, cfg, note)
         if matched is None:
             continue  # ambiguous shape — leave the draft unmatched, still flagged
         result.drafts[i] = matched
@@ -314,9 +478,11 @@ def match_payables(
 
 
 def _clear_bill(
-    draft: data.Transaction, bill: payables.OpenBill, cfg: config.Config
+    draft: data.Transaction, bill: payables.OpenBill, cfg: config.Config, note: str | None = None
 ) -> data.Transaction | None:
-    """The draft as the payment clearing ``bill``; None if its shape is ambiguous."""
+    """The draft as the payment clearing ``bill``; None if its shape is ambiguous.
+
+    A ``note`` (an amount the bill doesn't explain) leaves it `!` for a human."""
     postings = list(draft.postings)
     if len(postings) == 1:
         # Only the cash leg is known — add the elided payable clearing
@@ -328,10 +494,12 @@ def _clear_bill(
         return None
     meta = dict(draft.meta or {})
     meta["bill"] = bill.number
+    if note:
+        meta[_NOTE] = note
     # A fallback key (`Google · 24.13`) is no valid ^link; `bill:` carries it.
     link = set() if bill.keyed_by == payables.KEY_FALLBACK else {bill.number}
     return draft._replace(
-        flag="*",
+        flag="!" if note else "*",
         meta=meta,
         links=frozenset(draft.links or ()) | link,
         postings=postings,
@@ -385,6 +553,17 @@ def _already_staged(drafts: Sequence[data.Transaction], out_dir: Path) -> list[s
     return [ref for ref in refs if ref in staged]  # as printer.format_entry writes it
 
 
+def note(draft: data.Transaction) -> str | None:
+    """What a human must confirm about how the draft was matched, if anything."""
+    value = (draft.meta or {}).get(_NOTE)
+    return str(value) if value else None
+
+
+def _comment(draft: data.Transaction) -> str:
+    text = note(draft)
+    return f"; {text}\n" if text else ""
+
+
 def _write_staging(result: ImportResult, out_dir: Path, source: str) -> None:
     """Write the drafts to a new staging file — never over an earlier one.
 
@@ -397,7 +576,7 @@ def _write_staging(result: ImportResult, out_dir: Path, source: str) -> None:
     lines = [
         f"; drafts from {result.source} — review, complete, move to books/, delete\n",
         "; legs to fill: counter account, VAT (InputVAT/Bezugsteuer/none), document:\n\n",
-        *(printer.format_entry(entry) + "\n" for entry in result.drafts),
+        *(_comment(entry) + printer.format_entry(entry) + "\n" for entry in result.drafts),
         *(printer.format_entry(balance) for balance in result.balances),
     ]
     stem = f"{TodayDate.today().isoformat()}-{source}"

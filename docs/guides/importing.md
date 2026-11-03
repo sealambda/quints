@@ -98,9 +98,13 @@ An incoming payment is matched to an open invoice by the reference it carries
 invoice number — read out of the payee, narration and metadata, verified by its
 check digits, and matched **exactly**, never by substring. A match turns the
 draft's counter leg into the receivable clearing, adds `invoice:` metadata and
-the `^number` link, and flags it `*`. A reference that fits more than one open
-invoice matches nothing: the draft stays `!` and `quints match` says why. How
-the references are built, and which one your QR-bills use, is in
+the `^number` link. It is flagged `*` only when the payment equals what is
+open on the invoice. A short payment, an overpayment, or a payment with no
+reference from a customer with open invoices is drafted `!`, with a `;`
+comment saying how it was allocated: see
+[Allocate customer payments](receivables.md). A reference that fits more than
+one open invoice matches nothing: the draft stays `!` and `quints match` says
+why. How the references are built, and which one your QR-bills use, is in
 [Payment references](payment-references.md).
 
 ### Stripe customer invoices
