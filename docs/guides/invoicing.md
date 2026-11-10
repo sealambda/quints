@@ -325,6 +325,50 @@ elsewhere. `credit: false` drops the small "Made with quints" line under
 the body. The full token list (ink, subtle, rule, panel, display weight and
 stretch) is in the [issuer schema](https://sealambda.github.io/quints/schema/issuer.schema.json).
 
+## Post it in a window envelope
+
+Print the PDF on A4 and fold it with the address outside: the recipient's
+address shows through the window of a standard envelope, either side. Say
+which side the window of your envelopes is on, in the `brand` block of
+`issuer.yaml`:
+
+```yaml
+brand:
+  address_window: right # or left
+  address_top: 57       # mm from the sheet's top edge to the first address line
+```
+
+Both values are the defaults. A sheet slides inside its envelope (an A4 sheet
+has 19 mm of play sideways in a C5 and 13.5 mm up and down), so what counts is
+the part of the sheet the window shows wherever the sheet sits. Swiss Post
+asks for exactly that: the address stays fully readable when the sheet
+shifts, and nothing else shows.[^post-window] quints starts the address
+132 mm from the sheet's left edge for a right window and 25 mm for a left
+one, and keeps the title and invoice details on the other side.
+
+| Envelope, A4 fold | Window | Always visible, mm from the sheet's top | Address lines that fit |
+| --- | --- | --- | --- |
+| Swiss C5, folded once | 100 × 45 mm, right or left | 52–83.5 | 6 |
+| Swiss C5/6, folded in three | 100 × 45 mm, right | 49–79 | 5 |
+| Swiss C4, unfolded | 100 × 45 mm, right or left | 55–73 | 4 |
+| DIN DL, folded in three | 90 × 45 mm, left | 50–84 | 6 |
+| DIN C6/5, folded in three | 90 × 45 mm, left | 54–84 | 6 |
+| DIN C5, folded once | 90 × 45 mm, left | 57–88.5 | 7 |
+| DIN C4, unfolded | 90 × 55 mm, left | 57–85 | 6 |
+
+The last column is for the default `address_top`, at 4.4 mm a line; the
+recipient's name, a name that wraps and the country of a foreign customer each
+count as a line. The window positions are the Swiss[^window-ch] and
+German[^window-din] standard ones.
+
+1. Pick your envelope's row. If your addresses run longer than it fits, or the
+   envelope isn't listed, set `address_top`: the first line must start inside
+   the visible range and the last one end inside it. With Swiss C5 envelopes
+   only, `address_top: 53` fits seven lines.
+2. Print one invoice, fold it, and push the sheet into each corner of the
+   envelope in turn. The whole address stays in the window every time, and
+   nothing else does.
+
 ## Not VAT-registered
 
 A business that isn't registered must not show VAT on its invoices. If it
@@ -597,6 +641,18 @@ consolidated total converts everything at the latest rate in your price file
 ## What quints doesn't do here
 
 - **Send the invoice.** quints writes the PDF; mailing it is yours.
+- **Keep the header out of the window in every position.** A sheet resting
+  on the bottom of its envelope shows the window more of what is above the
+  address: from 38.5 mm down the sheet in a Swiss C5, 34 mm in a C5/6, 28 mm
+  in a C4. The hairline under the header sits 4 mm below your address block
+  (32 mm down the sheet with four lines, 42 mm with seven) and can show at the
+  top of the window. Behind a right-hand window, so can the last lines of a
+  block longer than four lines (C4) or five (C5/6). Leave `email` or `phone`
+  off the issuer to shorten it.
+- **Break a long reference without hyphens or spaces.** The invoice details
+  are 78 mm wide beside a right window and 70 mm beside a left one; a
+  `references` value of more than 20 (right) or 16 (left) unbroken characters
+  runs past that column.
 - **E-invoicing formats** (ZUGFeRD/Factur-X, Peppol, EDIFACT).
 - **Several VAT rates on one invoice.** The rate is per invoice (`vat.rate`),
   not per line.
@@ -624,4 +680,7 @@ consolidated total converts everything at the latest rate in your price file
 [^advance-rate]: Art. 45 Abs. 1 MWSTV: "Zur Berechnung der geschuldeten Mehrwertsteuer sind Entgelte in ausländischer Währung im Zeitpunkt der Entstehung der Steuerforderung in Landeswährung umzurechnen." For an advance that is the day it is received (Art. 40 Abs. 1 Bst. c MWSTG). [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/828/de#art_45)
 [^advance-221]: MWST-Info 15 *Abrechnung und Steuerentrichtung*, Ziff. 1.3: under agreed consideration, Ziffer 200 includes "Sämtliche Zahlungseingänge, die nicht in Rechnung gestellt wurden", and Ziffer 221 "Zahlungseingänge aus erbrachten oder zukünftigen Leistungen, die nicht in Rechnung gestellt wurden und deren Ort der Leistungserbringung im Ausland liegt". [ESTV](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/tableOfContent.xhtml?publicationId=1013189)
 [^rechnung]: Art. 3 Bst. k MWSTG: "Rechnung: jedes Dokument, mit dem gegenüber einer Drittperson über das Entgelt für eine Leistung abgerechnet wird, gleichgültig, wie dieses Dokument im Geschäftsverkehr bezeichnet wird". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_3)
+[^post-window]: Die Post, *Spezifikationen Briefgestaltung von A–Z*, Ausgabe Juli 2026, «Adressfenster»: "Fenster und Adressierung sind so abzustimmen, dass keine Angaben sichtbar werden, die nicht zur Adresse gehören. Die Adresse … müssen vollständig lesbar bleiben, auch wenn sich der Adressträger im Umschlag verschiebt." [post.ch](https://www.post.ch/-/media/portal-opp/pm/dokumente/briefe-spezifikation-gestaltung.pdf?sc_lang=de&hash=BB181E74C5D3A0D1D49A954793EA670A)
+[^window-ch]: Windows to SN 010130 as Mettler Couvert sells them: C5 65 mm from the bottom, 12 mm from the right ([Art. 8064](https://www.mettler-couvert.ch/C5-Couvert-Fenster-rechts-haftklebend-Ultraweiss-FSC/8064-100-x-45-Fe)) or 20 mm from the left ([Art. 8065](https://www.mettler-couvert.ch/C5-Couvert-Fenster-links-haftklebend-Ultraweiss-FSC/8065)); C5/6 20 mm from the bottom, 12 mm from the right ([Art. 7044](https://www.mettler-couvert.ch/C5-6-Couvert-Fenster-rechts-haftklebend-Recycling-mit-Blauem-Engel/7044)); C4 55 mm from the top, 20 mm from either side ([Art. 9064](https://www.mettler-couvert.ch/C4-Couvert-Fenster-rechts-haftklebend-Ultraweiss-FSC/9064), [Art. 9065](https://www.mettler-couvert.ch/C4-Couvert-Fenster-links-haftklebend-Ultraweiss-FSC/9065)). Swiss Post's ePost prints behind a 100 × 50 mm C5 window and gives 47–81 mm as always visible: [SmartSend Formatierungsvorgaben](https://www.epost.ch/hubfs/25_SmartSend/SmartSend_Formatierungsvorgaben%20PDF/SmartSend%20%E2%80%93%20Formatierungsvorgaben%20(DE).pdf).
+[^window-din]: DIN 680:2008-02 *Fensterbriefhüllen – Formate und Fensterstellung*: 20 mm from the left; 15 mm from the bottom on DL and C6/5, 60 mm from the bottom on C5, 57 mm from the top on C4 (Form B; a Form A window sits 17 mm higher and needs `address_top: 45`). The standard is not freely available; the figures are the ones tabulated in [Wikipedia, *Briefumschlag*](https://de.wikipedia.org/wiki/Briefumschlag).
 [^s1]: Swico, [*Syntaxdefinition der Rechnungsinformationen (S1) bei der QR-Rechnung*, Version 1.2, 23.11.2018](https://www.swico.ch/media/filer_public/20/76/2076a19a-a017-438a-bc9a-73b1a5980d00/v2_qr-bill-s1-syntax-de.pdf). SIX has taken over the definition and reproduces it in Anhang D of the [Swiss Implementation Guidelines QR-bill 2.4](https://www.six-group.com/dam/download/banking-services/standardization/qr-bill/ig-qr-bill-v2.4-de.pdf).

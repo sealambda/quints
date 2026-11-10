@@ -97,20 +97,32 @@
 // Rules run to the same edge as the panel tints: the text column plus `bleed`.
 #pad(x: -bleed, line(length: 100%, stroke: 0.5pt + rule))
 
-// ── Recipient (right, window-envelope position) ───────────────────────
-// Postal lines only: what shows through the window. Width keeps it inside
-// the right margin.
+// ── Recipient (window-envelope position) ──────────────────────────────
+// Postal lines only: what shows through the window. Placed from the sheet's
+// edges, not the flow, where every standard window an A4 sheet is posted
+// behind still shows it however the sheet shifts in the envelope: C5, C5/6,
+// DL and C4, Swiss (100 × 45 mm, either side) and DIN 680 (90 × 45 mm, left).
+// The zones are worked out in docs/guides/invoicing.md § Post it in a window
+// envelope.
+#let window-left = d.brand.address_window == "left"
+#let address-top = d.brand.address_top * 1mm
 #let recipient = block(width: 58mm)[
   #set par(leading: 0.6em)
   #text(weight: "medium")[#d.customer.name] \
   #lines(d.customer.address)
   #if d.customer.country != d.issuer.country [ \ #d.customer.country_name ]
 ]
-#place(top + left, dx: 112mm, dy: 30mm, recipient)
+// Left: 25 mm from the sheet's edge, 5 mm inside the window's, as DIN 5008
+// has it. Right: 132 mm, ending on the text column.
+#place(top + left, dx: if window-left { 5mm } else { 112mm }, dy: address-top - margin-top, recipient)
 
 // ── Title + meta, beside the recipient ────────────────────────────────
+// On the other side, and no wider than what the window never shows: a sheet
+// pushed against the envelope's edge must not slide an invoice number in
+// next to the address. A left window (20 mm in, 100 mm wide) can show up to
+// 120 mm; a right one (12 mm in on C5 and C5/6) down to 98 mm.
 #v(3mm)
-#block(width: 104mm)[
+#pad(left: if window-left { 100mm } else { 0mm }, block(width: if window-left { 70mm } else { 78mm })[
   = #L.invoice
   #pairs(
     (L.invoice_no, fig(d.invoice.number, weight: "medium")),
@@ -123,11 +135,11 @@
     ..d.references.map(r => (r.label, fig(r.value))),
     ..(if d.customer.vat_id != none { ((L.customer_vat, fig(d.customer.vat_id)),) } else { () }),
   )
-]
+])
 // The window position is fixed, the recipient's height is not: clear
 // whichever of the two columns ends lower.
 #context {
-  let bottom = margin-top + 30mm + measure(recipient).height
+  let bottom = address-top + measure(recipient).height
   v(calc.max(0pt, bottom - here().position().y) + 8mm)
 }
 

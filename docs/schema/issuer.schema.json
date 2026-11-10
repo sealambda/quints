@@ -171,6 +171,22 @@
           "title": "Credit",
           "type": "boolean"
         },
+        "address_window": {
+          "default": "right",
+          "enum": [
+            "right",
+            "left"
+          ],
+          "title": "Address Window",
+          "type": "string"
+        },
+        "address_top": {
+          "default": 57.0,
+          "maximum": 75,
+          "minimum": 45,
+          "title": "Address Top",
+          "type": "number"
+        },
         "ink": {
           "default": "#1c1618",
           "pattern": "^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",

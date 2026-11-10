@@ -611,6 +611,12 @@ class Brand(BaseModel):
     logo: str | None = None
     logo_height: float = 12.0  # mm, as placed in the header
     credit: bool = True  # the small "Made with quints" line under the body; false drops it
+    # Where the recipient's address prints, for posting in a window envelope:
+    # the side the window is on, and how far down the sheet the first line
+    # starts. The defaults show through every standard Swiss and DIN window
+    # (docs/guides/invoicing.md § Post it in a window envelope).
+    address_window: Literal["right", "left"] = "right"
+    address_top: float = Field(default=57.0, ge=45, le=75)  # mm from the sheet's top edge
 
     ink: HexColor = "#1c1618"  # body copy
     subtle: HexColor = "#655753"  # labels and secondary text

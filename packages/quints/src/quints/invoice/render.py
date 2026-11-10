@@ -248,6 +248,8 @@ def brand_context(brand: Brand, logo: str | None) -> dict[str, str | float | boo
         "logo": logo,
         "logo_height": brand.logo_height,
         "credit": brand.credit,
+        "address_window": brand.address_window,
+        "address_top": brand.address_top,
     }
 
 

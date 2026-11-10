@@ -661,8 +661,27 @@ def test_brand_tokens_reach_the_template_context():
         "display_stretch",
         "logo_height",
         "credit",
+        "address_window",
+        "address_top",
     } <= set(brand)
     assert brand["credit"] is True  # the quints credit line is on unless switched off
+
+
+def test_address_prints_where_the_envelope_window_is(tmp_path: Path):
+    from quints.invoice import render
+    from quints.invoice.model import Brand
+
+    # The default shows through every standard Swiss and DIN window (see
+    # docs/guides/invoicing.md § Post it in a window envelope).
+    assert (Brand().address_window, Brand().address_top) == ("right", 57.0)
+    # The mirrored layout is its own branch of the template: render it.
+    left = ISSUER.model_copy(update={"brand": Brand(address_window="left", address_top=60)})
+    render.render(_domestic(), left, tmp_path / "left.pdf")
+    assert (tmp_path / "left.pdf").read_bytes()[:5] == b"%PDF-"
+    # Above 45 mm the address runs into the header; no window reaches past 75.
+    for bad in ({"address_window": "centre"}, {"address_top": 20}, {"address_top": 120}):
+        with pytest.raises(ValueError):
+            Brand.model_validate(bad)
 
 
 def test_brand_font_families_fall_back_to_the_body_face():
