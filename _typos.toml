@@ -3,6 +3,7 @@
 # so foreign words are accepted here rather than "corrected" into English.
 [default.extend-words]
 # German: statute quotations, account names, invoice labels.
+adresse = "adresse"
 aktive = "aktive"
 alle = "alle"
 als = "als"
@@ -13,6 +14,7 @@ dokument = "dokument"
 ein = "ein"
 ende = "ende"
 exporte = "exporte"
+formate = "formate"
 frist = "frist"
 handel = "handel"
 januar = "januar"
