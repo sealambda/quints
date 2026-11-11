@@ -13,6 +13,6 @@ site/
 # Nix and direnv
 .direnv/
 result
-# Vale: packages are installed by `vale sync`; the vocabularies are tracked.
+# Vale: the styles come from Nix (see `.vale.ini`); only the vocabularies are tracked.
 .vale/styles/*
 !.vale/styles/config/
