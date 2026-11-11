@@ -9,6 +9,9 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
+  # Weekly, so dependency, validator and link drift shows up between pull requests.
+  schedule:
+    - cron: "17 5 * * 1"
 
 permissions: {}
 
