@@ -288,6 +288,14 @@ class LineItem(BaseModel):
     quantity: Decimal
     unit_price: Decimal
     unit: str = ""
+    vat_rate: Decimal | None = Field(
+        default=None,
+        description=(
+            "VAT rate of this line in per cent, when it differs from the "
+            "invoice's `vat.rate` — books at 2.6 next to consulting at 8.1. VAT "
+            "is computed and shown per rate (Art. 26 Abs. 2 Bst. f MWSTG)."
+        ),
+    )
 
     @property
     def total(self) -> Decimal:
@@ -416,12 +424,25 @@ class Invoice(BaseModel):
                 f"supply {start} – {end} spans a Swiss VAT rate change — invoice the "
                 "parts before and after it separately"
             )
-        if self.vat.rate is not None and self.vat.rate not in in_force:
-            rates = " / ".join(str(r) for r in sorted(in_force, reverse=True))
+        given = [("vat.rate", self.vat.rate)] + [
+            (f"items.{i}.vat_rate", it.vat_rate) for i, it in enumerate(self.items)
+        ]
+        for key, rate in given:
+            if rate is not None and rate not in in_force:
+                rates = " / ".join(str(r) for r in sorted(in_force, reverse=True))
+                raise ValueError(
+                    f"{key} {rate} is not a Swiss VAT rate for a supply on {start} "
+                    f"— in force: {rates} % (Art. 25 MWSTG); VAT shown is owed even when "
+                    "too high (Art. 27 Abs. 2 MWSTG)"
+                )
+        if len({it.vat_rate or self.vat_rate for it in self.items}) > 1 and (
+            self.proforma or self.advances
+        ):
+            # shortcut: an advance is split into net and VAT at one rate; with
+            # several it would need a rate per advance. Add that when asked for.
             raise ValueError(
-                f"vat.rate {self.vat.rate} is not a Swiss VAT rate for a supply on {start} "
-                f"— in force: {rates} % (Art. 25 MWSTG); VAT shown is owed even when "
-                "too high (Art. 27 Abs. 2 MWSTG)"
+                "an invoice with several VAT rates cannot be a pro forma or credit "
+                "advances — invoice each rate separately"
             )
         return self
 
@@ -683,10 +704,22 @@ class Issuer(BaseModel):
             ) from None
 
 
+class VatGroup(BaseModel):
+    """The lines taxed at one rate: VAT is computed on their sum."""
+
+    rate: Decimal  # per cent
+    rate_class: str  # standard / reduced / lodging — the `mwst:` vocabulary
+    net: Decimal
+    vat: Decimal
+
+
 class Totals(BaseModel):
     subtotal: Decimal
+    # The invoice's rate; with several, that of the largest group (see `vat_groups`).
     vat_rate: Decimal
-    vat_amount: Decimal
+    vat_amount: Decimal  # the sum over `vat_groups`
+    # One per rate, highest first. Empty when no VAT is charged.
+    vat_groups: list[VatGroup] = Field(default_factory=list)
     unrounded: Decimal
     rounding: Decimal
     grand_total: Decimal
@@ -788,12 +821,27 @@ def compute(inv: Invoice, vat_registered: bool = True) -> Totals:
     """The invoice's figures. ``vat_registered`` is the issuer's status on the
     issue date: a business that is not registered charges no VAT."""
     subtotal = sum((it.total for it in inv.items), Decimal("0"))
-    if inv.kind == "export" or not vat_registered:
-        rate = Decimal("0")
-        vat = Decimal("0")
-    else:
-        rate = inv.vat_rate
-        vat = (subtotal * rate / 100).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    groups: list[VatGroup] = []
+    if inv.kind == "domestic" and vat_registered:
+        nets: dict[Decimal, Decimal] = {}
+        for it in inv.items:
+            r = it.vat_rate if it.vat_rate is not None else inv.vat_rate
+            nets[r] = nets.get(r, Decimal("0")) + it.total
+        classes = {
+            _percent(ledger.vat_rate(inv.supply.start, c)): c for c in ledger.VAT_RATE_CLASSES
+        }
+        groups = [
+            VatGroup(
+                rate=r,
+                rate_class=classes[r],
+                net=net,
+                # Per group, not per line: one rounding per rate.
+                vat=(net * r / 100).quantize(Decimal("0.01"), ROUND_HALF_UP),
+            )
+            for r, net in sorted(nets.items(), reverse=True)
+        ]
+    rate = max(groups, key=lambda g: abs(g.net)).rate if groups else Decimal("0")
+    vat = sum((g.vat for g in groups), Decimal("0"))
     unrounded = subtotal + vat
     grand = round_step(unrounded, Decimal("0.05") if inv.rounds_to_5 else Decimal("0"))
     advances = sum((a.amount for a in inv.advances), Decimal("0"))
@@ -806,6 +854,7 @@ def compute(inv: Invoice, vat_registered: bool = True) -> Totals:
         subtotal=subtotal,
         vat_rate=rate,
         vat_amount=vat,
+        vat_groups=groups,
         unrounded=unrounded,
         rounding=grand - unrounded,
         grand_total=grand,

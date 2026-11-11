@@ -140,6 +140,21 @@ refused at load, because VAT shown on an invoice is owed even when it is too
 high.[^too-high] A supply period that spans a rate change is refused too:
 invoice the part before and the part after separately.
 
+A line taxed at another rate than the rest carries its own:
+
+```yaml
+items:
+  - {description: Workshop, quantity: 1, unit_price: 1000.00}
+  - {description: Handbook, quantity: 10, unit_price: 33.33, vat_rate: 2.6}
+```
+
+VAT is computed per rate on the sum of its lines and printed as one row per
+rate, with the amount it is charged on.[^per-rate] Each line names its rate,
+the QR-bill carries the breakdown (Swico S1 `/32/8.1:1000;2.6:333.3`), and
+the ledger draft books one income leg per rate, tagged `mwst: "reduced"` or
+`"lodging"` so the VAT return files it in the right row. An invoice with
+several rates cannot be a pro forma or credit advances.
+
 ## Bank details
 
 One account per invoicing currency, under `bank`:
@@ -681,8 +696,6 @@ consolidated total converts everything at the latest rate in your price file
   `references` value of more than 20 (right) or 16 (left) unbroken characters
   runs past that column.
 - **E-invoicing formats** (ZUGFeRD/Factur-X, Peppol, EDIFACT).
-- **Several VAT rates on one invoice.** The rate is per invoice (`vat.rate`),
-  not per line.
 - **Derive a BIC from an IBAN.** Ask the bank. A guessed BIC is worse than
   none.
 - **Match a pro forma's payment on import.** It isn't booked until paid, so
@@ -697,6 +710,7 @@ consolidated total converts everything at the latest rate in your price file
 [^supply-ch]: Art. 26 Abs. 2 Bst. c MWSTG, [SR 641.20](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_26).
 [^supply-eu]: Art. 226 point (7) of the VAT Directive 2006/112/EC: "the date on which the supply … was made or completed … in so far as that date can be determined and differs from the date of issue". [EUR-Lex](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02006L0112-20250414).
 [^rate-change]: Art. 115 Abs. 1 MWSTG applies Art. 112 to a rate change: "Für Leistungen, die vor Inkrafttreten … erbracht worden sind, … gilt das bisherige Recht", and a supply made partly before and partly after is taxed "für diesen Teil" under each. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_115). The rates themselves: Art. 25 MWSTG.
+[^per-rate]: Art. 26 Abs. 2 Bst. f MWSTG: the invoice states "den anwendbaren Steuersatz und den vom Entgelt geschuldeten Steuerbetrag". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_26).
 [^too-high]: Art. 27 Abs. 2 MWSTG: whoever "für eine Leistung eine zu hohe Steuer ausweist, schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^art27]: Art. 27 Abs. 1 and 2 MWSTG: "Wer nicht im Register der steuerpflichtigen Personen eingetragen ist …, darf in Rechnungen nicht auf die Steuer hinweisen"; who shows it anyway "schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^vat-id]: Art. 26 Abs. 2 Bst. a MWSTG: the invoice names the issuer "sowie die Nummer, unter der er oder sie eingetragen ist". The `MWST` suffix format is the one in [MWST-Info 16, Ziff. 2.2](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/cipherDisplay.xhtml?publicationId=1002536&componentId=1002626).

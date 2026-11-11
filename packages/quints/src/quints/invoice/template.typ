@@ -163,7 +163,7 @@
   table.hline(stroke: 0.5pt + rule),
   ..d.items.map(it => (
     fig(it.pos, fill: subtle, size: 9pt),
-    [#it.description],
+    [#it.description#if it.vat_rate != none [ #text(size: 8pt, fill: subtle)[#L.vat #it.vat_rate%]]],
     [#fig(it.quantity)#if it.unit != "" [ #it.unit]],
     fig(it.unit_price),
     fig(it.total),
@@ -187,7 +187,13 @@
     grid(
       columns: (1fr, auto), column-gutter: 6mm, row-gutter: 7pt, align: (left + bottom, right + bottom),
       ..row(L.subtotal, d.totals.subtotal),
-      ..(if vat-row { row(L.vat + " " + d.totals.vat_rate + "%", d.totals.vat_amount) } else { () }),
+      // One row per rate; with several, each names the net it is charged on.
+      ..(if vat-row {
+        d.totals.vat_groups.map(g => row(
+          L.vat + " " + g.rate + "%" + if d.totals.vat_groups.len() > 1 { " · " + g.net } else { "" },
+          g.vat,
+        )).flatten()
+      } else { () }),
       ..(if d.totals.show_rounding { row(L.rounding, d.totals.rounding) } else { () }),
       // Advances credited from pro formas: the invoice total — VAT on the
       // whole supply — first, then what was paid ahead, leaving the amount due.

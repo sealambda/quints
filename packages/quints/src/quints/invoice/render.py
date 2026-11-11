@@ -59,9 +59,9 @@ class InvoiceContext(TypedDict):
     invoice: dict[str, str]
     references: list[dict[str, str]]
     terms: str | None
-    items: list[dict[str, str | int]]
+    items: list[dict[str, str | int | None]]
     advances: list[dict[str, str]]
-    totals: dict[str, str | bool]
+    totals: dict[str, str | bool | list[dict[str, str]]]
     payment: Mapping[str, str | None]
     notes: list[str]
     brand: dict[str, str | float | bool | None]
@@ -154,6 +154,12 @@ def build_context(
                 "unit": it.unit,
                 "unit_price": money(it.unit_price, inv.locale),
                 "total": money(it.total, inv.locale),
+                # Named per line only when the invoice mixes rates.
+                "vat_rate": number(
+                    it.vat_rate if it.vat_rate is not None else inv.vat_rate, inv.locale
+                )
+                if len(totals.vat_groups) > 1
+                else None,
             }
             for i, it in enumerate(inv.items)
         ],
@@ -231,11 +237,20 @@ def _advance_label(inv: Invoice, lbl: Mapping[str, str], a: Advance, totals: Tot
     return f"{text}, {lbl['advance_vat'].format(vat=vat)}"
 
 
-def _totals_context(inv: Invoice, totals: Totals) -> dict[str, str | bool]:
+def _totals_context(inv: Invoice, totals: Totals) -> dict[str, str | bool | list[dict[str, str]]]:
     return {
         "subtotal": money(totals.subtotal, inv.locale),
         "vat_rate": number(totals.vat_rate, inv.locale),
         "vat_amount": money(totals.vat_amount, inv.locale),
+        # One row per rate (Art. 26 Abs. 2 Bst. f MWSTG).
+        "vat_groups": [
+            {
+                "rate": number(g.rate, inv.locale),
+                "net": money(g.net, inv.locale),
+                "vat": money(g.vat, inv.locale),
+            }
+            for g in totals.vat_groups
+        ],
         "rounding": money(totals.rounding, inv.locale),
         "show_rounding": totals.rounding != 0,
         "grand_total": money(totals.grand_total, inv.locale),
