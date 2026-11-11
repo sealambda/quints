@@ -10,7 +10,8 @@ The legally load-bearing strings — `terms`, `export_note`, `reverse_charge`,
 `proforma_note`, `advance_vat` —
 should be reviewed by a native/legal speaker before an entry ships.
 `terms` MUST keep the literal `{days}` placeholder, `advance` its `{number}`
-and `{date}`, and `advance_vat` its `{vat}` (`render` calls `.format`)."""
+and `{date}`, `advance_vat` its `{vat}`, and `corrected` its `{date}` and `{issued}` (`render`
+calls `.format`)."""
 
 LABELS = {
     "de": {
@@ -49,6 +50,7 @@ LABELS = {
         "invoice_total": "Rechnungstotal",
         "advance": "Anzahlung {number} vom {date}",
         "advance_vat": "inkl. MWST {vat}",
+        "corrected": "Korrigierte Fassung vom {date}. Sie ersetzt die Fassung vom {issued}.",
         "proforma_note": "Zahlungsaufforderung für eine Anzahlung. Die Rechnung folgt mit "
         "der Leistung und rechnet diese Zahlung samt der darin enthaltenen MWST an.",
     },
@@ -88,6 +90,7 @@ LABELS = {
         "invoice_total": "Invoice total",
         "advance": "Advance {number} received {date}",
         "advance_vat": "incl. VAT {vat}",
+        "corrected": "Corrected version of {date}. It replaces the version of {issued}.",
         "proforma_note": "Request for an advance payment. The invoice follows with the "
         "supply and credits this payment, including the VAT it contains.",
     },
@@ -128,6 +131,7 @@ LABELS = {
         "invoice_total": "Total factura",
         "advance": "Anticipo {number} recibido el {date}",
         "advance_vat": "IVA incl. {vat}",
+        "corrected": "Versión corregida del {date}. Sustituye a la versión del {issued}.",
         "proforma_note": "Solicitud de pago anticipado. La factura se emitirá con la "
         "prestación y descontará este pago, incluido el IVA que contiene.",
     },
@@ -167,6 +171,7 @@ LABELS = {
         "invoice_total": "Total de la facture",
         "advance": "Acompte {number} reçu le {date}",
         "advance_vat": "TVA incluse {vat}",
+        "corrected": "Version corrigée du {date}. Elle remplace la version du {issued}.",
         "proforma_note": "Demande de paiement d'un acompte. La facture suivra avec la "
         "prestation et imputera ce paiement, y compris la TVA qu'il contient.",
     },
@@ -207,6 +212,7 @@ LABELS = {
         "invoice_total": "Totale fattura",
         "advance": "Acconto {number} ricevuto il {date}",
         "advance_vat": "IVA inclusa {vat}",
+        "corrected": "Versione corretta del {date}. Sostituisce la versione del {issued}.",
         "proforma_note": "Richiesta di pagamento di un acconto. La fattura seguirà con la "
         "prestazione e computerà questo pagamento, compresa l'IVA che contiene.",
     },

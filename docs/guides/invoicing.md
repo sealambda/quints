@@ -36,6 +36,33 @@ paste into `books/<year>.bean`. On a EUR invoice the draft's VAT leg is in
 CHF at the issue date's rate (`-75.33 CHF @@ 81.00 EUR`), because the VAT
 return is in CHF.
 
+### Issued means fixed
+
+The draft carries the PDF's SHA-256 next to `document:`:
+
+```text
+    document: "2026-07-02.acme.INV2026014.pdf"
+    sha256: "9f2c…"
+```
+
+Once that is in the books, the invoice is issued. `quints invoice` then
+checks the filed PDF against the hash and reports "already issued": it does
+not render again, so a later change to a template, a font or the customer
+registry cannot alter what was sent. `quints check` verifies every filed PDF
+against its hash, fails on an invoice number booked twice or dated before
+the one preceding it, and warns about gaps in a number series.
+
+To correct an issued invoice under the same number (a wrong address, caught
+early), add `corrected: 2026-07-04` to the invoice file and run
+`quints invoice --reissue`. The PDF states that it replaces the version of
+the issue date; book the new hash it prints. The repository history keeps
+the old bytes. A booking without `sha256:` (from before quints recorded it)
+renders as before and prints the line to add.
+
+When something stops an invoice, every problem is reported in one run. Under
+`--json` they arrive on stdout as
+`{"ok": false, "errors": [{"code", "field", "message"}]}`.
+
 The PDF is filed the way beancount documents are filed — under the income
 account's folder, date-prefixed, so `option "documents"` and Fava pick it up:
 

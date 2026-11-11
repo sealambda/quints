@@ -15,7 +15,7 @@ import tomllib
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, NamedTuple
 
 import yaml
 from pydantic import (
@@ -61,6 +61,26 @@ def round_step(v: Decimal, step: Decimal) -> Decimal:
     if step == 0:
         return v.quantize(Decimal("0.01"), ROUND_HALF_UP)
     return (v / step).quantize(Decimal("1"), ROUND_HALF_UP) * step
+
+
+class Problem(NamedTuple):
+    """One thing that stops an invoice: a stable code, the key to fix, the sentence."""
+
+    code: str
+    field: str | None
+    message: str
+
+
+class Problems(ValueError):
+    """Every blocker found in one pass, so a file is repaired in one round."""
+
+    def __init__(self, problems: list[Problem]) -> None:
+        self.problems = problems
+        if len(problems) == 1:
+            super().__init__(problems[0].message)
+        else:
+            lines = [f"{len(problems)} problems:", *(f"  {p.message}" for p in problems)]
+            super().__init__("\n".join(lines))
 
 
 # ── model ─────────────────────────────────────────────────────────────────────
@@ -364,6 +384,14 @@ class Invoice(BaseModel):
             "shows VAT on the full supply, subtracts them, and asks for the rest."
         ),
     )
+    corrected: date | None = Field(
+        default=None,
+        description=(
+            "The day an already issued invoice was corrected and sent again under "
+            "the same number. The PDF then says it replaces the version of the "
+            "issue date; `quints invoice --reissue` asks for it."
+        ),
+    )
     round_5: bool | None = None  # None → 0.05 rounding iff currency is CHF
     terms_days: int | None = 30  # None → no payment-terms line
     # Export only. None → reverse charge expected (EU B2B default); requires the
@@ -394,6 +422,14 @@ class Invoice(BaseModel):
                 f"vat.rate {self.vat.rate} is not a Swiss VAT rate for a supply on {start} "
                 f"— in force: {rates} % (Art. 25 MWSTG); VAT shown is owed even when "
                 "too high (Art. 27 Abs. 2 MWSTG)"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _corrected_after_issue(self) -> Invoice:
+        if self.corrected is not None and self.corrected < self.issue_date:
+            raise ValueError(
+                f"corrected {self.corrected} is before the issue date {self.issue_date}"
             )
         return self
 

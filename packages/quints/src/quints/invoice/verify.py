@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import itertools
+import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import date as Date
 from decimal import Decimal
 from pathlib import Path
 
@@ -10,7 +15,7 @@ from beancount.core import data
 from beancount.core import prices as bc_prices
 from beancount.core.convert import get_weight
 
-from .. import config, ledger
+from .. import config, ledger, receivables
 from .model import Invoice, Totals, vat_included
 
 
@@ -46,6 +51,9 @@ class CrossCheck:
     advance_problems: list[str] = field(default_factory=list)
     # Each credited pro forma's receipts, for the draft to release.
     received: dict[str, Received] = field(default_factory=dict)
+    # The booking's `sha256:` — with it the invoice is issued: the
+    # filed PDF is checked against it and never rendered over.
+    sha256: str | None = None
 
 
 def _tagged(e: data.Transaction, key: str, number: str) -> bool:
@@ -195,4 +203,80 @@ def cross_check(
         violations=problems,
         advance_problems=advance_problems,
         received=received,
+        sha256=next((str(h) for e in matches if (h := (e.meta or {}).get("sha256"))), None),
     )
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+_TRAILING_DIGITS = re.compile(r"^(.*?)(\d+)$")
+
+
+def _series(number: str, year: int) -> tuple[str, int] | None:
+    """`INV-2026-014` → (`INV-2026-`, 14). A counter that restarts each year
+    behind the year (`INV2026014`) is its own series per year, so the turn of
+    the year is not a gap."""
+    m = _TRAILING_DIGITS.match(number)
+    if not m:
+        return None
+    prefix, digits = m.group(1), m.group(2)
+    if len(digits) > 4 and digits.startswith(str(year)):
+        prefix, digits = prefix + digits[:4], digits[4:]
+    return prefix, int(digits)
+
+
+def audit(
+    entries: Sequence[data.Directive], root: Path, cfg: config.Config
+) -> tuple[list[str], list[str]]:
+    """What the books say about issued invoices, as (errors, warnings).
+
+    Errors: a filed PDF that no longer matches its booked hash, a number
+    booked twice, a number dated before the one preceding it. Warnings: a
+    hashed PDF that is not filed, and gaps in a series — Swiss law does not
+    ask for gapless numbers, an auditor asks about them.
+
+    shortcut: PDFs are looked up by name under `<root>/documents/`, where
+    `quints invoice` files them; read `option "documents"` if anyone files
+    them elsewhere."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    issued: dict[str, list[Date]] = {}
+    income = {cfg.income_domestic, cfg.income_export}
+    for e in entries:
+        if not isinstance(e, data.Transaction):
+            continue
+        meta = e.meta or {}
+        digest, name = meta.get("sha256"), meta.get("document")
+        if digest and name:
+            filed = next((root / "documents").rglob(str(name)), None)
+            if filed is None:
+                warnings.append(f"{name} is booked with a hash ({e.date}) but not filed")
+            elif sha256(filed) != digest:
+                errors.append(
+                    f"{filed.relative_to(root)} is not the PDF booked on {e.date}: its "
+                    "SHA-256 differs from sha256 — restore it from git, or "
+                    "reissue it (quints invoice --reissue) and book the new hash"
+                )
+        number = receivables.invoice_id(e)
+        if number and any(p.account in income for p in e.postings):
+            issued.setdefault(number, []).append(e.date)
+
+    series: dict[str, list[tuple[int, Date, str]]] = {}
+    for number, dates in issued.items():
+        if len(dates) > 1:
+            booked = ", ".join(str(d) for d in dates)
+            errors.append(f"invoice number {number} is booked {len(dates)} times ({booked})")
+        if key := _series(number, dates[0].year):
+            series.setdefault(key[0], []).append((key[1], dates[0], number))
+    for members in series.values():
+        members.sort()
+        for (n0, d0, num0), (n1, d1, num1) in itertools.pairwise(members):
+            if d1 < d0:
+                errors.append(f"invoice {num1} ({d1}) is dated before {num0} ({d0})")
+            if n1 - n0 > 1:
+                warnings.append(
+                    f"{n1 - n0 - 1} invoice number(s) missing between {num0} and {num1}"
+                )
+    return errors, warnings

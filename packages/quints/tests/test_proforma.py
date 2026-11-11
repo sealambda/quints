@@ -305,7 +305,8 @@ def test_cli_pro_forma_to_invoice_end_to_end(
     assert d["totals"]["amount_due"] == "10000.00" and not d["cross_check"]["advance_problems"]
     Path("books/2027.bean").write_text(d["ledger_draft"] + "\n")
 
-    assert runner.invoke(app, ["check"]).exit_code == 0
+    res = runner.invoke(app, ["check"])
+    assert res.exit_code == 0, res.output
     for period, z221 in (("2026-Q4", "9300.00"), ("2027-Q1", "9400.00")):
         res = runner.invoke(app, ["vat", "report", "-q", period, "--json"])
         assert res.exit_code == 0, res.output

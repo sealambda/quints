@@ -6,11 +6,11 @@ import json
 import re
 import shutil
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, TypeVar
 
 import typst
 from babel import Locale
@@ -25,6 +25,8 @@ from .model import (
     Brand,
     Invoice,
     Issuer,
+    Problem,
+    Problems,
     Totals,
     compute,
     money,
@@ -165,7 +167,20 @@ def build_context(
             for a in inv.advances
         ],
         "payment": payment,
-        "notes": list(inv.notes),
+        "notes": [
+            # A reissue says so: nothing about an issued invoice changes silently.
+            *(
+                [
+                    lbl["corrected"].format(
+                        date=_fmt_date(inv.corrected, inv.locale),
+                        issued=_fmt_date(inv.issue_date, inv.locale),
+                    )
+                ]
+                if inv.corrected
+                else []
+            ),
+            *inv.notes,
+        ],
         "brand": brand_context(issuer.brand, logo),
     }
 
@@ -381,6 +396,48 @@ def _sepa_payment(
     }
 
 
+_T = TypeVar("_T")
+
+
+def check(inv: Invoice, issuer: Issuer, vat_registered: bool = True) -> Totals:
+    """Everything that stops this invoice from rendering, raised together.
+
+    Each check has a stable code and names the key to fix. One that depends on
+    another's result (the payment block needs the bank account) is skipped
+    when that one failed."""
+    found: list[Problem] = []
+
+    def attempt(code: str, field: str, fn: Callable[[], _T]) -> _T | None:
+        try:
+            return fn()
+        except ValueError as e:
+            found.append(Problem(code, field, str(e)))
+            return None
+
+    bank_key = f"issuer.bank.{inv.currency}"
+    attempt("vat_identity", "issuer.vat_id", lambda: check_vat_identity(issuer, vat_registered))
+    attempt("reverse_charge", "customer.vat_id", lambda: _reverse_charge(inv))
+    totals = attempt("advances", "advances", lambda: compute(inv, vat_registered))
+    account = attempt("bank_account", bank_key, lambda: issuer.account(inv.currency))
+    if account is not None and totals is not None and totals.amount_due:
+        ok = attempt(
+            "payment_reference", "reference", lambda: ref_mod.payment_reference(inv, account)
+        )
+        if ok is None:
+            pass
+        elif inv.kind == "domestic":
+            attempt("qr_bill", bank_key, lambda: qr.build_bill(inv, issuer, account, totals))
+        else:
+            attempt(
+                "payment_account",
+                bank_key,
+                lambda: _sepa_payment(inv, issuer, account, totals.amount_due),
+            )
+    if found or totals is None:
+        raise Problems(found)
+    return totals
+
+
 def fonts(brand: Brand) -> tuple[list[Path], bool]:
     """(font search path, whether only the bundled families may be used)."""
     font_dir = brand.font_dir
@@ -398,8 +455,7 @@ def render(
 
     ``vat_registered`` is the issuer's VAT status on the issue date (from
     quints.toml): when False, no VAT is charged or mentioned."""
-    check_vat_identity(issuer, vat_registered)
-    totals = compute(inv, vat_registered)
+    totals = check(inv, issuer, vat_registered)
     account = issuer.account(inv.currency)
 
     reverse_charge = _reverse_charge(inv)
