@@ -545,3 +545,19 @@ def test_cli_init_answers_file_and_force(tmp_path: Path):
 
     again = runner.invoke(app, ["init", str(target), "--answers", str(answers), "--json"])
     assert json.loads(again.output)["written"] == []  # nothing overwritten without --force
+
+
+def test_cli_init_answers_file_directory_is_one_error_line(tmp_path: Path):
+    # An --answers path naming a directory must read as one `ERROR:` line,
+    # like a missing file does -- never as a traceback.
+    res = runner.invoke(app, ["init", "--answers", str(tmp_path), "--yes"])
+    assert res.exit_code == 1
+    assert res.stderr.startswith("ERROR: answer-file is a directory:")
+    assert "Traceback" not in res.stderr
+
+
+def test_cli_init_missing_answers_file_is_one_error_line(tmp_path: Path):
+    res = runner.invoke(app, ["init", "--answers", str(tmp_path / "nope.toml"), "--yes"])
+    assert res.exit_code == 1
+    assert res.stderr.startswith("ERROR: answer-file not found:")
+    assert "Traceback" not in res.stderr
