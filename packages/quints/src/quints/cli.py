@@ -382,10 +382,21 @@ def _init_answers_file(answers_file: Path | None) -> init_mod.Answers:
     """The answer-file's answers, or the defaults when there is none."""
     if answers_file is None:
         return init_mod.Answers()
+    if answers_file.is_dir():
+        typer.secho(f"ERROR: answer-file is a directory: {answers_file}", fg="red", err=True)
+        raise typer.Exit(1)
     if not answers_file.exists():
         typer.secho(f"ERROR: answer-file not found: {answers_file}", fg="red", err=True)
         raise typer.Exit(1)
-    return init_mod.load_answers(answers_file)
+    try:
+        return init_mod.load_answers(answers_file)
+    except OSError as e:
+        typer.secho(
+            f"ERROR: answer-file cannot be read: {answers_file} ({e.strerror or e})",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(1) from None
 
 
 def _init_identity(
