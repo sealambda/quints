@@ -346,19 +346,43 @@ def init(
         help="git init + commit the pristine scaffold (skipped inside an existing repo).",
     ),
     force: bool = typer.Option(False, "--force", help="Overwrite existing files."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip prompts; accept defaults."),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip prompts; unanswered questions get demo defaults (not for real books).",
+    ),
+    questions: bool = typer.Option(
+        False,
+        "--questions",
+        help="List what init asks and where each answer is found, then exit. "
+        "For agents and scripts: answer with the flags, ask a human the rest.",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ):
     """Scaffold a new quints project (chart of accounts, per-year books,
     quints.toml, pyproject.toml, AGENTS.md).
 
     Deterministic: the same answers always produce the same files. Run
-    interactively, or feed a TOML answer-file with --answers for CI/repeatable
-    setups."""
+    interactively, pass every answer as a flag (--questions lists them), or
+    feed a TOML answer-file with --answers for CI/repeatable setups."""
+    if questions:
+        _report_questions(as_json)
+        return
     answers = _init_answers_file(answers_file)
     interactive = answers_file is None and not yes
-    answers = _init_identity(answers, interactive, answers_file is None, legal_form, name, lang)
-    answers = _init_vat(answers, interactive, vat_since, vat_method, saldo_rates)
+    try:
+        answers = _init_identity(answers, interactive, answers_file is None, legal_form, name, lang)
+        answers = _init_vat(answers, interactive, vat_since, vat_method, saldo_rates)
+    except typer.Abort:
+        # A prompt with nobody to answer it: an agent, a script, CI.
+        typer.secho(
+            "ERROR: a question was left unanswered and nothing was written. Not at a "
+            "terminal? Pass each answer as a flag: `quints init --questions` lists them.",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(1) from None
     if importers is not None:
         answers = replace(
             answers, importers=tuple(i.strip() for i in importers.split(",") if i.strip())
@@ -376,6 +400,23 @@ def init(
         init_mod.init_git(directory, result.written) if use_git and result.written else None
     )
     _report_init(directory, answers, result, git_result, as_json)
+
+
+_QUESTION = {q.key: q for q in init_mod.QUESTIONS}
+
+
+def _report_questions(as_json: bool) -> None:
+    """The questionnaire itself: what to answer, and where each answer is found."""
+    if as_json:
+        import dataclasses
+
+        _json_out({"questions": [dataclasses.asdict(q) for q in init_mod.QUESTIONS]})
+        return
+    for q in init_mod.QUESTIONS:
+        ui.console.print(f"[b]{q.flag}[/]  {q.prompt}", highlight=False)
+        if q.asked_if:
+            ui.console.print(f"  only if: {q.asked_if}", highlight=False)
+        ui.console.print(f"  {q.source}\n", highlight=False)
 
 
 def _init_answers_file(answers_file: Path | None) -> init_mod.Answers:
@@ -413,7 +454,7 @@ def _init_identity(
     elif interactive:
         answers = replace(
             answers,
-            legal_form=typer.prompt("Legal form (gmbh/ag/einzelfirma)", default=answers.legal_form)
+            legal_form=typer.prompt(_QUESTION["legal_form"].prompt, default=answers.legal_form)
             .strip()
             .lower(),
         )
@@ -428,7 +469,8 @@ def _init_identity(
         answers = replace(answers, entity_name=name)
     elif interactive:
         answers = replace(
-            answers, entity_name=typer.prompt("Entity name", default=answers.entity_name)
+            answers,
+            entity_name=typer.prompt(_QUESTION["entity_name"].prompt, default=answers.entity_name),
         )
     if lang is not None:
         answers = replace(answers, report_language=lang)
@@ -436,7 +478,7 @@ def _init_identity(
         answers = replace(
             answers,
             report_language=typer.prompt(
-                "Report language (en/de)", default=answers.report_language
+                _QUESTION["report_language"].prompt, default=answers.report_language
             ),
         )
     return answers
@@ -454,7 +496,7 @@ def _init_vat(
     if vat_since is None and vat_method is None and interactive:
         default = answers.vat_registered_since if answers.vat_registered else None
         vat_since = typer.prompt(
-            "VAT-registered since (YYYY-MM-DD, or 'no' if below the CHF 100'000 threshold)",
+            _QUESTION["vat_registered_since"].prompt,
             default=str(default) if default else "no",
         )
     if vat_since is not None:
@@ -469,7 +511,7 @@ def _init_vat(
     elif interactive and answers.vat_registered:
         answers = replace(
             answers,
-            vat_method=typer.prompt("VAT method (effective/saldo)", default=answers.vat_method)
+            vat_method=typer.prompt(_QUESTION["vat_method"].prompt, default=answers.vat_method)
             .strip()
             .lower(),
         )
@@ -482,10 +524,7 @@ def _init_vat(
             answers,
             saldo_rates=tuple(
                 r.strip()
-                for r in typer.prompt(
-                    "Saldosteuersatz/-sätze granted by the ESTV, in per cent "
-                    "(comma-separated; see SR 641.202.62)"
-                ).split(",")
+                for r in typer.prompt(_QUESTION["saldo_rates"].prompt).split(",")
                 if r.strip()
             ),
         )
@@ -507,6 +546,7 @@ def _report_init(
             {
                 "directory": str(directory),
                 "entity": answers.entity_name,
+                "answers": dataclasses.asdict(answers),
                 "written": [str(p) for p in result.written],
                 "skipped": [str(p) for p in result.skipped],
                 "git": dataclasses.asdict(git_result) if git_result else None,
