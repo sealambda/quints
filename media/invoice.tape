@@ -7,7 +7,7 @@ Output docs/assets/invoice.gif
 Set Shell "bash"
 Set FontSize 14
 Set Width 1000
-Set Height 320
+Set Height 400
 Set Padding 16
 Set WindowBar Colorful
 Set Theme "Catppuccin Mocha"
