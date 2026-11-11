@@ -216,7 +216,7 @@ def sha256(path: Path) -> str:
 _TRAILING_DIGITS = re.compile(r"^(.*?)(\d+)$")
 
 
-def _series(number: str, year: int) -> tuple[str, int] | None:
+def number_series(number: str, year: int) -> tuple[str, int] | None:
     """`INV-2026-014` → (`INV-2026-`, 14). A counter that restarts each year
     behind the year (`INV2026014`) is its own series per year, so the turn of
     the year is not a gap."""
@@ -270,7 +270,7 @@ def audit(
         if len(dates) > 1:
             booked = ", ".join(str(d) for d in dates)
             errors.append(f"invoice number {number} is booked {len(dates)} times ({booked})")
-        if key := _series(number, dates[0].year):
+        if key := number_series(number, dates[0].year):
             series.setdefault(key[0], []).append((key[1], dates[0], number))
     for members in series.values():
         members.sort()

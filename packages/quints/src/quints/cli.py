@@ -901,7 +901,20 @@ def vat_convert(
 
 @app.command(rich_help_panel=PANEL_INVOICING)
 def invoice(
-    data: Path = typer.Argument(..., help="Invoice file (.yaml/.toml/.json)."),
+    data: Path = typer.Argument(
+        ..., help="Invoice file (.yaml/.toml/.json) — or `new`, with --from and --period."
+    ),
+    source: Path | None = typer.Option(
+        None,
+        "--from",
+        help="With `new`: the invoice file to copy, under the next number in its series.",
+    ),
+    period: str | None = typer.Option(
+        None, "--period", help="With `new`: the copy's supply, e.g. 2026-08."
+    ),
+    on: str | None = typer.Option(
+        None, "--date", metavar="YYYY-MM-DD", help="With `new`: its issue date (default: today)."
+    ),
     out: Path | None = typer.Option(
         None,
         "--out",
@@ -938,6 +951,9 @@ def invoice(
     from .invoice import render as r
     from .invoice import verify as v
 
+    if str(data) == "new":
+        _new_invoice(source, period, _parse_date(on) if on else Date.today(), as_json)
+        return
     for p, what in [(data, "invoice file"), (issuer, "issuer config")]:
         if not p.exists():
             typer.secho(f"ERROR: {what} not found: {p}", fg="red", err=True)
@@ -1003,6 +1019,21 @@ def invoice(
         _json_out(
             _invoice_payload(inv, ref, path, totals, qr_ok, cc, ledger_draft, digest, issued=issued)
         )
+
+
+def _new_invoice(source: Path | None, period: str | None, on: Date, as_json: bool) -> None:
+    """`quints invoice new --from <file> --period <supply>`."""
+    from .invoice import recurring
+
+    if source is None or period is None:
+        raise ValueError("`quints invoice new` needs --from <invoice file> and --period <supply>")
+    if not source.exists():
+        raise ValueError(f"invoice file not found: {source}")
+    dest, inv = recurring.copy_invoice(source, period, on)
+    if as_json:
+        _json_out({"file": str(dest), "number": inv.number, "issue_date": inv.issue_date})
+    else:
+        ui.console.print(f"[ok]Wrote[/] {dest}  ·  {inv.number}  ·  quints invoice {dest}")
 
 
 def _load_invoice_files(data: Path, issuer: Path, customers: Path) -> tuple[Invoice, Issuer]:
@@ -1189,6 +1220,16 @@ def receivables(
         help="Consolidation currency for the grand total "
         "(default: operating currency from quints.toml).",
     ),
+    remind: bool = typer.Option(
+        False,
+        "--remind",
+        help="Write a payment reminder PDF for each overdue invoice: the open amount, "
+        "a new deadline, the invoice's own payment reference.",
+    ),
+    days: int = typer.Option(10, "--days", help="With --remind: days until the new deadline."),
+    invoices: Path = typer.Option(
+        Path("invoicing"), "--invoices", help="With --remind: where the invoice files are."
+    ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
 ):
@@ -1199,6 +1240,7 @@ def receivables(
         file, _parse_date(at) if at else None, currency=consolidate, entries=entries
     )
     problems += recv_mod.reconcile(entries, ref, config_mod.get())
+    reminders = _remind(open_invoices, ref, days, invoices) if remind else []
     if as_json:
         import dataclasses
 
@@ -1213,11 +1255,65 @@ def receivables(
                     "missing_rates": consolidation.missing,
                 },
                 "violations": [dataclasses.asdict(v) for v in problems],
+                "reminders": reminders,
             }
         )
         return
     recv_mod.render(open_invoices, ref, consolidation)
     _problems(problems)
+    for r in reminders:
+        if r["pdf"]:
+            ui.console.print(f"[ok]Reminder[/] {r['pdf']}  ·  {r['number']}  ·  due {r['due']}")
+        else:
+            ui.console.print(f"[warn]No reminder for {r['number']}[/] — {r['skipped']}")
+
+
+def _remind(
+    open_invoices: list[recv_mod.OpenInvoice], at: Date, days: int, invoices: Path
+) -> list[dict[str, str | None]]:
+    """A reminder PDF per overdue invoice, filed next to the invoice's own.
+
+    Overdue: past the `due:` the ledger records, else past the invoice file's
+    payment terms. An open item without an invoice file is reported, not
+    guessed at."""
+    from datetime import timedelta
+
+    from .invoice import draft as dr
+    from .invoice import model as m
+    from .invoice import render as r
+
+    cfg = config_mod.get()
+    issuer = m.load_issuer(invoices / "issuer.yaml")
+    registry_file = invoices / "customers.yaml"
+    registry = m.load_customers(registry_file) if registry_file.exists() else None
+    by_number: dict[str, m.Invoice] = {}
+    for path in sorted(invoices.glob("*.yaml")):
+        if path.name not in ("issuer.yaml", "customers.yaml"):
+            inv = m.load_invoice(path, registry)
+            by_number[inv.number] = inv
+    out: list[dict[str, str | None]] = []
+    for o in open_invoices:
+        inv = by_number.get(o.number)
+        if o.open_amount <= 0:
+            continue
+        if inv is None or inv.currency != o.currency:
+            out.append(_reminder_row(o.number, skipped=f"no invoice file in {invoices}/"))
+            continue
+        due = o.due_date or (
+            inv.issue_date + timedelta(days=inv.terms_days) if inv.terms_days is not None else None
+        )
+        if due is None or due >= at:
+            continue
+        again = r.Reminder(on=at, due=at + timedelta(days=days), open=o.open_amount)
+        filed = m.document_path(inv, dr.filing_account(inv, cfg))
+        pdf = filed.with_name(f"{at.isoformat()}.{inv.customer_slug}.{inv.number}.reminder.pdf")
+        r.render(inv, issuer, pdf, vat_registered=cfg.liable_on(inv.issue_date), reminder=again)
+        out.append(_reminder_row(o.number, pdf=str(pdf), due=str(again.due), open=str(again.open)))
+    return out
+
+
+def _reminder_row(number: str, **fields: str) -> dict[str, str | None]:
+    return {"number": number, "pdf": None, "due": None, "open": None, "skipped": None, **fields}
 
 
 @app.command(rich_help_panel=PANEL_INVOICING)

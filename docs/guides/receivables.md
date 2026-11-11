@@ -78,6 +78,25 @@ quints receivables
 
 The report never moves money between invoices.
 
+### Remind what is overdue
+
+```bash
+quints receivables --remind --at 2026-10-15
+```
+
+Writes one reminder PDF per overdue invoice, next to the invoice in
+`documents/` (`2026-10-15.acme.INV2026014.reminder.pdf`): the invoice again,
+titled as a reminder, with what was paid, the amount still open and a new
+deadline (`--days`, 10 by default). The payment part asks for the open
+amount under the invoice's own reference, so the payment matches on import
+like any other. An invoice is overdue once the `due:` date of its booking
+has passed, or, without one, the payment terms of its invoice file. Open
+items without an invoice file in `invoicing/` are listed, not reminded.
+
+A reminder puts the customer in default.[^verzug] It carries no fee and no
+default interest; if you charge them, book and invoice them yourself. quints
+writes the PDF and sends nothing.
+
 ## 4. Move a booked payment to another invoice
 
 Don't edit the original booking. Add a zero-sum **relink** entry: two
@@ -192,6 +211,7 @@ Use your own legal form's accounts (`Income:CH:Einzelfirma:…` and so on).
       `^link`, because a lone invoice link would claim that leg for its
       invoice.
 
+[^verzug]: Art. 102 Abs. 1 OR: "Ist eine Verbindlichkeit fällig, so wird der Schuldner durch Mahnung des Gläubigers in Verzug gesetzt." [fedlex](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_102).
 [^art86]: Art. 86 Abs. 1 OR: the debtor "ist berechtigt, bei der Zahlung zu erklären, welche Schuld er tilgen will." [SR 220, fedlex](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_86).
 [^art87]: Art. 87 OR: without a declaration "ist die Zahlung auf die fällige Schuld anzurechnen, unter mehreren fälligen auf diejenige Schuld, für die der Schuldner zuerst betrieben worden ist, und hat keine Betreibung stattgefunden, auf die früher verfallene" (Abs. 1). "Sind sie gleichzeitig verfallen, so findet eine verhältnismässige Anrechnung statt" (Abs. 2). With none due, the payment goes to the debt "die dem Gläubiger am wenigsten Sicherheit darbietet" (Abs. 3). [SR 220, fedlex](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_87). quints encodes Abs. 1 and 2 in `quints.importing._by_due_date`.
 [^art41]: Art. 41 Abs. 1 MWSTG: "Wird das vom Leistungsempfänger oder der Leistungsempfängerin bezahlte oder mit ihm oder ihr vereinbarte Entgelt korrigiert, so ist im Zeitpunkt, in dem die Korrektur verbucht oder das korrigierte Entgelt vereinnahmt wird, eine Anpassung der Umsatzsteuerschuld vorzunehmen." [SR 641.20, fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_41).
