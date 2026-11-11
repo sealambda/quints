@@ -75,3 +75,35 @@ def test_a_line_rate_must_be_in_force(project: Path) -> None:
     Path("invoicing/new.yaml").write_text(MIXED.replace("2.6", "2.5"))
     res = runner.invoke(app, ["invoice", "invoicing/new.yaml"])
     assert res.exit_code == 1 and "items.1.vat_rate 2.5 is not a Swiss VAT rate" in res.stderr
+
+
+def test_discounts_reduce_the_consideration_per_rate(project: Path) -> None:
+    """A line discount comes off its line; the invoice's is spread over the
+    rates in proportion, and VAT is charged on what is left."""
+    d = _issue(
+        MIXED.replace("unit_price: 1000.00}", "unit_price: 1250.00, discount: 20}")
+        + "discount: {amount: 100}\n"
+    )
+    totals = d["totals"]
+    assert isinstance(totals, dict)
+    assert totals["subtotal"] == "1333.30" and totals["discount"] == "100.00"
+    # 100 × 333.30 / 1333.30 = 25.00 off the reduced group, the rest off the other.
+    assert [(g["net"], g["vat"]) for g in totals["vat_groups"]] == [
+        ("925.00", "74.93"),
+        ("308.30", "8.02"),
+    ]
+    assert totals["grand_total"] == "1316.25"
+    assert runner.invoke(app, ["check"]).exit_code == 0
+    res = runner.invoke(app, ["invoice", "invoicing/new.yaml", "--json"])
+    assert json.loads(res.stdout)["cross_check"]["ok"]
+    assert not _vat_report()["violations"]
+
+
+def test_a_discount_is_percent_or_amount_and_no_more_than_the_lines(project: Path) -> None:
+    for discount, message in [
+        ("{percent: 5, amount: 10}", "either `percent` or `amount`"),
+        ("{amount: 5000}", "exceeds its lines"),
+    ]:
+        Path("invoicing/new.yaml").write_text(MIXED + f"discount: {discount}\n")
+        res = runner.invoke(app, ["invoice", "invoicing/new.yaml"])
+        assert res.exit_code == 1 and message in res.stderr, res.stderr

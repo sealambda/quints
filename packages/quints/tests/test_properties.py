@@ -13,18 +13,24 @@ from hypothesis import strategies as st
 
 from quints import ledger
 from quints.invoice import reference as ref
-from quints.invoice.model import Invoice, LineItem, Party, SupplyPeriod, VatBlock, compute
+from quints.invoice.model import Discount, Invoice, LineItem, Party, SupplyPeriod, compute
 
 _amount = st.decimals(min_value=Decimal("0.01"), max_value=Decimal("99999"), places=2)
 _quantity = st.decimals(min_value=Decimal("0.25"), max_value=Decimal("500"), places=2)
-_lines = st.lists(st.tuples(_quantity, _amount), min_size=1, max_size=8)
+_lines = st.lists(st.tuples(_quantity, _amount, st.booleans()), min_size=1, max_size=8)
 _rate_class = st.sampled_from(sorted(ledger.VAT_RATE_CLASSES))
 _day = st.dates(min_value=date(2011, 1, 1), max_value=date(2030, 12, 31))
 
 
 def _invoice(
-    lines: list[tuple[Decimal, Decimal]], on: date, rate_class: str, round_5: bool
+    lines: list[tuple[Decimal, Decimal, bool]],
+    on: date,
+    rate_class: str,
+    round_5: bool,
+    discount: Decimal | None = None,
 ) -> Invoice:
+    """Each line is at the standard rate, or — flagged — at `rate_class`."""
+    rates = [ledger.vat_rate(on, c) * 100 for c in ("standard", rate_class)]
     return Invoice(
         number="INV1",
         kind="domestic",
@@ -32,24 +38,39 @@ def _invoice(
         issue_date=on,
         supply=SupplyPeriod.day(on),
         customer=Party(name="ACME AG", address=["Bahnhofstrasse 1", "8000 Zürich"]),
-        items=[LineItem(description="Work", quantity=q, unit_price=p) for q, p in lines],
-        vat=VatBlock(rate=ledger.vat_rate(on, rate_class) * 100),
+        items=[
+            LineItem(description="Work", quantity=q, unit_price=p, vat_rate=rates[other])
+            for q, p, other in lines
+        ],
+        discount=Discount(percent=discount) if discount else None,
         round_5=round_5,
     )
 
 
-@given(_lines, _day, _rate_class, st.booleans())
+_discount = st.none() | st.decimals(min_value=Decimal("0.5"), max_value=Decimal("100"), places=1)
+
+
+@given(_lines, _day, _rate_class, st.booleans(), _discount)
 def test_net_plus_vat_plus_rounding_is_the_total(
-    lines: list[tuple[Decimal, Decimal]], on: date, rate_class: str, round_5: bool
+    lines: list[tuple[Decimal, Decimal, bool]],
+    on: date,
+    rate_class: str,
+    round_5: bool,
+    discount: Decimal | None,
 ) -> None:
-    t = compute(_invoice(lines, on, rate_class, round_5))
-    assert t.subtotal + t.vat_amount + t.rounding == t.grand_total == t.amount_due
-    assert t.vat_amount == t.vat_amount.quantize(Decimal("0.01"))
+    t = compute(_invoice(lines, on, rate_class, round_5, discount))
+    assert t.subtotal - t.discount + t.vat_amount + t.rounding == t.grand_total == t.amount_due
+    # The discount is spread over the rate groups to the cent, and each group's
+    # VAT is its own net at its own rate.
+    assert sum(g.net for g in t.vat_groups) == t.subtotal - t.discount
+    assert t.vat_amount == sum(g.vat for g in t.vat_groups)
+    for g in t.vat_groups:
+        assert g.net >= 0 and abs(g.vat - g.net * g.rate / 100) <= Decimal("0.005")
 
 
 @given(_lines, _day, _rate_class)
 def test_five_rappen_rounding_moves_the_total_only(
-    lines: list[tuple[Decimal, Decimal]], on: date, rate_class: str
+    lines: list[tuple[Decimal, Decimal, bool]], on: date, rate_class: str
 ) -> None:
     exact = compute(_invoice(lines, on, rate_class, False))
     rounded = compute(_invoice(lines, on, rate_class, True))
@@ -60,7 +81,7 @@ def test_five_rappen_rounding_moves_the_total_only(
 
 @given(_lines, _day, _rate_class, st.randoms())
 def test_line_order_never_changes_the_totals(
-    lines: list[tuple[Decimal, Decimal]], on: date, rate_class: str, rnd: object
+    lines: list[tuple[Decimal, Decimal, bool]], on: date, rate_class: str, rnd: object
 ) -> None:
     shuffled = list(lines)
     rnd.shuffle(shuffled)  # type: ignore[attr-defined]

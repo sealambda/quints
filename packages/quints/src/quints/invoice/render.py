@@ -25,6 +25,7 @@ from .model import (
     Brand,
     Invoice,
     Issuer,
+    LineItem,
     Problem,
     Problems,
     Totals,
@@ -154,12 +155,7 @@ def build_context(
                 "unit": it.unit,
                 "unit_price": money(it.unit_price, inv.locale),
                 "total": money(it.total, inv.locale),
-                # Named per line only when the invoice mixes rates.
-                "vat_rate": number(
-                    it.vat_rate if it.vat_rate is not None else inv.vat_rate, inv.locale
-                )
-                if len(totals.vat_groups) > 1
-                else None,
+                "tag": _line_tag(inv, it, lbl, mixed=len(totals.vat_groups) > 1),
             }
             for i, it in enumerate(inv.items)
         ],
@@ -189,6 +185,18 @@ def build_context(
         ],
         "brand": brand_context(issuer.brand, logo),
     }
+
+
+def _line_tag(inv: Invoice, it: LineItem, lbl: Mapping[str, str], *, mixed: bool) -> str | None:
+    """What a line says about itself after its description: its VAT rate when
+    the invoice mixes rates, and its discount."""
+    parts: list[str] = []
+    if mixed:
+        rate = it.vat_rate if it.vat_rate is not None else inv.vat_rate
+        parts.append(f"{lbl['vat']} {number(rate, inv.locale)}%")
+    if it.discount is not None:
+        parts.append(f"{lbl['discount']} {number(it.discount, inv.locale)}%")
+    return " · ".join(parts) or None
 
 
 def _document_metadata(
@@ -238,8 +246,17 @@ def _advance_label(inv: Invoice, lbl: Mapping[str, str], a: Advance, totals: Tot
 
 
 def _totals_context(inv: Invoice, totals: Totals) -> dict[str, str | bool | list[dict[str, str]]]:
+    lbl = get_labels(inv.language)
     return {
         "subtotal": money(totals.subtotal, inv.locale),
+        "discount": money(-totals.discount, inv.locale),
+        "discount_label": lbl["discount"]
+        + (
+            f" {number(inv.discount.percent, inv.locale)}%"
+            if inv.discount and inv.discount.percent
+            else ""
+        ),
+        "show_discount": totals.discount != 0,
         "vat_rate": number(totals.vat_rate, inv.locale),
         "vat_amount": money(totals.vat_amount, inv.locale),
         # One row per rate (Art. 26 Abs. 2 Bst. f MWSTG).

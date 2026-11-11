@@ -126,7 +126,8 @@ def build_draft(
     doc = document_path(inv, income)  # same name the rendered PDF is filed under
 
     vat = totals.vat_amount
-    rest = totals.subtotal  # the income not advanced, valued at the issue date
+    # The income not advanced, net of the discount, valued at the issue date.
+    rest = totals.subtotal - totals.discount
     slices: list[tuple[str, str, str]] = []
     released: list[tuple[str, str, str]] = []
     for number in dict.fromkeys(a.proforma for a in inv.advances):
