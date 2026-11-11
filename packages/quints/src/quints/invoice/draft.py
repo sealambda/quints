@@ -122,7 +122,11 @@ def build_draft(
     ccy = inv.currency
     income = filing_account(inv, cfg)
     advances = cfg.advances_for(inv.kind)
-    narration = f"{inv.supply.text(inv.locale)} invoiced"
+    narration = (
+        f"Credit note for {inv.credit_note_for}"
+        if inv.credit_note_for
+        else f"{inv.supply.text(inv.locale)} invoiced"
+    )
     doc = document_path(inv, income)  # same name the rendered PDF is filed under
 
     vat = totals.vat_amount
@@ -159,7 +163,10 @@ def build_draft(
         *slices,
     ]
     if totals.amount_due:
-        legs.append((cfg.receivable, f"{totals.amount_due:>10.2f} {ccy}", ""))
+        # A credit note's receivable leg comes off the invoice it corrects:
+        # posting-level `invoice:` is what `quints receivables` groups by.
+        against = f"invoice: {_quoted(inv.credit_note_for)}" if inv.credit_note_for else ""
+        legs.append((cfg.receivable, f"{totals.amount_due:>10.2f} {ccy}", against))
     legs += released
     if vat:
         legs.append((cfg.output_vat, _vat_leg(vat, ccy, chf_rate), ""))
@@ -170,6 +177,8 @@ def build_draft(
         legs.append((cfg.rounding_income, f"{-totals.rounding:>10.2f} {ccy}", ""))
 
     meta = [f"    invoice: {_quoted(inv.number)}"]
+    if inv.credit_note_for:
+        meta.append(f"    credit_note_for: {_quoted(inv.credit_note_for)}")
     if inv.customer_reference:
         # The payer quotes their own reference, not ours, when they ask about
         # this invoice — so the ledger can be searched by it too.

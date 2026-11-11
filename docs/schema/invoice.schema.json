@@ -428,6 +428,20 @@
       "title": "Proforma",
       "type": "boolean"
     },
+    "credit_note_for": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Makes this document a credit note against the invoice with that number. Write the lines as the invoice had them (all of them to cancel it, some to reduce it): every amount is negated, the PDF refers to the invoice, and the ledger draft reverses income and VAT. Give credit notes their own number series (CN2026001).",
+      "title": "Credit Note For"
+    },
     "advances": {
       "description": "Payments received against pro formas, credited on this invoice: it shows VAT on the full supply, subtracts them, and asks for the rest.",
       "items": {
