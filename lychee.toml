@@ -5,6 +5,13 @@
 # external links would fail on other people's outages and rate limits.
 offline = true
 
+# A link to a heading of a Markdown file, such as `page.md#heading`, or to a
+# heading of the same file, such as `#heading`, fails when the heading is
+# missing. lychee 0.24 reads the headings of a local file offline. The option
+# takes a string in this version, not a boolean. `anchor-only` checks anchors
+# and not text fragments, which only a browser can check.
+include_fragments = "anchor-only"
+
 exclude_path = [
   ".git",
   "node_modules",
