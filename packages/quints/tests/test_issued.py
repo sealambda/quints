@@ -145,4 +145,4 @@ def test_audit_flags_duplicates_order_and_gaps(tmp_path: Path) -> None:
         "invoice INV2026002 (2026-01-15) is dated before INV2026001 (2026-02-01)",
     ]
     assert warnings == ["2 invoice number(s) missing between INV2026002 and INV2026005"]
-    assert verify._series("INV-2026-014", date(2026, 7, 2).year) == ("INV-2026-", 14)  # pyright: ignore[reportPrivateUsage]
+    assert verify.number_series("INV-2026-014", date(2026, 7, 2).year) == ("INV-2026-", 14)

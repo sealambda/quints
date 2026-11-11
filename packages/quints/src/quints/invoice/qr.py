@@ -62,7 +62,9 @@ def _structured(name: str, lines: Sequence[str], country: str) -> dict[str, str 
     }
 
 
-def build_bill(inv: Invoice, issuer: Issuer, account: BankAccount, totals: Totals) -> QRBill:
+def build_bill(
+    inv: Invoice, issuer: Issuer, account: BankAccount, totals: Totals, billing: bool = True
+) -> QRBill:
     customer = inv.resolved_customer
     currency = inv.currency
     if currency not in ("CHF", "EUR"):
@@ -74,7 +76,12 @@ def build_bill(inv: Invoice, issuer: Issuer, account: BankAccount, totals: Total
     message = inv.number
     # A pro forma carries none: its /10/ invoice number, date and VAT rate are
     # what the payer's software books an invoice — and input tax — from.
-    billing = "" if inv.proforma else swico.billing_information(inv, issuer, totals, message) or ""
+    # Nor does a reminder (`billing=False`): the invoice it repeats carried it.
+    info = (
+        swico.billing_information(inv, issuer, totals, message) or ""
+        if billing and not inv.proforma
+        else ""
+    )
     creditor = _structured(issuer.name, issuer.address, issuer.country)
     debtor = _structured(customer.name, customer.address, customer.country)
     with warnings.catch_warnings():
@@ -87,7 +94,7 @@ def build_bill(inv: Invoice, issuer: Issuer, account: BankAccount, totals: Total
             currency=currency,
             reference_number=payment_ref.value,
             additional_information=message,
-            billing_information=billing,
+            billing_information=info,
             language=_SLIP_LANGUAGES.get(inv.language, "en"),
         )
     # The Implementation Guidelines allow Arial, Frutiger, Helvetica and

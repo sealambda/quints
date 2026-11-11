@@ -703,6 +703,19 @@ Use this when the customer has booked or paid the original, or when amounts
 change. For a wrong address caught early, a
 [reissue](#issued-means-fixed) under the same number is enough.
 
+## The next invoice of a recurring one
+
+```bash
+quints invoice new --from invoicing/acme-2026-07.yaml --period 2026-08
+```
+
+Copies the invoice file to `invoicing/acme-2026-08.yaml` with the next free
+number of its series, today's date (`--date` sets another) and the new
+supply period; everything else, comments included, stays as written. A
+series that carries the year (`INV2026014`) starts again at `001` in a new
+year. It never overwrites a file. quints does not schedule anything: you, an
+agent or cron decide when to run it, then `quints invoice` on the new file.
+
 ## Structured invoice data: Factur-X / ZUGFeRD
 
 Every invoice and credit note PDF carries itself as data: an embedded

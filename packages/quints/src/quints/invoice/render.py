@@ -7,6 +7,7 @@ import re
 import shutil
 import tempfile
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -42,6 +43,17 @@ TEMPLATE = Path(__file__).parent / "template.typ"
 # See fonts/README.md.
 BUNDLED_FONTS = Path(__file__).parent / "fonts"
 BUNDLED_FAMILIES = frozenset({"Geist", "Geist Mono", "Newsreader", "Liberation Sans"})
+
+
+@dataclass(frozen=True)
+class Reminder:
+    """A payment reminder for an invoice: the invoice again, dated `on`, asking
+    for what is still `open` by `due` — under the invoice's own reference, so
+    the payment matches like any other. No fee, no interest."""
+
+    on: date
+    due: date
+    open: Decimal
 
 
 class InvoiceContext(TypedDict):
@@ -84,6 +96,7 @@ def build_context(
     reverse_charge: bool = False,
     logo: str | None = None,
     facturx: bool = False,
+    reminder: Reminder | None = None,
 ) -> InvoiceContext:
     lbl = get_labels(inv.language)
     if inv.proforma:
@@ -102,6 +115,14 @@ def build_context(
             "invoice_no": lbl["credit_note_no"],
             "date": lbl["proforma_date"],
             "grand_total": lbl["credit_total"],
+        }
+    if reminder:
+        lbl = {
+            **lbl,
+            "invoice": lbl["reminder"],
+            "date": lbl["proforma_date"],
+            "grand_total": lbl["open_amount"],
+            "amount_due": lbl["open_amount"],
         }
     sign = -1 if inv.credit_note_for else 1
     customer = inv.resolved_customer
@@ -126,6 +147,23 @@ def build_context(
         if payable
         else ""
     )
+    advances = [
+        {"label": _advance_label(inv, lbl, a, totals), "amount": money(-a.amount, inv.locale)}
+        for a in inv.advances
+    ]
+    notes = list(inv.notes)
+    if reminder:
+        due = _fmt_date(reminder.due, inv.locale)
+        payable = False  # the new deadline stands alone: no "net 30 days" under it
+        notes.insert(
+            0,
+            lbl["reminder_note"].format(
+                number=inv.number, date=_fmt_date(inv.issue_date, inv.locale)
+            ),
+        )
+        paid = totals.grand_total - totals.advances - reminder.open
+        if paid > 0:
+            advances.append({"label": lbl["paid"], "amount": money(-paid, inv.locale)})
     return {
         "proforma": inv.proforma,
         "reverse_charge": reverse_charge,
@@ -157,7 +195,7 @@ def build_context(
         "invoice": {
             "number": inv.number,
             "supply": inv.supply.text(inv.locale),
-            "issue_date": _fmt_date(inv.issue_date, inv.locale),
+            "issue_date": _fmt_date(reminder.on if reminder else inv.issue_date, inv.locale),
             "due_date": due,
         },
         # The customer's own reference, then whatever else their side demands —
@@ -183,13 +221,7 @@ def build_context(
             for p in inv.pass_through
         ],
         # Credited advances, between the invoice total and the amount due.
-        "advances": [
-            {
-                "label": _advance_label(inv, lbl, a, totals),
-                "amount": money(-a.amount, inv.locale),
-            }
-            for a in inv.advances
-        ],
+        "advances": advances,
         "payment": payment,
         "notes": [
             # A reissue says so: nothing about an issued invoice changes silently.
@@ -203,7 +235,7 @@ def build_context(
                 if inv.corrected
                 else []
             ),
-            *inv.notes,
+            *notes,
         ],
         "brand": brand_context(issuer.brand, logo),
     }
@@ -503,13 +535,20 @@ def fonts(brand: Brand) -> tuple[list[Path], bool]:
 
 
 def render(
-    inv: Invoice, issuer: Issuer, out_path: Path, vat_registered: bool = True
+    inv: Invoice,
+    issuer: Issuer,
+    out_path: Path,
+    vat_registered: bool = True,
+    reminder: Reminder | None = None,
 ) -> tuple[Path, Totals, str | None]:
     """Render to `out_path`. Returns (path, totals, qr_payload|None).
 
     ``vat_registered`` is the issuer's VAT status on the issue date (from
-    quints.toml): when False, no VAT is charged or mentioned."""
+    quints.toml): when False, no VAT is charged or mentioned. With
+    ``reminder`` the document is a payment reminder for `inv`."""
     totals = check(inv, issuer, vat_registered)
+    if reminder:
+        totals = totals.model_copy(update={"amount_due": reminder.open})
     account = issuer.account(inv.currency)
 
     reverse_charge = _reverse_charge(inv)
@@ -521,7 +560,7 @@ def render(
             payment: dict[str, str | None] = {"type": "none"}
         elif inv.kind == "domestic":
             # Swiss QR-bill: IBAN + SCOR, or QR-IBAN + QRR — see `reference.py`.
-            bill = qr.build_bill(inv, issuer, account, totals)
+            bill = qr.build_bill(inv, issuer, account, totals, billing=reminder is None)
             qr.write_svg(bill, work / "qrbill.svg")
             qr_payload = qr.payload(bill)
             ref = ref_mod.payment_reference(inv, account).formatted
@@ -548,13 +587,20 @@ def render(
             logo_name = dest.name
 
         # The same invoice as data, attached for the payer's software. Not on
-        # a pro forma: a machine would book it as the invoice.
-        structured_data = not inv.proforma
+        # a pro forma or a reminder: a machine would book it as the invoice.
+        structured_data = not inv.proforma and reminder is None
         if structured_data:
             doc = structured.build(inv, issuer, totals, reverse_charge=reverse_charge)
             (work / facturx.FILENAME).write_bytes(facturx.to_xml(doc))
         ctx = build_context(
-            inv, issuer, totals, payment, reverse_charge, logo=logo_name, facturx=structured_data
+            inv,
+            issuer,
+            totals,
+            payment,
+            reverse_charge,
+            logo=logo_name,
+            facturx=structured_data,
+            reminder=reminder,
         )
         (work / "data.json").write_text(json.dumps(ctx, ensure_ascii=False, indent=2))
         shutil.copy(TEMPLATE, work / "template.typ")
@@ -562,7 +608,8 @@ def render(
         font_paths, only_bundled = fonts(issuer.brand)
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        _compile(work / "template.typ", out_path, work, font_paths, only_bundled, inv.issue_date)
+        dated = reminder.on if reminder else inv.issue_date
+        _compile(work / "template.typ", out_path, work, font_paths, only_bundled, dated)
         if structured_data:
             out_path.write_bytes(facturx.embed_metadata(out_path.read_bytes()))
         return out_path, totals, qr_payload
