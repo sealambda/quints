@@ -60,6 +60,7 @@ class Line:
     id: str  # BT-126
     name: str  # BT-153
     quantity: Decimal  # BT-129
+    unit_code: str  # BT-130, UN/ECE Recommendation 20
     unit_price: Decimal  # BT-146
     allowance: Decimal  # BT-136, the line's discount
     net: Decimal  # BT-131
@@ -115,6 +116,22 @@ class StructuredInvoice:
     due: Decimal  # BT-115
 
 
+# The `unit` an invoice prints, as a UN/ECE Recommendation 20 code. Anything
+# not listed is a plain unit (C62): the text is free, the code list is not.
+_UNIT_CODES = {
+    **dict.fromkeys(("h", "std", "stunde", "stunden", "hour", "hours", "hora", "horas"), "HUR"),
+    **dict.fromkeys(("heure", "heures", "ora", "ore"), "HUR"),
+    **dict.fromkeys(("tag", "tage", "day", "days", "día", "días", "jour", "jours"), "DAY"),
+    **dict.fromkeys(("giorno", "giorni"), "DAY"),
+    **dict.fromkeys(("monat", "monate", "month", "months", "mes", "meses", "mois"), "MON"),
+    **dict.fromkeys(("mese", "mesi"), "MON"),
+    **dict.fromkeys(("stk", "stück", "pcs", "piece", "pieces", "pièce", "pièces", "pz"), "H87"),
+    **dict.fromkeys(("pauschal", "flat", "forfait", "forfettario"), "LS"),
+    "km": "KMT",
+    "kg": "KGM",
+}
+
+
 def _compact(vat_id: str) -> str:
     return "".join(ch for ch in vat_id.upper() if ch.isalnum())
 
@@ -155,6 +172,7 @@ def build(
             id=str(i),
             name=it.description,
             quantity=it.quantity,
+            unit_code=_UNIT_CODES.get(it.unit.strip().rstrip(".").lower(), "C62"),
             unit_price=it.unit_price,
             # What the line's discount took off, to the cent the line shows.
             allowance=(it.quantity * it.unit_price).quantize(cent, ROUND_HALF_UP) - it.total,

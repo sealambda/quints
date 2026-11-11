@@ -27,6 +27,7 @@ EVERYTHING = (
     "items:\n"
     "  - {description: Workshop, quantity: 1, unit_price: 1250.00, discount: 20}\n"
     "  - {description: Handbook, quantity: 10, unit_price: 33.33, vat_rate: 2.6}\n"
+    "  - {description: Coaching, quantity: 1.5, unit_price: 180.00, unit: Std.}\n"
     "discount: {percent: 5}\n"
     "pass_through:\n  - {description: Commercial register fee, amount: 120.00}\n"
 )
@@ -118,3 +119,34 @@ def test_a_pro_forma_carries_no_invoice_data(
     res = runner.invoke(app, ["invoice", "invoicing/case.yaml", "-o", "pf.pdf", "--no-verify"])
     assert res.exit_code == 0, res.output
     assert b"factur-x.xml" not in Path("pf.pdf").read_bytes()
+
+
+def test_units_travel_as_standard_codes(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(project)
+    Path("invoicing/case.yaml").write_text(EVERYTHING)
+    runner.invoke(app, ["invoice", "invoicing/case.yaml", "-o", "case.pdf", "--no-verify"])
+    _, xml = facturx.get_xml_from_pdf(Path("case.pdf").read_bytes())
+    assert isinstance(xml, bytes)
+    # `Std.` is hours; a line without a unit is a plain unit.
+    assert xml.count(b'unitCode="HUR"') == 1 and xml.count(b'unitCode="C62"') == 2
+
+
+def test_an_unregistered_issuer_is_outside_the_scope_of_vat(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Before registration: no VAT, no VAT identifier — the bare UID travels
+    as the seller's legal registration, and the validators still pass."""
+    monkeypatch.chdir(project)
+    issuer = Path("invoicing/issuer.yaml").read_text().replace(" MWST", "")
+    Path("invoicing/issuer-before.yaml").write_text(issuer)
+    Path("invoicing/case.yaml").write_text(
+        CASES["single rate"].replace("2026-09-01", "2025-12-15").replace("2026-08", "2025-12")
+    )
+    args = ["invoice", "invoicing/case.yaml", "--issuer", "invoicing/issuer-before.yaml"]
+    res = runner.invoke(app, [*args, "-o", "case.pdf", "--no-verify"])
+    assert res.exit_code == 0, res.output
+    _, xml = facturx.get_xml_from_pdf(Path("case.pdf").read_bytes(), check_xsd=True)
+    assert isinstance(xml, bytes)
+    assert not _broken_rules(xml), "\n".join(_broken_rules(xml))
+    assert b"<ram:CategoryCode>O</ram:CategoryCode>" in xml and b'schemeID="VA"' not in xml
+    assert b"<ram:TaxTotalAmount" in xml and b">0.00</ram:TaxTotalAmount>" in xml
