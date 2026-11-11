@@ -135,7 +135,10 @@ for that job.
 4. **Show variants as content tabs, with the same labels on every page**:
    `Not VAT-registered` / `Effective method` / `Saldosteuersatz`, and
    `Einzelfirma` / `GmbH` / `AG`. `content.tabs.link` is on, so a reader
-   picks once and every page follows.
+   picks once and every page follows. Open each tab with a sentence that
+   names its case ("Under the effective method, …"): the Markdown copies
+   behind `/llms.txt` drop the tab labels, and an agent reading them must
+   still tell the variants apart. `test_docs.py` checks it.
 5. **Add a "What quints doesn't do here" section.** List each gap with its
    manual workaround. For example, quints doesn't value the goods on hand at
    registration, so the page says to book the Einlageentsteuerung by hand,

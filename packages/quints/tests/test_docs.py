@@ -14,6 +14,8 @@ Extraction rules (documented here because docs authors rely on them):
   blocks every non-comment line is considered.
 - Only ``quints …`` and ``cd …`` lines execute. Anything else (uv, git,
   pipx, …) is skipped — this suite runs offline and in-process.
+- A trailing backslash continues the command on the next line, as in a
+  shell — long invocations are wrapped so they read without scrolling.
 - A line containing a ``<placeholder>`` is skipped: it documents a pattern,
   not a runnable invocation. Prefer concrete commands where possible.
 - An HTML comment containing ``no-test`` on the line above a fence skips the
@@ -66,7 +68,8 @@ def _commands(text: str) -> list[_Command]:
     lang: str | None = None  # inside a fence when not None
     skip_block = False
     prev = ""
-    for raw in text.splitlines():
+    # Join shell line continuations first, so a wrapped command is one command.
+    for raw in re.sub(r"\\\n\s*", "", text).splitlines():
         line = raw.rstrip()
         fence = _FENCE.match(line)
         if fence and lang is None:
@@ -118,6 +121,48 @@ def test_extractor_sees_the_docs() -> None:
     assert total >= 25, f"only {total} documented commands extracted — extractor broken?"
     agents = len(_commands((REPO / AGENTS_MD).read_text()))
     assert agents >= 5, f"AGENTS.md yields only {agents} runnable commands"
+
+
+def test_agent_prompt_is_the_same_everywhere_and_its_commands_run() -> None:
+    # The prompt is pasted into an agent verbatim, from the README or the
+    # docs: both copies must match, and the commands it names must exist.
+    block = re.compile(r"<!-- agent-prompt -->\n```text\n(.*?)```", re.DOTALL)
+    prompts = {
+        page: block.search((REPO / page).read_text())
+        for page in ("README.md", "docs/getting-started.md")
+    }
+    assert all(prompts.values()), f"agent prompt missing: {prompts}"
+    texts = {m.group(1) for m in prompts.values() if m}
+    assert len(texts) == 1, "README.md and docs/getting-started.md prompts differ"
+    commands = [c for c in re.findall(r"`(quints [^`]+)`", texts.pop()) if "<" not in c]
+    assert commands, "the prompt names no runnable quints command"
+    for cmd in commands:
+        result = runner.invoke(app, shlex.split(cmd)[1:])
+        assert result.exit_code == 0, f"prompt: `{cmd}`:\n{result.output}"
+
+
+@pytest.mark.parametrize("page", DOC_PAGES, ids=str)
+def test_tab_bodies_name_their_variant(page: Path) -> None:
+    # The Markdown copies behind /llms.txt drop content-tab labels, so the
+    # variants run together unlabelled. Each tab's first paragraph must say
+    # which case it is, or an agent reads the Saldosteuersatz steps as the
+    # effective method's.
+    lines = (REPO / page).read_text().splitlines()
+    for n, line in enumerate(lines):
+        tab = re.match(r'\s*=== "(.+)"', line)
+        if not tab:
+            continue
+        body = iter(lines[n + 1 :])
+        paragraph = [next(text for text in body if text.strip())]
+        for text in body:
+            if not text.strip():
+                break
+            paragraph.append(text)
+        lead = " ".join(paragraph).lower()
+        names = tab.group(1).lower().split(" / ")
+        assert any(name in lead for name in names), (
+            f'{page}:{n + 1}: tab "{tab.group(1)}" must open with a sentence naming it'
+        )
 
 
 def test_hosted_schemas_are_in_sync() -> None:

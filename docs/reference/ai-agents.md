@@ -17,6 +17,26 @@ legal claim to its source: the article, the ESTV publication, the standard.
 An agent can check that a rule applies to the entity in front of it, and
 show a human where it came from.
 
+## Start from zero
+
+[Getting started](../getting-started.md#hand-it-to-your-ai-agent) has a
+prompt to paste into the agent. It rests on one command:
+
+```bash
+quints init --questions --json
+```
+
+It lists every question `quints init` asks: the flag that answers it, the
+allowed values, when it applies, and where the answer is found (the
+commercial register, the ESTV's registration confirmation). The agent
+answers what it knows, asks a human the rest, and passes each answer as a
+flag. `quints init --json` then echoes the answers it scaffolded from, so
+the agent can show them back.
+
+An agent cannot be prompted. With a question unanswered and no `--yes`,
+`quints init` exits non-zero before it writes anything. `--yes` fills in
+demo answers and is for trying quints, not for real books.
+
 ## Your data
 
 quints itself sends nothing anywhere: it runs locally and calls no model. The
@@ -94,6 +114,18 @@ editors) validate invoice YAML before rendering. The same schemas are
 published with this site under `/quints/schema/`, and scaffolded YAMLs point
 their `$schema` modelines there — validation works before anyone runs the
 command.
+
+## These docs, as Markdown
+
+- [`/llms.txt`](https://sealambda.github.io/quints/llms.txt) indexes a
+  Markdown copy of every page.
+- [`/llms-full.txt`](https://sealambda.github.io/quints/llms-full.txt) is
+  all of them in one file.
+- Every page has its copy at `index.md` under its own URL, and a *Copy as
+  Markdown* button.
+
+The copies are generated from these pages on every deploy, so they cannot
+lag behind them.
 
 ## Determinism as a guarantee
 

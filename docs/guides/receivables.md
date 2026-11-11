@@ -108,6 +108,8 @@ VAT if you charged any.[^art41] quints doesn't book this for you.
 
 === "Not VAT-registered"
 
+    Not VAT-registered, the write-off has no VAT leg:
+
     ```beancount
     2026-06-30 * "ACME" "ACME202602: 0.47 never paid"
       Income:CH:GmbH:Consulting:External:Domestic   0.47 CHF
@@ -117,9 +119,9 @@ VAT if you charged any.[^art41] quints doesn't book this for you.
 
 === "Effective method"
 
-    Split the gross difference at the invoice's rate. At 8.1%, 0.47 holds
-    0.04 VAT. The `mwst: "reduction"` tag puts the net in Ziffer 235 of the
-    return:[^235]
+    Under the effective method, split the gross difference at the invoice's
+    rate. At 8.1%, 0.47 holds 0.04 VAT. The `mwst: "reduction"` tag puts the
+    net in Ziffer 235 of the return:[^235]
 
     ```beancount
     2026-06-30 * "ACME" "ACME202602: 0.47 never paid"

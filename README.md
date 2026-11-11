@@ -42,6 +42,29 @@ cd my-books
 quints vat report -p 2026-Q3
 ```
 
+For real books, hand the setup to your AI agent. Paste this into Claude
+Code, Codex or another coding agent:
+
+<!-- agent-prompt -->
+```text
+Set up my Swiss bookkeeping with quints. Its docs, as Markdown for you:
+https://sealambda.github.io/quints/llms.txt
+
+1. Install it: `uv tool install quints` (or `pipx install quints`).
+2. Run `quints init --questions --json`. It lists what quints must know
+   about my business and where each answer is found.
+3. Answer what you already know about my business, from memory or from
+   files here. Tell me where each answer came from so I can correct it.
+   Ask me the rest in one message. Never guess: the legal form and the VAT
+   status decide what I file.
+4. Run `quints init <directory>` with every answer as a flag. No `--yes`
+   and no `--samples`: these are real books.
+5. In the new directory, run `uv sync` and `uv run quints check`. Then read
+   `AGENTS.md` there and tell me what I should do first.
+```
+
+Or do it by hand: [Getting started](https://sealambda.github.io/quints/getting-started/).
+
 `quints init` writes a runnable project: a Swiss KMU chart of accounts in
 `accounts.bean` (every account mapped to its Kontenrahmen code), transactions
 in `books/<year>.bean` (one file per fiscal year), a `quints.toml`, a

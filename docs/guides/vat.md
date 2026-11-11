@@ -20,6 +20,8 @@ computing and the closing entry. Filing and paying are yours.
 
 === "Effective method"
 
+    Under the effective method:
+
     ```bash
     quints vat report -p 2026-Q3
     ```
@@ -35,6 +37,8 @@ computing and the closing entry. Filing and paying are yours.
     ![The full MWST report on the sample quarter — the Ziffern plus the Vorsteuer, Bezugsteuer, and revenue detail tables](../assets/mwst.gif)
 
 === "Saldosteuersatz"
+
+    Under the Saldosteuersatz method (here on a project scaffolded for it):
 
     ```bash
     quints init jane-books --name "Jane Doe" --legal-form einzelfirma --vat-method saldo --saldo-rate 6.2 --samples --yes
