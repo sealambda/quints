@@ -81,7 +81,7 @@ _ESTV_RATES = "https://www.estv.admin.ch/estv/de/home/mehrwertsteuer/mwst-steuer
 _ESTV_HISTORY = "https://www.estv.admin.ch/de/entwicklung-mehrwertsteuersaetze-schweiz"
 _ESTV_SALDO = "https://www.estv.admin.ch/de/mwst-saldosteuersaetze-pauschalsteuersaetze"
 _IN_FORCE = Source(_ESTV_RATES, "Art. 25 MWSTG", Date(2026, 11, 11))
-_HISTORIC = Source(_ESTV_HISTORY, "Art. 25 MWSTG", None)
+_HISTORIC = Source(_ESTV_HISTORY, "Art. 25 MWSTG", Date(2026, 11, 11))
 
 # One per rate period, keyed (rate class, validity start). A test fails when a
 # period has none; the weekly CI run link-checks them and fails on one not
@@ -95,7 +95,10 @@ RATE_SOURCES: dict[tuple[str, Date], Source] = {
     ("lodging", Date(2024, 1, 1)): _IN_FORCE,
     ("lodging", Date(2018, 1, 1)): _HISTORIC,
     ("lodging", Date(2011, 1, 1)): _HISTORIC,
-    ("saldo", Date(2024, 1, 1)): Source(_ESTV_SALDO, "Art. 37 MWSTG, SR 641.202.62", None),
+    ("saldo", Date(2024, 1, 1)): Source(
+        _ESTV_SALDO, "Art. 37 MWSTG, SR 641.202.62", Date(2026, 11, 11)
+    ),
+    # The list in force until 2023 is no longer on the ESTV page: not re-read.
     ("saldo", Date(2011, 1, 1)): Source(_ESTV_SALDO, "Art. 37 MWSTG, SR 641.202.62", None),
 }
 
