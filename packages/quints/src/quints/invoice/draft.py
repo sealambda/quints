@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from decimal import Decimal
+from pathlib import Path
 
 from .. import config, ledger
 from .model import Invoice, Totals, document_path, vat_included
@@ -43,7 +44,20 @@ def _lines(header: str, meta: list[str], legs: list[tuple[str, str, str]]) -> st
     return "\n".join(out)
 
 
-def receipt_draft(inv: Invoice, totals: Totals, cfg: config.Config | None = None) -> str:
+def _document_meta(doc: Path, sha256: str | None) -> list[str]:
+    """Where the PDF is filed, and the hash that ties the booking to its bytes.
+
+    `sha256:`, not `document_…`: fava's link_documents plugin reads every
+    key that starts with `document` as a file to find."""
+    meta = [f"    document: {_quoted(doc.name)}  ; TODO file the PDF under {doc.parent}/"]
+    if sha256:
+        meta.append(f"    sha256: {_quoted(sha256)}")
+    return meta
+
+
+def receipt_draft(
+    inv: Invoice, totals: Totals, cfg: config.Config | None = None, sha256: str | None = None
+) -> str:
     """The booking for a pro forma's payment, when it arrives.
 
     Not income yet: the advance is a liability until the invoice credits it.
@@ -66,7 +80,7 @@ def receipt_draft(inv: Invoice, totals: Totals, cfg: config.Config | None = None
     )
     meta = [
         f"    proforma: {_quoted(inv.number)}",
-        f"    document: {_quoted(doc.name)}  ; TODO file the PDF under {doc.parent}/",
+        *_document_meta(doc, sha256),
         f"    ; TODO the bank leg: {gross:.2f} {ccy} into the account it was paid to.",
     ]
     if vat:
@@ -82,6 +96,7 @@ def build_draft(
     cfg: config.Config | None = None,
     chf_rate: Decimal | None = None,
     received: Mapping[str, Received] | None = None,
+    sha256: str | None = None,
 ) -> str:
     """A balanced receivable booking matching what `verify.cross_check` expects.
 
@@ -95,10 +110,14 @@ def build_draft(
     income it becomes is valued at that too, so the advances account clears
     in CHF as well as in units. A pro forma missing from ``received`` is
     released as the invoice credits it.
+
+    ``sha256`` is the rendered PDF's: booked next to ``document:``, it makes
+    the invoice issued — `quints invoice` and `quints check` then verify the
+    filed PDF against it instead of rendering it again.
     """
     cfg = cfg or config.get()
     if inv.proforma:
-        return receipt_draft(inv, totals, cfg)
+        return receipt_draft(inv, totals, cfg, sha256)
     customer = inv.resolved_customer
     ccy = inv.currency
     income = filing_account(inv, cfg)
@@ -139,7 +158,7 @@ def build_draft(
         # The payer quotes their own reference, not ours, when they ask about
         # this invoice — so the ledger can be searched by it too.
         meta.append(f"    customer_reference: {_quoted(inv.customer_reference)}")
-    meta.append(f"    document: {_quoted(doc.name)}  ; TODO file the PDF under {doc.parent}/")
+    meta += _document_meta(doc, sha256)
     header = f"{inv.issue_date} * {_quoted(customer.name)} {_quoted(narration)} ^{inv.number}"
     return _lines(header, meta, legs)
 

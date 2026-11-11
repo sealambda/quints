@@ -310,6 +310,20 @@
       "title": "Advances",
       "type": "array"
     },
+    "corrected": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The day an already issued invoice was corrected and sent again under the same number. The PDF then says it replaces the version of the issue date; `quints invoice --reissue` asks for it.",
+      "title": "Corrected"
+    },
     "round_5": {
       "anyOf": [
         {

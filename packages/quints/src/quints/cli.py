@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from _typeshed import DataclassInstance
 
     from .invoice.bank import Check as BankCheck
-    from .invoice.model import Invoice, Totals
+    from .invoice.model import Invoice, Issuer, Totals
     from .invoice.reference import PaymentReference
     from .invoice.verify import CrossCheck
 
@@ -121,6 +121,43 @@ def _authoring_problems(exc: ValidationError) -> str:
     return "\n".join([f"{len(problems)} problems in {exc.title}:", *(f"  {p}" for p in problems)])
 
 
+class _FileErrors(ValueError):
+    """The errors of several authoring files, so none hides behind another."""
+
+    def __init__(self, errors: list[ValueError]) -> None:
+        self.errors = errors
+        super().__init__(
+            "\n".join(
+                _authoring_problems(e) if isinstance(e, ValidationError) else str(e) for e in errors
+            )
+        )
+
+
+def _error_items(exc: ValueError) -> list[dict[str, str | None]]:
+    """An error as `--json` reports it: `{code, field, message}` per problem.
+
+    `code` is stable: pydantic's error type for a field of an authoring file
+    (`file` names which), the check's name for a `Problems` entry, else
+    `error`."""
+    from .invoice.model import Problems
+
+    if isinstance(exc, _FileErrors):
+        return [item for e in exc.errors for item in _error_items(e)]
+    if isinstance(exc, ValidationError):
+        return [
+            {
+                "code": e["type"],
+                "file": exc.title,
+                "field": _field_path(e["loc"]) or None,
+                "message": e["msg"].removeprefix("Value error, "),
+            }
+            for e in exc.errors()
+        ]
+    if isinstance(exc, Problems):
+        return [{"code": p.code, "field": p.field, "message": p.message} for p in exc.problems]
+    return [{"code": "error", "field": None, "message": str(exc)}]
+
+
 class _CleanErrors(TyperGroup):
     """Report a domain error as one `ERROR:` line instead of a traceback.
 
@@ -137,11 +174,16 @@ class _CleanErrors(TyperGroup):
     # only name for the real type is `typer._click.core.Context` — private, and
     # a different class from `click.Context`. We never touch the context here.
     def invoke(self, ctx: Any) -> object:
+        # Read before click consumes them: under --json the error is JSON too.
+        as_json = "--json" in [*ctx._protected_args, *ctx.args]  # pyright: ignore[reportPrivateUsage]
         try:
             return super().invoke(ctx)
         except ValueError as exc:
             if os.environ.get("QUINTS_TRACEBACK"):
                 raise
+            if as_json:
+                _json_out({"ok": False, "errors": _error_items(exc)})
+                raise typer.Exit(1) from None
             _fail(_authoring_problems(exc) if isinstance(exc, ValidationError) else str(exc))
 
 
@@ -586,29 +628,42 @@ def check(
     import dataclasses
 
     _require_ledger(file)
+    from .invoice import verify as v
+
     entries, errors = ledger.load_entries(file)
     stats = ledger.stats(entries)
+    # Issued invoices: each filed PDF against its booked hash, and the numbers.
+    invoice_errors, warnings = v.audit(entries, file.parent, config_mod.get())
+    failed = bool(errors or invoice_errors)
     if as_json:
         _json_out(
             {
-                "ok": not errors,
+                "ok": not failed,
                 "errors": [
-                    {
-                        "file": (e.source or {}).get("filename"),
-                        "line": (e.source or {}).get("lineno"),
-                        "message": e.message,
-                    }
-                    for e in errors
+                    *(
+                        {
+                            "file": (e.source or {}).get("filename"),
+                            "line": (e.source or {}).get("lineno"),
+                            "message": e.message,
+                        }
+                        for e in errors
+                    ),
+                    *({"file": None, "line": None, "message": msg} for msg in invoice_errors),
                 ],
+                "warnings": warnings,
                 "stats": dataclasses.asdict(stats),
             }
         )
-        raise typer.Exit(1 if errors else 0)
-    if errors:
+        raise typer.Exit(1 if failed else 0)
+    for msg in warnings:
+        typer.secho(f"warning: {msg}", fg="yellow", err=True)
+    if failed:
         from beancount.parser import printer
 
         printer.print_errors(errors)
-        typer.secho(f"{len(errors)} error(s).", fg="red", err=True)
+        for msg in invoice_errors:
+            typer.secho(msg, fg="red", err=True)
+        typer.secho(f"{len(errors) + len(invoice_errors)} error(s).", fg="red", err=True)
         raise typer.Exit(1)
     span = (
         f", {stats.first_transaction}..{stats.last_transaction}" if stats.first_transaction else ""
@@ -865,9 +920,18 @@ def invoice(
     verify: bool = typer.Option(
         True, "--verify/--no-verify", help="Cross-check total against the ledger."
     ),
+    reissue: bool = typer.Option(
+        False,
+        "--reissue",
+        help="Render over an issued invoice (one booked with its PDF's hash). "
+        "Needs `corrected: <date>` in the invoice file.",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ):
-    """Render a Swiss QR-bill invoice PDF (domestic or export)."""
+    """Render a Swiss QR-bill invoice PDF (domestic or export).
+
+    Booked with its PDF's hash, an invoice is issued: it is then checked
+    against that hash, never rendered again — except with --reissue."""
     from .invoice import draft as dr
     from .invoice import model as m
     from .invoice import reference as ref_mod
@@ -880,9 +944,7 @@ def invoice(
             raise typer.Exit(1)
 
     config_mod.use_ledger(file)  # the issuer's VAT status comes from its quints.toml
-    registry = m.load_customers(customers) if customers.exists() else None
-    inv = m.load_invoice(data, registry)
-    iss = m.load_issuer(issuer)
+    inv, iss = _load_invoice_files(data, issuer, customers)
     cfg = config_mod.get()
     # quints.toml says whether the issuer was VAT-registered on the issue date;
     # an invoice from before registration (or after it ended) carries no VAT.
@@ -891,27 +953,100 @@ def invoice(
         # File the PDF the way beancount documents are filed: under the folder
         # of the account it books against, date-prefixed, next to the evidence.
         out = m.document_path(inv, dr.filing_account(inv, cfg))
-    path, totals, payload = r.render(inv, iss, out, vat_registered=registered)
+    totals = r.check(inv, iss, registered)
     ref = ref_mod.payment_reference(inv, iss.account(inv.currency))
+    # Read the books even under --no-verify: whether the invoice is issued
+    # decides whether its PDF may be written at all.
+    cc = v.cross_check(file, inv, totals) if file.exists() else None
+    issued = bool(cc and cc.found and cc.sha256)
+    if issued and not reissue:
+        digest = _verify_issued(out, inv, cc.sha256 if cc else None)
+        if as_json:
+            _json_out(_invoice_payload(inv, ref, out, totals, None, cc, None, digest, issued=True))
+        else:
+            ui.console.print(f"[ok]Already issued[/] {out}  ·  matches its booked hash")
+            if cc and verify:
+                _print_cross_check(cc, inv, None)
+        return
+    if issued and inv.corrected is None:
+        raise ValueError(
+            f"{inv.number} is issued — a reissue has to say so. Add `corrected: <date>` to "
+            f"{data}: the PDF then states that it replaces the version of {inv.issue_date}"
+        )
 
+    path, totals, payload = r.render(inv, iss, out, vat_registered=registered)
+    digest = v.sha256(path)
     qr_ok = _qr_payload_ok(payload)
     if not as_json:
         _print_rendered(path, inv, totals, ref, registered, payload, qr_ok)
-    cc = None
+        if cc and cc.found and cc.sha256 != digest:
+            # Reissued, or booked before quints recorded hashes.
+            ui.console.print(
+                f"[warn]Book this PDF's hash[/] on the {inv.number} transaction:\n"
+                f'    sha256: "{digest}"'
+            )
     ledger_draft = None
-    if verify and file.exists():
-        cc = v.cross_check(file, inv, totals)
+    if not verify:
+        cc = None
+    elif cc is None:
+        if not as_json:
+            ui.console.print("[warn]ledger not found — cross-check skipped.[/]")
+    else:
         if not cc.found:
             ledger_draft = dr.build_draft(
-                inv, totals, chf_rate=_chf_rate(file, inv), received=cc.received
+                inv, totals, chf_rate=_chf_rate(file, inv), received=cc.received, sha256=digest
             )
         if not as_json:
             _print_cross_check(cc, inv, ledger_draft)
-    elif verify and not as_json:
-        ui.console.print("[warn]ledger not found — cross-check skipped.[/]")
 
     if as_json:
-        _json_out(_invoice_payload(inv, ref, path, totals, qr_ok, cc, ledger_draft))
+        _json_out(
+            _invoice_payload(inv, ref, path, totals, qr_ok, cc, ledger_draft, digest, issued=issued)
+        )
+
+
+def _load_invoice_files(data: Path, issuer: Path, customers: Path) -> tuple[Invoice, Issuer]:
+    """The invoice and the issuer — or the errors of every file that has any."""
+    from .invoice import model as m
+
+    errors: list[ValueError] = []
+    registry = inv = iss = None
+    try:
+        registry = m.load_customers(customers) if customers.exists() else None
+    except ValueError as e:
+        errors.append(e)
+    try:
+        inv = m.load_invoice(data, registry)
+    except ValueError as e:
+        # With a broken registry, "no registry found" would be a second, false error.
+        if not errors or isinstance(e, ValidationError):
+            errors.append(e)
+    try:
+        iss = m.load_issuer(issuer)
+    except ValueError as e:
+        errors.append(e)
+    if inv is None or iss is None or errors:
+        raise errors[0] if len(errors) == 1 else _FileErrors(errors)
+    return inv, iss
+
+
+def _verify_issued(path: Path, inv: Invoice, booked: str | None) -> str:
+    """The filed PDF's hash — which must be the one its booking recorded."""
+    from .invoice import verify as v
+
+    if not path.exists():
+        raise ValueError(
+            f"{inv.number} is issued, but its PDF is not at {path} — restore it from git, "
+            "or render a corrected version with --reissue"
+        )
+    digest = v.sha256(path)
+    if digest != booked:
+        raise ValueError(
+            f"{path} is not the PDF {inv.number} was issued as: its SHA-256 is {digest}, "
+            f"the ledger booked {booked} — restore it from git, or book this hash if it "
+            "is a reissue"
+        )
+    return digest
 
 
 def _qr_payload_ok(payload: str | None) -> bool | None:
@@ -933,6 +1068,9 @@ def _invoice_payload(
     qr_ok: bool | None,
     cc: CrossCheck | None,
     ledger_draft: str | None,
+    sha256: str,
+    *,
+    issued: bool,
 ) -> dict[str, object]:
     """`quints invoice --json`."""
     import dataclasses
@@ -948,6 +1086,9 @@ def _invoice_payload(
         "reference_type": ref.kind,
         "customer_reference": inv.customer_reference,
         "pdf": str(path),
+        "pdf_sha256": sha256,
+        # Booked with its hash: the PDF was verified, not rendered again.
+        "issued": issued,
         "totals": totals.model_dump(),
         "qr_payload_ok": qr_ok,
         "cross_check": dataclasses.asdict(cc) if cc else None,
