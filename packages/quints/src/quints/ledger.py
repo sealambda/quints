@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date as Date
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
+from typing import NamedTuple
 
 from beancount import loader
 from beancount.core import convert, data, prices
@@ -65,6 +66,37 @@ VAT_RATE_CLASSES: dict[str, tuple[tuple[Date, Decimal], ...]] = {
     "standard": VAT_RATES,
     "reduced": VAT_RATES_REDUCED,
     "lodging": VAT_RATES_LODGING,
+}
+
+
+class Source(NamedTuple):
+    """Where a figure that is law comes from, and when someone last read it there."""
+
+    url: str
+    article: str
+    checked_on: Date | None  # None: carried over, not yet re-read at `url`
+
+
+_ESTV_RATES = "https://www.estv.admin.ch/estv/de/home/mehrwertsteuer/mwst-steuersaetze.html"
+_ESTV_HISTORY = "https://www.estv.admin.ch/de/entwicklung-mehrwertsteuersaetze-schweiz"
+_ESTV_SALDO = "https://www.estv.admin.ch/de/mwst-saldosteuersaetze-pauschalsteuersaetze"
+_IN_FORCE = Source(_ESTV_RATES, "Art. 25 MWSTG", Date(2026, 11, 11))
+_HISTORIC = Source(_ESTV_HISTORY, "Art. 25 MWSTG", None)
+
+# One per rate period, keyed (rate class, validity start). A test fails when a
+# period has none; the weekly CI run link-checks them and fails on one not
+# re-read for a year.
+RATE_SOURCES: dict[tuple[str, Date], Source] = {
+    ("standard", Date(2024, 1, 1)): _IN_FORCE,
+    ("standard", Date(2018, 1, 1)): _HISTORIC,
+    ("standard", Date(2011, 1, 1)): _HISTORIC,
+    ("reduced", Date(2024, 1, 1)): _IN_FORCE,
+    ("reduced", Date(2011, 1, 1)): _HISTORIC,
+    ("lodging", Date(2024, 1, 1)): _IN_FORCE,
+    ("lodging", Date(2018, 1, 1)): _HISTORIC,
+    ("lodging", Date(2011, 1, 1)): _HISTORIC,
+    ("saldo", Date(2024, 1, 1)): Source(_ESTV_SALDO, "Art. 37 MWSTG, SR 641.202.62", None),
+    ("saldo", Date(2011, 1, 1)): Source(_ESTV_SALDO, "Art. 37 MWSTG, SR 641.202.62", None),
 }
 
 
