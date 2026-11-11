@@ -30,8 +30,11 @@ sie = "sie"
 unter = "unter"
 vor = "vor"
 ist = "ist"
-# Italian/Spanish invoice labels.
+# French/Italian/Spanish invoice labels.
 cliente = "cliente"
+contient = "contient"
+incluse = "incluse"
+remplace = "remplace"
 ser = "ser"
 # Currency code (Jordanian dinar).
 jod = "jod"
