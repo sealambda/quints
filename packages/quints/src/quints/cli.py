@@ -1079,6 +1079,7 @@ def _invoice_payload(
         "number": inv.number,
         "kind": inv.kind,
         "proforma": inv.proforma,
+        "credit_note_for": inv.credit_note_for,
         "currency": inv.currency,
         "issue_date": inv.issue_date,
         "customer": inv.resolved_customer.name,
@@ -1109,6 +1110,8 @@ def _print_rendered(
     from .invoice import model as m
 
     kind = f"pro forma {inv.kind}" if inv.proforma else inv.kind
+    if inv.credit_note_for:
+        kind = f"credit note for {inv.credit_note_for}"
     ui.console.print(
         f"[ok]Wrote[/] {path}  ·  {kind}  ·  {inv.currency} {m.money(totals.amount_due)}"
     )

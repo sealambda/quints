@@ -14,8 +14,8 @@ later matches the payment to it.
     - **Invoices:** domestic Swiss QR-bills in CHF or EUR, and export
       invoices for services to a customer abroad (SEPA/SWIFT, EU reverse
       charge).
-    - **Not covered:** e-invoicing formats (ZUGFeRD, Peppol), credit notes as
-      separate documents, instalment plans beyond
+    - **Not covered:** e-invoicing formats (ZUGFeRD, Peppol), instalment
+      plans beyond
       [advances against a pro forma](#get-paid-before-you-invoice-pro-forma),
       and two kinds of foreign sale whose legal basis differs from the export
       invoice's note: exported goods, and services taxed in Switzerland
@@ -677,6 +677,32 @@ work, not in money, so it is not revalued at year end: `quints fx revalue`
 skips it, and the balance sheet carries it at the CHF it was received at
 until the invoice releases it.
 
+## Cancel or reduce an invoice: credit note
+
+An issued invoice is corrected by a further document that refers to it.[^credit-note]
+Copy the invoice file, give it a number from its own series, and name the
+invoice it corrects:
+
+```yaml
+number: CN2026001
+credit_note_for: INV2026014
+issue_date: 2026-07-10
+# kind, currency, customer, supply, items: as on the invoice. All lines
+# cancel it; some of them, or a lower price, reduce it.
+```
+
+`quints invoice` on that file writes a PDF titled as a credit note, with
+every amount negated, a reference to the invoice and no payment part. The
+ledger draft reverses income and VAT per rate, and its receivable leg
+carries `invoice: "INV2026014"`, so `quints receivables` nets it against the
+invoice. A cancelled invoice then shows nothing open; re-invoice under a new
+number. If the customer had already paid, the open item turns negative: book
+the refund against it.
+
+Use this when the customer has booked or paid the original, or when amounts
+change. For a wrong address caught early, a
+[reissue](#issued-means-fixed) under the same number is enough.
+
 ## Editor validation
 
 The invoice, issuer, and customers files have JSON Schemas, published with
@@ -745,6 +771,7 @@ consolidated total converts everything at the latest rate in your price file
 [^per-rate]: Art. 26 Abs. 2 Bst. f MWSTG: the invoice states "den anwendbaren Steuersatz und den vom Entgelt geschuldeten Steuerbetrag". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_26).
 [^discount]: Art. 24 Abs. 1 MWSTG: "Die Steuer wird vom tatsächlich empfangenen Entgelt berechnet." [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_24).
 [^pass-through]: Art. 24 Abs. 6 Bst. b MWSTG: not part of the consideration are "Beträge, die die steuerpflichtige Person von der die Leistung empfangenden Person als Erstattung der in deren Namen und für deren Rechnung getätigten Auslagen erhält, sofern sie diese gesondert ausweist (durchlaufende Posten)". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_24).
+[^credit-note]: Art. 27 Abs. 4 MWSTG: a later correction is made by a document, addressed to the recipient, that refers to the original invoice and revokes it. MWST-Info 16, Ziff. 2.5.1. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^too-high]: Art. 27 Abs. 2 MWSTG: whoever "für eine Leistung eine zu hohe Steuer ausweist, schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^art27]: Art. 27 Abs. 1 and 2 MWSTG: "Wer nicht im Register der steuerpflichtigen Personen eingetragen ist …, darf in Rechnungen nicht auf die Steuer hinweisen"; who shows it anyway "schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^vat-id]: Art. 26 Abs. 2 Bst. a MWSTG: the invoice names the issuer "sowie die Nummer, unter der er oder sie eingetragen ist". The `MWST` suffix format is the one in [MWST-Info 16, Ziff. 2.2](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/cipherDisplay.xhtml?publicationId=1002536&componentId=1002626).

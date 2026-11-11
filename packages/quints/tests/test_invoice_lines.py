@@ -138,3 +138,31 @@ def test_pass_through_items_are_outside_vat_and_revenue(project: Path) -> None:
     after = _vat_report()
     assert not after["violations"]
     assert Decimal(str(after["z303_tax"])) - Decimal(str(before["z303_tax"])) == Decimal("40.50")
+
+
+def test_a_credit_note_cancels_its_invoice(project: Path) -> None:
+    """Cancel and re-invoice: the credit note reverses income and VAT and
+    closes the invoice's open item."""
+    before = _vat_report()
+    _issue(MIXED)
+    credit = _issue(
+        MIXED.replace("INV2026016", "CN2026001").replace("2026-09-01", "2026-09-10")
+        + "credit_note_for: INV2026016\n"
+    )
+    totals = credit["totals"]
+    assert isinstance(totals, dict)
+    assert totals["grand_total"] == "-1422.95" and totals["vat_amount"] == "-89.67"
+    draft = str(credit["ledger_draft"])
+    assert 'credit_note_for: "INV2026016"' in draft and 'invoice: "INV2026016"' in draft
+    assert credit["qr_payload_ok"] is None  # nothing to pay: no payment part
+
+    assert runner.invoke(app, ["check"]).exit_code == 0
+    res = runner.invoke(app, ["invoice", "invoicing/new.yaml", "--json"])
+    assert json.loads(res.stdout)["cross_check"]["ok"]
+    # Nothing is owed on either document, and the quarter's return is back
+    # where it was.
+    res = runner.invoke(app, ["receivables", "--at", "2026-09-30", "--json"])
+    assert not [o for o in json.loads(res.stdout)["open"] if "2026016" in o["number"]]
+    after = _vat_report()
+    figures = [k for k in before if k.startswith("z")]
+    assert figures and all(after[k] == before[k] for k in figures)

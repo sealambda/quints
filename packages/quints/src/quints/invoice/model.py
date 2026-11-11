@@ -438,6 +438,17 @@ class Invoice(BaseModel):
             "series (PF2026001)."
         ),
     )
+    credit_note_for: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Makes this document a credit note against the invoice with that "
+            "number. Write the lines as the invoice had them (all of them to "
+            "cancel it, some to reduce it): every amount is negated, the PDF "
+            "refers to the invoice, and the ledger draft reverses income and VAT. "
+            "Give credit notes their own number series (CN2026001)."
+        ),
+    )
     advances: list[Advance] = Field(
         default_factory=list,
         description=(
@@ -513,6 +524,8 @@ class Invoice(BaseModel):
             raise ValueError(
                 "a pro forma cannot credit advances — list them on the invoice that follows it"
             )
+        if self.credit_note_for and (self.proforma or self.advances):
+            raise ValueError("a credit note is neither a pro forma nor does it credit advances")
         if self.proforma and self.pass_through:
             # shortcut: a pro forma's receipt is split into net and VAT as a
             # whole; outlays would need their own leg. Add that when asked for.
@@ -942,6 +955,17 @@ def compute(inv: Invoice, vat_registered: bool = True) -> Totals:
             f"invoice {inv.number}: advances of {advances} exceed its total of {grand} "
             f"{inv.currency} — refund the difference or issue a credit note"
         )
+    # A credit note is its invoice with every amount negated — after rounding,
+    # so the two cancel to the cent.
+    sign = -1 if inv.credit_note_for else 1
+    groups = [g.model_copy(update={"net": sign * g.net, "vat": sign * g.vat}) for g in groups]
+    subtotal, discount, vat, passed_on = (
+        sign * subtotal,
+        sign * discount,
+        sign * vat,
+        sign * passed_on,
+    )
+    unrounded, grand = sign * unrounded, sign * grand
     return Totals(
         subtotal=subtotal,
         discount=discount,

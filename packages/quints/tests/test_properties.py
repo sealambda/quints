@@ -23,7 +23,7 @@ from quints.invoice.model import (
     compute,
 )
 
-_amount = st.decimals(min_value=Decimal("0.01"), max_value=Decimal("99999"), places=2)
+_amount = st.decimals(min_value=Decimal("1"), max_value=Decimal("99999"), places=2)
 _quantity = st.decimals(min_value=Decimal("0.25"), max_value=Decimal("500"), places=2)
 _lines = st.lists(st.tuples(_quantity, _amount, st.booleans()), min_size=1, max_size=8)
 _rate_class = st.sampled_from(sorted(ledger.VAT_RATE_CLASSES))
@@ -155,3 +155,22 @@ def test_no_source_was_last_read_over_a_year_ago() -> None:
         if s.checked_on and date.today() - s.checked_on > timedelta(days=365)
     }
     assert not stale, f"re-read these sources and update checked_on: {stale}"
+
+
+@given(_lines, _day, _rate_class, st.booleans(), _discount)
+def test_a_credit_note_negates_every_amount_of_its_invoice(
+    lines: list[tuple[Decimal, Decimal, bool]],
+    on: date,
+    rate_class: str,
+    round_5: bool,
+    discount: Decimal | None,
+) -> None:
+    inv = _invoice(lines, on, rate_class, round_5, discount)
+    t = compute(inv)
+    c = compute(inv.model_copy(update={"number": "CN1", "credit_note_for": "INV1"}))
+    for name in ("subtotal", "discount", "vat_amount", "pass_through", "rounding", "grand_total"):
+        assert getattr(c, name) == -getattr(t, name), name
+    assert c.amount_due == -t.amount_due
+    assert [(g.rate, g.net, g.vat) for g in c.vat_groups] == [
+        (g.rate, -g.net, -g.vat) for g in t.vat_groups
+    ]

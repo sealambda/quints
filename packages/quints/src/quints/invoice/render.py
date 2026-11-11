@@ -93,8 +93,23 @@ def build_context(
             "date": lbl["proforma_date"],
             "grand_total": lbl["amount_due"],
         }
+    if inv.credit_note_for:
+        lbl = {
+            **lbl,
+            "invoice": lbl["credit_note"],
+            "invoice_no": lbl["credit_note_no"],
+            "date": lbl["proforma_date"],
+            "grand_total": lbl["credit_total"],
+        }
+    sign = -1 if inv.credit_note_for else 1
     customer = inv.resolved_customer
     references = [
+        # A credit note refers to the invoice it corrects (Art. 27 Abs. 4 MWSTG).
+        *(
+            [{"label": lbl["credit_note_for"], "value": inv.credit_note_for}]
+            if inv.credit_note_for
+            else []
+        ),
         *(
             [{"label": lbl["your_reference"], "value": inv.customer_reference}]
             if inv.customer_reference
@@ -102,9 +117,11 @@ def build_context(
         ),
         *({"label": r.label, "value": r.value} for r in inv.references),
     ]
+    # Nothing falls due on a credit note, or on an invoice advances covered.
+    payable = inv.terms_days is not None and totals.amount_due > 0
     due = (
-        _fmt_date(inv.issue_date + timedelta(days=inv.terms_days), inv.locale)
-        if inv.terms_days is not None and totals.amount_due
+        _fmt_date(inv.issue_date + timedelta(days=inv.terms_days or 0), inv.locale)
+        if payable
         else ""
     )
     return {
@@ -143,19 +160,15 @@ def build_context(
         # The customer's own reference, then whatever else their side demands —
         # printed in the title meta grid, under the invoice number and date.
         "references": references,
-        "terms": (
-            lbl["terms"].format(days=inv.terms_days)
-            if inv.terms_days is not None and totals.amount_due
-            else None
-        ),
+        "terms": lbl["terms"].format(days=inv.terms_days) if payable else None,
         "items": [
             {
                 "pos": i + 1,
                 "description": it.description,
-                "quantity": number(it.quantity, inv.locale),
+                "quantity": number(sign * it.quantity, inv.locale),
                 "unit": it.unit,
                 "unit_price": money(it.unit_price, inv.locale),
-                "total": money(it.total, inv.locale),
+                "total": money(sign * it.total, inv.locale),
                 "tag": _line_tag(inv, it, lbl, mixed=len(totals.vat_groups) > 1),
             }
             for i, it in enumerate(inv.items)
@@ -163,7 +176,7 @@ def build_context(
         "totals": _totals_context(inv, totals),
         # Outlays in the customer's name: their own block, after the VAT rows.
         "pass_through": [
-            {"description": p.description, "amount": money(p.amount, inv.locale)}
+            {"description": p.description, "amount": money(sign * p.amount, inv.locale)}
             for p in inv.pass_through
         ],
         # Credited advances, between the invoice total and the amount due.
@@ -224,7 +237,7 @@ def _document_metadata(
         f"{lbl['supply']} {inv.supply.text(inv.locale)}",
         f"{due_label} {inv.currency} {money(totals.amount_due, inv.locale)}",
     ]
-    if inv.terms_days is not None and totals.amount_due:
+    if inv.terms_days is not None and totals.amount_due > 0:
         due = inv.issue_date + timedelta(days=inv.terms_days)
         parts.append(f"{lbl['due_date']} {_fmt_date(due, inv.locale)}")
         parts.append(lbl["terms"].format(days=inv.terms_days))
@@ -457,7 +470,7 @@ def check(inv: Invoice, issuer: Issuer, vat_registered: bool = True) -> Totals:
     attempt("reverse_charge", "customer.vat_id", lambda: _reverse_charge(inv))
     totals = attempt("advances", "advances", lambda: compute(inv, vat_registered))
     account = attempt("bank_account", bank_key, lambda: issuer.account(inv.currency))
-    if account is not None and totals is not None and totals.amount_due:
+    if account is not None and totals is not None and totals.amount_due > 0:
         ok = attempt(
             "payment_reference", "reference", lambda: ref_mod.payment_reference(inv, account)
         )
@@ -500,8 +513,9 @@ def render(
     work = Path(tempfile.mkdtemp(prefix="quints-inv-"))
     try:
         qr_payload = None
-        if not totals.amount_due:
-            payment: dict[str, str | None] = {"type": "none"}  # advances covered it all
+        if totals.amount_due <= 0:
+            # Advances covered it all, or it is a credit note: nothing to pay.
+            payment: dict[str, str | None] = {"type": "none"}
         elif inv.kind == "domestic":
             # Swiss QR-bill: IBAN + SCOR, or QR-IBAN + QRR — see `reference.py`.
             bill = qr.build_bill(inv, issuer, account, totals)
