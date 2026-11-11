@@ -807,7 +807,7 @@ def test_invoice_rejects_unknown_locale():
 
 def test_invoice_rejects_locale_without_labels():
     with pytest.raises(ValueError, match="no invoice labels"):
-        _invoice(locale="fr_FR")  # real locale, no fr labels
+        _invoice(locale="pt_PT")  # real locale, no pt labels
 
 
 def test_invoice_rejects_legacy_language_key():
