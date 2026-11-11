@@ -16,7 +16,8 @@ data omitted:
 ``20`` customer reference — the payer's PO / order number
 ``30`` the issuer's UID, digits only (``CHE-106.017.086 MWST`` → ``106017086``)
 ``31`` VAT date — the supply: ``YYMMDD`` for a day, ``YYMMDDYYMMDD`` for a period
-``32`` VAT rate on the whole invoice, e.g. ``8.1``
+``32`` VAT rate on the whole invoice, e.g. ``8.1`` — or, with several rates,
+       ``rate:net`` per rate: ``8.1:1000;2.6:500``
 ``33`` pure import VAT (not applicable to an invoice quints issues)
 ``40`` payment conditions, ``discount%:days`` — ``0:30`` is net 30 days
 ===== ==========================================================
@@ -55,6 +56,14 @@ def _rate(value: Decimal) -> str:
     return f"{value.normalize():f}"
 
 
+def _vat_details(totals: Totals) -> str:
+    """/32/: the one rate, or `rate:net` for each of several."""
+    groups = totals.vat_groups
+    if len(groups) == 1:
+        return _rate(groups[0].rate)
+    return ";".join(f"{_rate(g.rate)}:{_rate(g.net)}" for g in groups)
+
+
 def billing_information(
     inv: Invoice, issuer: Issuer, totals: Totals, message: str = ""
 ) -> str | None:
@@ -77,7 +86,7 @@ def billing_information(
         "20": inv.customer_reference or "",
         "30": uid or "",
         "31": inv.supply.swico(),
-        "32": _rate(totals.vat_rate) if inv.kind == "domestic" and totals.vat_registered else "",
+        "32": _vat_details(totals),
         "40": f"0:{inv.terms_days}" if inv.terms_days is not None else "",
     }
     if not tags["10"]:

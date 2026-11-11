@@ -7,7 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from .. import config, ledger
-from .model import Invoice, Totals, document_path, vat_included
+from .model import Invoice, Totals, VatGroup, document_path, vat_included
 from .verify import Received
 
 
@@ -144,7 +144,19 @@ def build_draft(
         else:
             released.append((advances, f"{r.net:>10.2f} {ccy}", tag))
 
-    legs = [*([(income, f"{-rest:>10.2f} {ccy}", "")] if rest else []), *slices]
+    # The VAT return reads the rate class off the income leg: a rate other
+    # than the standard one is tagged, and several rates get a leg each.
+    groups = totals.vat_groups or [None]
+    others = sum((g.net for g in groups[1:] if g), Decimal("0"))
+    legs = [
+        *(
+            [(income, f"{-(rest - others):>10.2f} {ccy}", _mwst(groups[0]))]
+            if rest - others
+            else []
+        ),
+        *((income, f"{-g.net:>10.2f} {ccy}", _mwst(g)) for g in groups[1:] if g),
+        *slices,
+    ]
     if totals.amount_due:
         legs.append((cfg.receivable, f"{totals.amount_due:>10.2f} {ccy}", ""))
     legs += released
@@ -161,6 +173,13 @@ def build_draft(
     meta += _document_meta(doc, sha256)
     header = f"{inv.issue_date} * {_quoted(customer.name)} {_quoted(narration)} ^{inv.number}"
     return _lines(header, meta, legs)
+
+
+def _mwst(group: VatGroup | None) -> str:
+    """The posting's `mwst:` tag — none for the standard rate, the default."""
+    if group is None or group.rate_class == "standard":
+        return ""
+    return f"mwst: {_quoted(group.rate_class)}"
 
 
 def _as_credited(inv: Invoice, number: str, rate: Decimal) -> Received:

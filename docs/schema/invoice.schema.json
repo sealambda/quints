@@ -93,6 +93,22 @@
           "default": "",
           "title": "Unit",
           "type": "string"
+        },
+        "vat_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "VAT rate of this line in per cent, when it differs from the invoice's `vat.rate` \u2014 books at 2.6 next to consulting at 8.1. VAT is computed and shown per rate (Art. 26 Abs. 2 Bst. f MWSTG).",
+          "title": "Vat Rate"
         }
       },
       "required": [
