@@ -528,7 +528,10 @@ def test_cli_init_questions_lists_what_an_agent_must_answer(tmp_path: Path):
     assert res.exit_code == 0, res.output
     listed = json.loads(res.output)["questions"]
     assert all(q["source"] for q in listed)
-    help_text = runner.invoke(app, ["init", "--help"], terminal_width=200).output
+    # GitHub Actions makes rich colour the help, which splits a flag's name
+    # with escape codes: compare the text, not the styling.
+    styled = runner.invoke(app, ["init", "--help"], terminal_width=200).output
+    help_text = re.sub(r"\x1b\[[0-9;]*m", "", styled)
     assert all(q["flag"] in help_text for q in listed)
 
     flags = {q["key"]: q["flag"] for q in listed}
