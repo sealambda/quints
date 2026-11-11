@@ -71,20 +71,20 @@ on the transaction date:
 
 === "Not VAT-registered"
 
-    Book gross: no InputVAT, no OutputVAT. A foreign service is a plain
-    expense. Bezugsteuer only starts once such purchases pass CHF 10'000 in a
+    Not VAT-registered, you book gross: no InputVAT, no OutputVAT. A foreign
+    service is a plain expense. Bezugsteuer only starts once such purchases pass CHF 10'000 in a
     calendar year, and then you have to register for it.[^bezug]
 
 === "Effective method"
 
-    Split a purchase with Swiss VAT into net + InputVAT, and book a sale's
-    VAT to OutputVAT. For a foreign service, book the Bezugsteuer pair.
+    Under the effective method, split a purchase with Swiss VAT into net +
+    InputVAT, and book a sale's VAT to OutputVAT. For a foreign service, book the Bezugsteuer pair.
     `quints vat convert … --bezugsteuer` prints it in CHF at the right rate.
 
 === "Saldosteuersatz"
 
-    Book purchases gross: no InputVAT, ever. The Saldosteuersatz already
-    accounts for input tax. Sales still carry the statutory VAT to
+    Under the Saldosteuersatz method, book purchases gross: no InputVAT,
+    ever. The rate already accounts for input tax. Sales still carry the statutory VAT to
     OutputVAT. A foreign service still owes Bezugsteuer, as a cost:
     `quints vat convert … --bezugsteuer` prints the pair.
 

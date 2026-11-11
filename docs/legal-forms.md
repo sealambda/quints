@@ -29,6 +29,8 @@ scaffolds the official variant:
 
 === "Einzelfirma"
 
+    The Einzelfirma variant:
+
     ```beancount
     2026-01-01 open Equity:CH:Einzelfirma:Capital CHF
       kmu: "2800"  ; Owner's equity
@@ -44,6 +46,8 @@ scaffolds the official variant:
     income.[^owner]
 
 === "GmbH / AG"
+
+    The GmbH and AG variant:
 
     ```beancount
     2026-01-01 open Equity:CH:GmbH:Capital:Share CHF

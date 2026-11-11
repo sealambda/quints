@@ -41,7 +41,9 @@ quints vat report -p 2026-Q3
 
 That's a runnable project with a sample quarter booked and a VAT return on
 screen. [Getting started](getting-started.md) walks through a real setup:
-the legal form, whether you are VAT-registered, and the VAT method.
+the legal form, whether you are VAT-registered, and the VAT method. It opens
+with [a prompt to paste into your AI agent](getting-started.md#hand-it-to-your-ai-agent),
+which does the setup with you.
 
 ![quints init scaffolds sample books, quints check validates them, and quints vat report prints the VAT return](assets/quickstart.gif)
 
