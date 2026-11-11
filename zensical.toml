@@ -5,7 +5,7 @@
 
 [project]
 site_name = "quints"
-site_description = "Swiss VAT & accounting for plain-text (beancount) books — MWST returns, QR-bill invoicing, KMU statutory statements, statement importers."
+site_description = "Swiss VAT and accounting for plain-text (beancount) books — MWST returns, QR-bill invoicing, KMU statutory statements, statement importers."
 site_url = "https://sealambda.github.io/quints/"
 repo_url = "https://github.com/sealambda/quints"
 copyright = "Copyright &copy; 2026 Sealambda GmbH — GPL-2.0-only"
@@ -32,9 +32,27 @@ nav = [
     ] },
 ]
 
+# For AI agents: /llms.txt indexes a Markdown copy of every page (the
+# llmstxt.org convention), /llms-full.txt is all of them in one file. A page
+# missing from `sections` is missing from both — list new top-level pages.
+[project.plugins.llmstxt]
+full_output = "llms-full.txt"
+markdown_description = """
+quints is a deterministic CLI: it never calls a model, and every reporting \
+command takes `--json`. Numbers that are filed come from quints, never from a \
+model. Each page opens with an "Applies if" block (legal form, VAT status, \
+method) and footnotes its legal claims to the source.\
+"""
+
+[project.plugins.llmstxt.sections]
+"Getting started" = ["index.md", "getting-started.md", "legal-forms.md"]
+"Guides" = ["guides/*.md"]
+"Reference" = ["reference/*.md"]
+
 [project.theme]
 language = "en"
 features = [
+    "content.action.copy",  # "Copy as Markdown", from the llmstxt copies below
     "content.code.copy",
     "content.code.annotate",
     "content.tabs.link",
