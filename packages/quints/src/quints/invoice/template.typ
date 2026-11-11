@@ -11,6 +11,13 @@
 // `font_mono` defaults to the bundled Geist Mono; an issuer may swap in any
 // family (tabular figures are requested either way).
 #let d = json("data.json")
+// The invoice as Factur-X / ZUGFeRD data, for the payer's software (render.py).
+#if d.facturx {
+  pdf.attach(
+    "factur-x.xml", relationship: "alternative", mime-type: "text/xml",
+    description: "Factur-X invoice data (EN 16931)",
+  )
+}
 #let L = d.labels
 #let accent = rgb(d.brand.accent)
 #let ink = rgb(d.brand.ink)

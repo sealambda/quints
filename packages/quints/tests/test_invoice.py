@@ -757,7 +757,7 @@ def test_render_is_archival_accessible_and_described(tmp_path: Path):
     assert pdf == again.read_bytes()  # dated the issue date: re-rendering verifies a copy
     # XMP, not the Info dict: Typst hex-encodes non-ASCII Info strings.
     xmp = pdf[pdf.index(b"<x:xmpmeta") : pdf.index(b"</x:xmpmeta>")].decode()
-    assert "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>A<" in xmp
+    assert "<pdfaid:part>3</pdfaid:part><pdfaid:conformance>A<" in xmp
     assert "<pdfuaid:part>1</pdfuaid:part>" in xmp
     assert "<rdf:li>de-CH</rdf:li>" in xmp
     assert ">Muster GmbH – Rechnung ACME202606<" in xmp

@@ -232,8 +232,8 @@ shasum -a 256 books-2026.tar.gz > books-2026.tar.gz.sha256
    archive lives. The scaffolded `AGENTS.md` describes the booking procedure
    and is a starting point.[^procedure]
 
-Invoices and statements are PDF/A-2a, the archival PDF format, so they render
-the same in ten years.
+Invoices (PDF/A-3a) and statements (PDF/A-2a) are in the archival PDF
+format, so they render the same in ten years.
 
 ## Configuration
 

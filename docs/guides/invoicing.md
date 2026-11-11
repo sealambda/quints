@@ -14,8 +14,8 @@ later matches the payment to it.
     - **Invoices:** domestic Swiss QR-bills in CHF or EUR, and export
       invoices for services to a customer abroad (SEPA/SWIFT, EU reverse
       charge).
-    - **Not covered:** e-invoicing formats (ZUGFeRD, Peppol), instalment
-      plans beyond
+    - **Not covered:** e-invoicing networks and national formats (Peppol,
+      FatturaPA, Verifactu), instalment plans beyond
       [advances against a pro forma](#get-paid-before-you-invoice-pro-forma),
       and two kinds of foreign sale whose legal basis differs from the export
       invoice's note: exported goods, and services taxed in Switzerland
@@ -703,6 +703,27 @@ Use this when the customer has booked or paid the original, or when amounts
 change. For a wrong address caught early, a
 [reissue](#issued-means-fixed) under the same number is enough.
 
+## Structured invoice data: Factur-X / ZUGFeRD
+
+Every invoice and credit note PDF carries itself as data: an embedded
+`factur-x.xml` in the EN 16931 profile, which accounts-payable software in
+Germany, Austria and France reads instead of the page.[^facturx] There is
+nothing to switch on. The PDF is PDF/A-3a (the archival format that allows
+the attachment) and PDF/UA-1, validated in CI with veraPDF; the XML is
+checked against the official schema and business rules in the test suite.
+
+- Every amount in the XML is one the PDF prints. Nothing is added up again.
+- A pro forma carries none: software would book it as the invoice.
+- Swiss VAT travels as category `S` with the Swiss rate. An export with the
+  reverse-charge mention is `AE`; any other invoice without VAT (an export
+  outside a reverse-charge regime, an issuer not registered) is `O`, "not
+  subject to VAT". Pass-through items are a document-level charge.
+- Quantities are in units (`C62`); the `unit` text is not mapped to a code.
+
+The EU makes structured invoices mandatory for cross-border B2B between
+businesses established in the EU from 1 July 2030.[^vida] That does not bind
+a Swiss supplier; EU customers will come to expect the format all the same.
+
 ## Editor validation
 
 The invoice, issuer, and customers files have JSON Schemas, published with
@@ -753,7 +774,8 @@ consolidated total converts everything at the latest rate in your price file
   are 78 mm wide beside a right window and 70 mm beside a left one; a
   `references` value of more than 20 (right) or 16 (left) unbroken characters
   runs past that column.
-- **E-invoicing formats** (ZUGFeRD/Factur-X, Peppol, EDIFACT).
+- **Other e-invoicing formats and networks** (XRechnung, Peppol, FatturaPA,
+  Verifactu, EDIFACT). The PDF carries Factur-X data; nothing is transmitted.
 - **Derive a BIC from an IBAN.** Ask the bank. A guessed BIC is worse than
   none.
 - **Match a pro forma's payment on import.** It isn't booked until paid, so
@@ -772,6 +794,8 @@ consolidated total converts everything at the latest rate in your price file
 [^discount]: Art. 24 Abs. 1 MWSTG: "Die Steuer wird vom tatsächlich empfangenen Entgelt berechnet." [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_24).
 [^pass-through]: Art. 24 Abs. 6 Bst. b MWSTG: not part of the consideration are "Beträge, die die steuerpflichtige Person von der die Leistung empfangenden Person als Erstattung der in deren Namen und für deren Rechnung getätigten Auslagen erhält, sofern sie diese gesondert ausweist (durchlaufende Posten)". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_24).
 [^credit-note]: Art. 27 Abs. 4 MWSTG: a later correction is made by a document, addressed to the recipient, that refers to the original invoice and revokes it. MWST-Info 16, Ziff. 2.5.1. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
+[^facturx]: Factur-X 1.0 / ZUGFeRD 2.x, profile EN 16931, UN/CEFACT Cross Industry Invoice syntax. [FNFE-MPE](https://fnfe-mpe.org/factur-x/), [FeRD](https://www.ferd-net.de/standards/zugferd).
+[^vida]: Council Directive (EU) 2025/516 (VAT in the Digital Age). [EUR-Lex](https://eur-lex.europa.eu/eli/dir/2025/516/oj).
 [^too-high]: Art. 27 Abs. 2 MWSTG: whoever "für eine Leistung eine zu hohe Steuer ausweist, schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^art27]: Art. 27 Abs. 1 and 2 MWSTG: "Wer nicht im Register der steuerpflichtigen Personen eingetragen ist …, darf in Rechnungen nicht auf die Steuer hinweisen"; who shows it anyway "schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^vat-id]: Art. 26 Abs. 2 Bst. a MWSTG: the invoice names the issuer "sowie die Nummer, unter der er oder sie eingetragen ist". The `MWST` suffix format is the one in [MWST-Info 16, Ziff. 2.2](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/cipherDisplay.xhtml?publicationId=1002536&componentId=1002626).

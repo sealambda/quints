@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Validate the sample invoices and statements against the standards they claim
-# (PDF/A-2a + PDF/UA-1, see invoice/render.py `_compile`) with veraPDF, the
+# (invoices PDF/A-3a, statements PDF/A-2a, all PDF/UA-1; see invoice/render.py
+# `_compile`) with veraPDF, the
 # reference validator. Typst accepting the export is not proof of conformance.
 # Entry point: `make pdfcheck`; CI runs it on every PR.
 #
@@ -28,7 +29,10 @@ trap 'rm -rf "$work"' EXIT
   quints report statements --year 2026 -o "$work/out/statements.pdf" >/dev/null
 )
 # veraPDF exits non-zero when any file fails a profile.
-for flavour in 2a ua1; do
-  docker run --rm --platform linux/amd64 -v "$work/out:/data" "$VERAPDF" \
-    -f "$flavour" --format text /data/qr-bill.pdf /data/export.pdf /data/statements.pdf
-done
+verapdf() {
+  docker run --rm --platform linux/amd64 -v "$work/out:/data" "$VERAPDF" --format text "$@"
+}
+# The invoices are A-3: they carry their Factur-X XML as an embedded file.
+verapdf -f 3a /data/qr-bill.pdf /data/export.pdf
+verapdf -f 2a /data/statements.pdf
+verapdf -f ua1 /data/qr-bill.pdf /data/export.pdf /data/statements.pdf
