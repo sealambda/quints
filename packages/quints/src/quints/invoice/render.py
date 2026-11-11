@@ -16,7 +16,7 @@ import typst
 from babel import Locale
 from babel.dates import format_date
 
-from . import bank, epc, qr
+from . import bank, epc, facturx, qr, structured
 from . import reference as ref_mod
 from .labels import labels as get_labels
 from .model import (
@@ -53,6 +53,7 @@ class InvoiceContext(TypedDict):
     region: str | None
     document: dict[str, str | list[str]]
     kind: str
+    facturx: bool
     currency: str
     labels: dict[str, str]
     issuer: dict[str, str | list[str] | None]
@@ -82,6 +83,7 @@ def build_context(
     payment: Mapping[str, str | None],
     reverse_charge: bool = False,
     logo: str | None = None,
+    facturx: bool = False,
 ) -> InvoiceContext:
     lbl = get_labels(inv.language)
     if inv.proforma:
@@ -131,6 +133,7 @@ def build_context(
         "region": Locale.parse(inv.locale).territory,
         "document": _document_metadata(inv, issuer, totals, lbl, payment, references),
         "kind": inv.kind,
+        "facturx": facturx,
         "currency": inv.currency,
         "labels": lbl,
         "issuer": {
@@ -327,12 +330,12 @@ def _compile(
     only_bundled: bool,
     issued: date,
 ) -> None:
-    """Compile to PDF/A-2a + PDF/UA-1 — never a silent plain-PDF fallback: an
+    """Compile to PDF/A-3a + PDF/UA-1 — never a silent plain-PDF fallback: an
     invoice is kept, readable, for ten years (Art. 958f OR, Art. 70 MWSTG).
     Level A (tagged, Unicode text, alt text on every image) over B: the archive
     copy stays searchable and its text extractable, and the payer's screen
-    reader can read it. Not A-3: its only addition is embedded files, which
-    only matters once a machine-readable invoice (Factur-X/ZUGFeRD) rides along.
+    reader can read it. A-3 over A-2 for the one thing it adds: an embedded
+    file, the machine-readable invoice (`facturx.py`) that rides along.
 
     `only_bundled` switches machine-installed families off. Without it, a
     variable font installed on the designer's machine shadows the bundled (or
@@ -351,7 +354,7 @@ def _compile(
         root=str(root),
         font_paths=[str(p) for p in font_paths],
         ignore_system_fonts=only_bundled,
-        pdf_standards=["a-2a", "ua-1"],
+        pdf_standards=["a-3a", "ua-1"],
         timestamp=int(datetime(issued.year, issued.month, issued.day, tzinfo=UTC).timestamp()),
     )
 
@@ -544,7 +547,15 @@ def render(
             shutil.copy(logo, dest)
             logo_name = dest.name
 
-        ctx = build_context(inv, issuer, totals, payment, reverse_charge, logo=logo_name)
+        # The same invoice as data, attached for the payer's software. Not on
+        # a pro forma: a machine would book it as the invoice.
+        structured_data = not inv.proforma
+        if structured_data:
+            doc = structured.build(inv, issuer, totals, reverse_charge=reverse_charge)
+            (work / facturx.FILENAME).write_bytes(facturx.to_xml(doc))
+        ctx = build_context(
+            inv, issuer, totals, payment, reverse_charge, logo=logo_name, facturx=structured_data
+        )
         (work / "data.json").write_text(json.dumps(ctx, ensure_ascii=False, indent=2))
         shutil.copy(TEMPLATE, work / "template.typ")
 
@@ -552,6 +563,8 @@ def render(
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         _compile(work / "template.typ", out_path, work, font_paths, only_bundled, inv.issue_date)
+        if structured_data:
+            out_path.write_bytes(facturx.embed_metadata(out_path.read_bytes()))
         return out_path, totals, qr_payload
     finally:
         shutil.rmtree(work, ignore_errors=True)

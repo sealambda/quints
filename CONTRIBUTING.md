@@ -39,7 +39,7 @@ make test        # uv run pytest packages -q
 ```
 
 Touching the invoice template or its PDF export? CI also validates the sample
-invoices as PDF/A-2a + PDF/UA-1 with veraPDF; run it locally with Docker:
+invoices as PDF/A-3a + PDF/UA-1 with veraPDF; run it locally with Docker:
 
 ```bash
 make pdfcheck

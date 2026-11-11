@@ -49,7 +49,8 @@ docs-serve:
 media:
 	./media/generate.sh
 
-# Validate the sample invoices as PDF/A-2a + PDF/UA-1 with veraPDF (docker).
+# Validate the sample invoices (PDF/A-3a) and statements (PDF/A-2a) plus
+# PDF/UA-1 with veraPDF (docker).
 # Not part of `check`: it needs docker and takes longer than the test suite.
 pdfcheck:
 	./media/pdfcheck.sh

@@ -63,7 +63,7 @@ jobs:
           QUINTS_WEEKLY: "1"
         run: uv run pytest packages/quints/tests/test_properties.py -q
 
-  # The invoices claim PDF/A-2a + PDF/UA-1; veraPDF checks they are.
+  # The invoices claim PDF/A-3a + PDF/UA-1; veraPDF checks they are.
   pdf:
     name: PDF/A and PDF/UA validation
     if: ${{ !github.event.pull_request.draft }}
