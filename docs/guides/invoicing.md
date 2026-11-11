@@ -57,7 +57,9 @@ early), add `corrected: 2026-07-04` to the invoice file and run
 `quints invoice --reissue`. The PDF states that it replaces the version of
 the issue date; book the new hash it prints. The repository history keeps
 the old bytes. A booking without `sha256:` (from before quints recorded it)
-renders as before and prints the line to add.
+is issued all the same: once its PDF is filed, `quints invoice` leaves it
+alone and prints the line to add, and `quints check` warns until it is
+there.
 
 When something stops an invoice, every problem is reported in one run. Under
 `--json` they arrive on stdout as
@@ -731,7 +733,9 @@ checked against the official schema and business rules in the test suite.
   reverse-charge mention is `AE`; any other invoice without VAT (an export
   outside a reverse-charge regime, an issuer not registered) is `O`, "not
   subject to VAT". Pass-through items are a document-level charge.
-- Quantities are in units (`C62`); the `unit` text is not mapped to a code.
+- The `unit` text is mapped to its standard code where it is a common one
+  (hours, days, months, pieces, lump sum, km, kg, in the five invoice
+  languages); anything else is sent as a plain unit (`C62`).
 
 The EU makes structured invoices mandatory for cross-border B2B between
 businesses established in the EU from 1 July 2030.[^vida] That does not bind

@@ -125,6 +125,11 @@ customer deducted, a discount you agreed to. Book them as a reduction of the
 price paid (Entgeltsminderung). The revenue goes down, and so does the output
 VAT if you charged any.[^art41] quints doesn't book this for you.
 
+For anything the customer should have on paper (a cancelled invoice, a lower
+price, a returned delivery), issue a
+[credit note](invoicing.md#cancel-or-reduce-an-invoice-credit-note) instead:
+its ledger draft is this booking, per VAT rate, with a PDF to send.
+
 === "Not VAT-registered"
 
     Not VAT-registered, the write-off has no VAT leg:
@@ -168,6 +173,30 @@ VAT if you charged any.[^art41] quints doesn't book this for you.
     ```
 
 Use your own legal form's accounts (`Income:CH:Einzelfirma:…` and so on).
+
+## 6. Refund or set off after a credit note
+
+A credit note against an invoice the customer already paid leaves that
+invoice with a negative open amount: you owe them. `quints receivables`
+marks it **overpaid**.
+
+INV2026014 for 1081.00 was paid on 20 July and cancelled on 10 August by
+credit note CN2026001. Pay the money back and book the refund against the
+invoice:
+
+```beancount
+2026-08-12 * "Acme AG" "Refund INV2026014, credit note CN2026001"
+  Assets:CH:GmbH:Receivable:Trade   1081.00 CHF
+    invoice: "INV2026014"
+  Assets:CH:GmbH:Current:UBS:CHF   -1081.00 CHF
+```
+
+The invoice closes. Income and VAT were already reversed by the credit
+note's own booking, so the refund touches neither.
+
+If the customer would rather have it set off against another open invoice,
+don't refund: move the credit there with a relink entry as in step 4, from
+`INV2026014` to the invoice it should pay.
 
 ## What quints doesn't do here
 

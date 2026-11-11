@@ -166,3 +166,27 @@ def test_a_credit_note_cancels_its_invoice(project: Path) -> None:
     after = _vat_report()
     figures = [k for k in before if k.startswith("z")]
     assert figures and all(after[k] == before[k] for k in figures)
+
+
+def test_refund_after_a_credit_note_on_a_paid_invoice(project: Path) -> None:
+    """The receivables guide's worked example: the sample invoice is paid,
+    then cancelled — the customer is owed the money until it is refunded."""
+
+    def open_items() -> dict[str, str]:
+        res = runner.invoke(app, ["receivables", "--at", "2026-09-30", "--json"])
+        return {o["number"]: o["open_amount"] for o in json.loads(res.stdout)["open"]}
+
+    _issue(
+        Path("invoicing/acme-2026-07.yaml").read_text()
+        + "number: CN2026001\nissue_date: 2026-08-10\ncredit_note_for: INV2026014\n"
+    )
+    assert open_items()["INV2026014"] == "-1081.00"
+    with Path("books/2026.bean").open("a") as f:
+        f.write(
+            '\n2026-08-12 * "Acme AG" "Refund INV2026014, credit note CN2026001"\n'
+            "  Assets:CH:GmbH:Receivable:Trade   1081.00 CHF\n"
+            '    invoice: "INV2026014"\n'
+            "  Assets:CH:GmbH:Current:UBS:CHF   -1081.00 CHF\n"
+        )
+    assert "INV2026014" not in open_items()
+    assert runner.invoke(app, ["check"]).exit_code == 0

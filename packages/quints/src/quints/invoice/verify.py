@@ -236,7 +236,8 @@ def audit(
 
     Errors: a filed PDF that no longer matches its booked hash, a number
     booked twice, a number dated before the one preceding it. Warnings: a
-    hashed PDF that is not filed, and gaps in a series — Swiss law does not
+    hashed PDF that is not filed, a booking that names its PDF without a
+    hash, and gaps in a series — Swiss law does not
     ask for gapless numbers, an auditor asks about them.
 
     shortcut: PDFs are looked up by name under `<root>/documents/`, where
@@ -261,6 +262,11 @@ def audit(
                     "SHA-256 differs from sha256 — restore it from git, or "
                     "reissue it (quints invoice --reissue) and book the new hash"
                 )
+        elif name and ("invoice" in meta or "proforma" in meta):
+            warnings.append(
+                f"{name} is booked without a hash ({e.date}) — `quints invoice` on its "
+                "file prints the `sha256:` line to add"
+            )
         number = receivables.invoice_id(e)
         if number and any(p.account in income for p in e.postings):
             issued.setdefault(number, []).append(e.date)

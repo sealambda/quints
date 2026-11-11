@@ -936,15 +936,15 @@ def invoice(
     reissue: bool = typer.Option(
         False,
         "--reissue",
-        help="Render over an issued invoice (one booked with its PDF's hash). "
+        help="Render over an issued invoice (one that is booked). "
         "Needs `corrected: <date>` in the invoice file.",
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ):
     """Render a Swiss QR-bill invoice PDF (domestic or export).
 
-    Booked with its PDF's hash, an invoice is issued: it is then checked
-    against that hash, never rendered again — except with --reissue."""
+    Once booked, an invoice is issued: its filed PDF is checked against the
+    hash in the booking and never rendered again — except with --reissue."""
     from .invoice import draft as dr
     from .invoice import model as m
     from .invoice import reference as ref_mod
@@ -974,15 +974,24 @@ def invoice(
     # Read the books even under --no-verify: whether the invoice is issued
     # decides whether its PDF may be written at all.
     cc = v.cross_check(file, inv, totals) if file.exists() else None
-    issued = bool(cc and cc.found and cc.sha256)
+    # Booked means issued. A booking from before quints recorded hashes has
+    # none to check against, but its filed PDF is no more to be rendered over;
+    # only when that PDF is missing is there nothing to protect.
+    issued = bool(cc and cc.found and (cc.sha256 or out.exists()))
     if issued and not reissue:
-        digest = _verify_issued(out, inv, cc.sha256 if cc else None)
+        booked = cc.sha256 if cc else None
+        digest = _verify_issued(out, inv, booked) if booked else v.sha256(out)
         if as_json:
             _json_out(_invoice_payload(inv, ref, out, totals, None, cc, None, digest, issued=True))
-        else:
+        elif booked:
             ui.console.print(f"[ok]Already issued[/] {out}  ·  matches its booked hash")
-            if cc and verify:
-                _print_cross_check(cc, inv, None)
+        else:
+            ui.console.print(
+                f"[ok]Already issued[/] {out}  ·  [warn]booked without a hash[/] — add it "
+                f'to the {inv.number} transaction:\n    sha256: "{digest}"'
+            )
+        if cc and verify and not as_json:
+            _print_cross_check(cc, inv, None)
         return
     if issued and inv.corrected is None:
         raise ValueError(

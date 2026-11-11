@@ -84,6 +84,25 @@ def test_issue_verify_tamper_and_reissue(project: Path) -> None:
     assert code == 1 and "restore it from git" in str(missing["errors"])
 
 
+def test_a_booking_without_a_hash_is_issued_once_its_pdf_is_filed(project: Path) -> None:
+    """Books from before hashes were recorded: the sample invoice is booked
+    with a bare ^link. The first run files its PDF; after that it is fixed."""
+    sample = ["invoice", "invoicing/acme-2026-07.yaml"]
+    first = json.loads(runner.invoke(app, [*sample, "--json"]).stdout)
+    assert first["issued"] is False and first["cross_check"]["sha256"] is None
+    pdf = Path(first["pdf"])
+    stamp = pdf.stat().st_mtime_ns
+
+    registry = Path("invoicing/customers.yaml")
+    registry.write_text(registry.read_text().replace("Acme AG", "Acme Holding AG"))
+    res = runner.invoke(app, sample)
+    assert res.exit_code == 0 and "booked without a hash" in res.output
+    assert f'sha256: "{first["pdf_sha256"]}"' in res.output
+    assert pdf.stat().st_mtime_ns == stamp
+    res = runner.invoke(app, [*sample, "--reissue"])
+    assert res.exit_code == 1 and "corrected" in res.stderr
+
+
 def test_every_blocker_is_reported_as_data(project: Path) -> None:
     """One run lists the problems of every file and every check, with a code."""
     issuer = Path("invoicing/issuer.yaml")

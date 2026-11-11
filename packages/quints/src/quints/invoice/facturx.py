@@ -86,13 +86,11 @@ def _lines(deal: ET.Element, doc: StructuredInvoice) -> None:
         _el(_el(item, "ram:SpecifiedTradeProduct"), "ram:Name", ln.name)
         price = _el(_el(item, "ram:SpecifiedLineTradeAgreement"), "ram:NetPriceProductTradePrice")
         _el(price, "ram:ChargeAmount", _number(ln.unit_price))
-        # shortcut: every quantity is in units (C62); map `unit` to UN/ECE
-        # Recommendation 20 codes when a recipient needs hours or days told apart.
         _el(
             _el(item, "ram:SpecifiedLineTradeDelivery"),
             "ram:BilledQuantity",
             _number(ln.quantity),
-            unitCode="C62",
+            unitCode=ln.unit_code,
         )
         settlement = _el(item, "ram:SpecifiedLineTradeSettlement")
         _tax(settlement, "ram:ApplicableTradeTax", ln.tax)
