@@ -13,7 +13,15 @@ from hypothesis import strategies as st
 
 from quints import ledger
 from quints.invoice import reference as ref
-from quints.invoice.model import Discount, Invoice, LineItem, Party, SupplyPeriod, compute
+from quints.invoice.model import (
+    Discount,
+    Invoice,
+    LineItem,
+    Party,
+    PassThrough,
+    SupplyPeriod,
+    compute,
+)
 
 _amount = st.decimals(min_value=Decimal("0.01"), max_value=Decimal("99999"), places=2)
 _quantity = st.decimals(min_value=Decimal("0.25"), max_value=Decimal("500"), places=2)
@@ -43,6 +51,8 @@ def _invoice(
             for q, p, other in lines
         ],
         discount=Discount(percent=discount) if discount else None,
+        # An outlay passed on at cost: in the total, never in the VAT.
+        pass_through=[PassThrough(description="Fee", amount=Decimal("12.35"))],
         round_5=round_5,
     )
 
@@ -59,7 +69,11 @@ def test_net_plus_vat_plus_rounding_is_the_total(
     discount: Decimal | None,
 ) -> None:
     t = compute(_invoice(lines, on, rate_class, round_5, discount))
-    assert t.subtotal - t.discount + t.vat_amount + t.rounding == t.grand_total == t.amount_due
+    assert (
+        t.subtotal - t.discount + t.vat_amount + t.pass_through + t.rounding
+        == t.grand_total
+        == t.amount_due
+    )
     # The discount is spread over the rate groups to the cent, and each group's
     # VAT is its own net at its own rate.
     assert sum(g.net for g in t.vat_groups) == t.subtotal - t.discount

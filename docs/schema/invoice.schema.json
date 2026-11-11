@@ -218,6 +218,36 @@
       "title": "Party",
       "type": "object"
     },
+    "PassThrough": {
+      "additionalProperties": false,
+      "description": "An outlay made in the customer's name and on their account, passed on\nat cost: no VAT, no revenue (Art. 24 Abs. 6 Bst. b MWSTG).",
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "What was paid for the customer, at cost.",
+          "title": "Amount"
+        }
+      },
+      "required": [
+        "description",
+        "amount"
+      ],
+      "title": "PassThrough",
+      "type": "object"
+    },
     "SupplyPeriod": {
       "additionalProperties": false,
       "description": "When the supply was made: its first and last day, the same day for one.\n\nEvery invoice states it. Swiss VAT law asks for the date or period of the\nsupply wherever it differs from the invoice date (Art. 26 Abs. 2 lit. c\nMWSTG), the EU for the date the supply was made or completed (Art. 226(7)\nVAT Directive), and the payer books input tax by it \u2014 which is why it is\nstructured rather than free text: it is printed in the invoice's locale and\ncarried in the QR-bill's billing information (Swico S1 /31/).\n\nWritten in an invoice file as a day (`2026-07-15`), a calendar month\n(`2026-07`), or a period (`{from: 2026-07-01, to: 2026-09-30}`).",
@@ -375,6 +405,14 @@
         "$ref": "#/$defs/ExtraReference"
       },
       "title": "References",
+      "type": "array"
+    },
+    "pass_through": {
+      "description": "Outlays made in the customer's name and on their account \u2014 a court fee, a visa, a domain registered for them. Listed apart from the lines and added to the total without VAT; not revenue.",
+      "items": {
+        "$ref": "#/$defs/PassThrough"
+      },
+      "title": "Pass Through",
       "type": "array"
     },
     "notes": {

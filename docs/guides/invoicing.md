@@ -169,6 +169,24 @@ Both reduce the consideration, so VAT is charged on what is left.[^discount]
 With several VAT rates the invoice's discount is spread over them in
 proportion to their nets. The ledger draft books income net of discounts.
 
+### Outlays you pass on
+
+A fee paid in the customer's name and on their account — a court fee, a
+visa, a domain registered for them — is neither your revenue nor part of the
+consideration, as long as the invoice shows it separately.[^pass-through]
+
+```yaml
+pass_through:
+  - {description: Commercial register fee, amount: 120.00}
+```
+
+The invoice lists these in their own block after the VAT rows and adds them
+to the total without VAT. Book the outlay against `disbursements`
+(`Assets:…:Receivable:Disbursements`, KMU 1190) when you pay it; the ledger
+draft clears it from there, so it never touches income or the VAT return. A
+cost you incur in your own name and recharge is not a pass-through item: it
+is an ordinary line, with VAT.
+
 ## Bank details
 
 One account per invoicing currency, under `bank`:
@@ -726,6 +744,7 @@ consolidated total converts everything at the latest rate in your price file
 [^rate-change]: Art. 115 Abs. 1 MWSTG applies Art. 112 to a rate change: "Für Leistungen, die vor Inkrafttreten … erbracht worden sind, … gilt das bisherige Recht", and a supply made partly before and partly after is taxed "für diesen Teil" under each. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_115). The rates themselves: Art. 25 MWSTG.
 [^per-rate]: Art. 26 Abs. 2 Bst. f MWSTG: the invoice states "den anwendbaren Steuersatz und den vom Entgelt geschuldeten Steuerbetrag". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_26).
 [^discount]: Art. 24 Abs. 1 MWSTG: "Die Steuer wird vom tatsächlich empfangenen Entgelt berechnet." [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_24).
+[^pass-through]: Art. 24 Abs. 6 Bst. b MWSTG: not part of the consideration are "Beträge, die die steuerpflichtige Person von der die Leistung empfangenden Person als Erstattung der in deren Namen und für deren Rechnung getätigten Auslagen erhält, sofern sie diese gesondert ausweist (durchlaufende Posten)". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_24).
 [^too-high]: Art. 27 Abs. 2 MWSTG: whoever "für eine Leistung eine zu hohe Steuer ausweist, schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^art27]: Art. 27 Abs. 1 and 2 MWSTG: "Wer nicht im Register der steuerpflichtigen Personen eingetragen ist …, darf in Rechnungen nicht auf die Steuer hinweisen"; who shows it anyway "schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^vat-id]: Art. 26 Abs. 2 Bst. a MWSTG: the invoice names the issuer "sowie die Nummer, unter der er oder sie eingetragen ist". The `MWST` suffix format is the one in [MWST-Info 16, Ziff. 2.2](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/cipherDisplay.xhtml?publicationId=1002536&componentId=1002626).

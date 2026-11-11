@@ -62,6 +62,7 @@ class InvoiceContext(TypedDict):
     terms: str | None
     items: list[dict[str, str | int | None]]
     advances: list[dict[str, str]]
+    pass_through: list[dict[str, str]]
     totals: dict[str, str | bool | list[dict[str, str]]]
     payment: Mapping[str, str | None]
     notes: list[str]
@@ -160,6 +161,11 @@ def build_context(
             for i, it in enumerate(inv.items)
         ],
         "totals": _totals_context(inv, totals),
+        # Outlays in the customer's name: their own block, after the VAT rows.
+        "pass_through": [
+            {"description": p.description, "amount": money(p.amount, inv.locale)}
+            for p in inv.pass_through
+        ],
         # Credited advances, between the invoice total and the amount due.
         "advances": [
             {
