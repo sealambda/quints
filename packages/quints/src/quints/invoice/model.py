@@ -297,9 +297,35 @@ class LineItem(BaseModel):
         ),
     )
 
+    discount: Decimal | None = Field(
+        default=None,
+        gt=0,
+        le=100,
+        description="Discount on this line in per cent. The line total is net of it.",
+    )
+
     @property
     def total(self) -> Decimal:
-        return (self.quantity * self.unit_price).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        """Quantity × price, less the line's discount."""
+        gross = self.quantity * self.unit_price
+        if self.discount is not None:
+            gross -= gross * self.discount / 100
+        return gross.quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+
+class Discount(BaseModel):
+    """A discount on the whole invoice: a percentage of its lines, or an amount."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    percent: Decimal | None = Field(default=None, gt=0, le=100)
+    amount: Decimal | None = Field(default=None, gt=0, description="In the invoice currency, net.")
+
+    @model_validator(mode="after")
+    def _one_form(self) -> Discount:
+        if (self.percent is None) == (self.amount is None):
+            raise ValueError("a discount is either `percent` or `amount`, one of the two")
+        return self
 
 
 class Advance(BaseModel):
@@ -345,6 +371,15 @@ class Invoice(BaseModel):
     )
     locale: str = "de_CH"  # CLDR locale for labels + number/date formatting
     vat: VatBlock = Field(default_factory=VatBlock)
+    discount: Discount | None = Field(
+        default=None,
+        description=(
+            "A discount on the whole invoice — `{percent: 5}` or `{amount: 100}`. "
+            "It reduces the consideration, so VAT is charged on what is left "
+            "(Art. 24 Abs. 1 MWSTG); with several VAT rates it is spread over "
+            "them in proportion."
+        ),
+    )
     # The payment reference. Unset is the normal case: quints derives it from
     # the invoice number in the scheme the bank account resolves to (see
     # `reference.py`). Set it only to re-issue an invoice that went out with a
@@ -714,7 +749,8 @@ class VatGroup(BaseModel):
 
 
 class Totals(BaseModel):
-    subtotal: Decimal
+    subtotal: Decimal  # the lines, each net of its own discount
+    discount: Decimal = Decimal("0")  # the invoice's discount, off the subtotal
     # The invoice's rate; with several, that of the largest group (see `vat_groups`).
     vat_rate: Decimal
     vat_amount: Decimal  # the sum over `vat_groups`
@@ -817,16 +853,44 @@ def vat_included(gross: Decimal, rate: Decimal) -> Decimal:
     return (gross * rate / (100 + rate)).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
+def _spread_discount(inv: Invoice, subtotal: Decimal, nets: dict[Decimal, Decimal]) -> Decimal:
+    """Take the invoice's discount off `nets` (net per VAT rate), in proportion
+    to each; the largest group absorbs the rounding, so the parts sum to the
+    discount exactly. Returns the discount."""
+    d = inv.discount
+    if d is None:
+        return Decimal("0")
+    cent = Decimal("0.01")
+    total = d.amount if d.amount is not None else (subtotal * (d.percent or 0) / 100)
+    total = total.quantize(cent, ROUND_HALF_UP)
+    if total > subtotal or subtotal <= 0:
+        raise ValueError(
+            f"invoice {inv.number}: a discount of {total} exceeds its lines' {subtotal}"
+        )
+    largest = max(nets, key=lambda r: nets[r])
+    rest = total
+    for r in nets:
+        if r != largest:
+            share = (total * nets[r] / subtotal).quantize(cent, ROUND_HALF_UP)
+            nets[r] -= share
+            rest -= share
+    nets[largest] -= rest
+    return total
+
+
 def compute(inv: Invoice, vat_registered: bool = True) -> Totals:
     """The invoice's figures. ``vat_registered`` is the issuer's status on the
     issue date: a business that is not registered charges no VAT."""
     subtotal = sum((it.total for it in inv.items), Decimal("0"))
+    taxed = inv.kind == "domestic" and vat_registered
+    # Net per rate; one group at rate 0 when no VAT is charged.
+    nets: dict[Decimal, Decimal] = {}
+    for it in inv.items:
+        r = (it.vat_rate if it.vat_rate is not None else inv.vat_rate) if taxed else Decimal("0")
+        nets[r] = nets.get(r, Decimal("0")) + it.total
+    discount = _spread_discount(inv, subtotal, nets)
     groups: list[VatGroup] = []
-    if inv.kind == "domestic" and vat_registered:
-        nets: dict[Decimal, Decimal] = {}
-        for it in inv.items:
-            r = it.vat_rate if it.vat_rate is not None else inv.vat_rate
-            nets[r] = nets.get(r, Decimal("0")) + it.total
+    if taxed:
         classes = {
             _percent(ledger.vat_rate(inv.supply.start, c)): c for c in ledger.VAT_RATE_CLASSES
         }
@@ -842,7 +906,7 @@ def compute(inv: Invoice, vat_registered: bool = True) -> Totals:
         ]
     rate = max(groups, key=lambda g: abs(g.net)).rate if groups else Decimal("0")
     vat = sum((g.vat for g in groups), Decimal("0"))
-    unrounded = subtotal + vat
+    unrounded = subtotal - discount + vat
     grand = round_step(unrounded, Decimal("0.05") if inv.rounds_to_5 else Decimal("0"))
     advances = sum((a.amount for a in inv.advances), Decimal("0"))
     if advances > grand:
@@ -852,6 +916,7 @@ def compute(inv: Invoice, vat_registered: bool = True) -> Totals:
         )
     return Totals(
         subtotal=subtotal,
+        discount=discount,
         vat_rate=rate,
         vat_amount=vat,
         vat_groups=groups,

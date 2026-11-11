@@ -155,6 +155,20 @@ the ledger draft books one income leg per rate, tagged `mwst: "reduced"` or
 `"lodging"` so the VAT return files it in the right row. An invoice with
 several rates cannot be a pro forma or credit advances.
 
+### Discounts
+
+```yaml
+items:
+  - {description: Workshop, quantity: 1, unit_price: 1250.00, discount: 20}
+discount: {amount: 100}   # or {percent: 5}
+```
+
+A line's `discount` is a percentage off that line, printed beside its
+description. The invoice's `discount` comes off the subtotal as its own row.
+Both reduce the consideration, so VAT is charged on what is left.[^discount]
+With several VAT rates the invoice's discount is spread over them in
+proportion to their nets. The ledger draft books income net of discounts.
+
 ## Bank details
 
 One account per invoicing currency, under `bank`:
@@ -711,6 +725,7 @@ consolidated total converts everything at the latest rate in your price file
 [^supply-eu]: Art. 226 point (7) of the VAT Directive 2006/112/EC: "the date on which the supply … was made or completed … in so far as that date can be determined and differs from the date of issue". [EUR-Lex](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02006L0112-20250414).
 [^rate-change]: Art. 115 Abs. 1 MWSTG applies Art. 112 to a rate change: "Für Leistungen, die vor Inkrafttreten … erbracht worden sind, … gilt das bisherige Recht", and a supply made partly before and partly after is taxed "für diesen Teil" under each. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_115). The rates themselves: Art. 25 MWSTG.
 [^per-rate]: Art. 26 Abs. 2 Bst. f MWSTG: the invoice states "den anwendbaren Steuersatz und den vom Entgelt geschuldeten Steuerbetrag". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_26).
+[^discount]: Art. 24 Abs. 1 MWSTG: "Die Steuer wird vom tatsächlich empfangenen Entgelt berechnet." [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_24).
 [^too-high]: Art. 27 Abs. 2 MWSTG: whoever "für eine Leistung eine zu hohe Steuer ausweist, schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^art27]: Art. 27 Abs. 1 and 2 MWSTG: "Wer nicht im Register der steuerpflichtigen Personen eingetragen ist …, darf in Rechnungen nicht auf die Steuer hinweisen"; who shows it anyway "schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^vat-id]: Art. 26 Abs. 2 Bst. a MWSTG: the invoice names the issuer "sowie die Nummer, unter der er oder sie eingetragen ist". The `MWST` suffix format is the one in [MWST-Info 16, Ziff. 2.2](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/cipherDisplay.xhtml?publicationId=1002536&componentId=1002626).

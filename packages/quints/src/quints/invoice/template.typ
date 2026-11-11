@@ -163,7 +163,7 @@
   table.hline(stroke: 0.5pt + rule),
   ..d.items.map(it => (
     fig(it.pos, fill: subtle, size: 9pt),
-    [#it.description#if it.vat_rate != none [ #text(size: 8pt, fill: subtle)[#L.vat #it.vat_rate%]]],
+    [#it.description#if it.tag != none [ #text(size: 8pt, fill: subtle)[#it.tag]]],
     [#fig(it.quantity)#if it.unit != "" [ #it.unit]],
     fig(it.unit_price),
     fig(it.total),
@@ -177,7 +177,7 @@
 // due). A subtotal alone would only repeat the amount due: the breakdown
 // prints when something stands between the two.
 #let vat-row = not d.totals.export and d.totals.vat_registered
-#let breakdown = vat-row or d.totals.show_rounding or d.advances.len() > 0
+#let breakdown = vat-row or d.totals.show_rounding or d.totals.show_discount or d.advances.len() > 0
 #v(4mm)
 // Wider when it credits advances: their labels name the pro forma and date.
 // Unbreakable: the breakdown never leaves the amount due on the next page.
@@ -187,6 +187,7 @@
     grid(
       columns: (1fr, auto), column-gutter: 6mm, row-gutter: 7pt, align: (left + bottom, right + bottom),
       ..row(L.subtotal, d.totals.subtotal),
+      ..(if d.totals.show_discount { row(d.totals.discount_label, d.totals.discount) } else { () }),
       // One row per rate; with several, each names the net it is charged on.
       ..(if vat-row {
         d.totals.vat_groups.map(g => row(

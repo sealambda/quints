@@ -38,6 +38,48 @@
       "title": "Advance",
       "type": "object"
     },
+    "Discount": {
+      "additionalProperties": false,
+      "description": "A discount on the whole invoice: a percentage of its lines, or an amount.",
+      "properties": {
+        "percent": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 100.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Percent"
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "In the invoice currency, net.",
+          "title": "Amount"
+        }
+      },
+      "title": "Discount",
+      "type": "object"
+    },
     "ExtraReference": {
       "description": "A labelled reference the customer's side needs quoted on the invoice.\n\nThe long tail nobody can model up front \u2014 a Leitweg-ID, an Italian\nCIG/CUP, a cost centre, a contract or framework-agreement number. It is\nprinted next to the invoice number with the label as given, so it reads\nthe way the customer's accounts-payable department expects it to.",
       "properties": {
@@ -109,6 +151,24 @@
           "default": null,
           "description": "VAT rate of this line in per cent, when it differs from the invoice's `vat.rate` \u2014 books at 2.6 next to consulting at 8.1. VAT is computed and shown per rate (Art. 26 Abs. 2 Bst. f MWSTG).",
           "title": "Vat Rate"
+        },
+        "discount": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 100.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Discount on this line in per cent. The line total is net of it.",
+          "title": "Discount"
         }
       },
       "required": [
@@ -270,6 +330,18 @@
     },
     "vat": {
       "$ref": "#/$defs/VatBlock"
+    },
+    "discount": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Discount"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "A discount on the whole invoice \u2014 `{percent: 5}` or `{amount: 100}`. It reduces the consideration, so VAT is charged on what is left (Art. 24 Abs. 1 MWSTG); with several VAT rates it is spread over them in proportion."
     },
     "reference": {
       "anyOf": [
