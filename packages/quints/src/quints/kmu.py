@@ -52,6 +52,10 @@ KMU_NAMES: dict[str, dict[str, str]] = {
     "1100": {"en": "Trade receivables", "de": "Forderungen aus Lieferungen und Leistungen"},
     "1140": {"en": "Receivables from shareholders", "de": "Forderungen gegenüber Beteiligten"},
     "1170": {"en": "Input VAT", "de": "Vorsteuer"},
+    "1190": {
+        "en": "Other short-term receivables",
+        "de": "Sonstige kurzfristige Forderungen",
+    },
     "1480": {"en": "Participations", "de": "Beteiligungen"},
     "1500": {"en": "Machinery and apparatus", "de": "Maschinen und Apparate"},
     "1509": {

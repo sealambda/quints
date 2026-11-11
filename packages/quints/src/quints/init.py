@@ -285,6 +285,7 @@ def _cfg(answers: Answers) -> config.Config:
         income_export=_sub(base.income_export, c),
         advances_domestic=_sub(base.advances_domestic, c),
         advances_export=_sub(base.advances_export, c),
+        disbursements=_sub(base.disbursements, c),
         saldo_difference=_sub(base.saldo_difference, c),
         bezugsteuer_expense=_sub(base.bezugsteuer_expense, c),
         saldo=tuple(config.SaldoRate(Decimal(spec) / 100) for spec in sorted(answers.saldo_rates)),
@@ -323,6 +324,7 @@ def _backbone(answers: Answers) -> list[_Account]:
     accounts: list[_Account] = [
         _Account(_sub(_PRIMARY_BANK, c), "1020", ("CHF",)),
         _Account(cfg.receivable, "1100"),
+        _Account(cfg.disbursements, "1190"),
         _Account(cfg.input_vat, "1170", (oc,)),
         _Account(cfg.payable, "2000"),
         _Account(cfg.advances_domestic, "2030"),
@@ -904,6 +906,7 @@ def _quints_toml(answers: Answers) -> str:
         f'income_export = "{cfg.income_export}"',
         f'advances_domestic = "{cfg.advances_domestic}"  # pro forma payments, until invoiced',
         f'advances_export = "{cfg.advances_export}"',
+        f'disbursements = "{cfg.disbursements}"  # outlays in a customer\'s name, until invoiced',
         *_saldo_account_lines(answers, cfg),
         f'fx_gain = "{cfg.fx_gain}"',
         f'fx_loss = "{cfg.fx_loss}"',

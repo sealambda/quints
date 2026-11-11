@@ -328,6 +328,16 @@ class Discount(BaseModel):
         return self
 
 
+class PassThrough(BaseModel):
+    """An outlay made in the customer's name and on their account, passed on
+    at cost: no VAT, no revenue (Art. 24 Abs. 6 Bst. b MWSTG)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    description: str = Field(min_length=1)
+    amount: Decimal = Field(gt=0, description="What was paid for the customer, at cost.")
+
+
 class Advance(BaseModel):
     """A payment received against a pro forma, credited on the final invoice."""
 
@@ -407,6 +417,14 @@ class Invoice(BaseModel):
         description=(
             "Further labelled references to print, for whatever the customer's "
             "side demands (Leitweg-ID, CIG/CUP, cost centre, contract number)."
+        ),
+    )
+    pass_through: list[PassThrough] = Field(
+        default_factory=list,
+        description=(
+            "Outlays made in the customer's name and on their account — a court "
+            "fee, a visa, a domain registered for them. Listed apart from the "
+            "lines and added to the total without VAT; not revenue."
         ),
     )
     notes: list[str] = Field(default_factory=list)
@@ -494,6 +512,12 @@ class Invoice(BaseModel):
         if self.proforma and self.advances:
             raise ValueError(
                 "a pro forma cannot credit advances — list them on the invoice that follows it"
+            )
+        if self.proforma and self.pass_through:
+            # shortcut: a pro forma's receipt is split into net and VAT as a
+            # whole; outlays would need their own leg. Add that when asked for.
+            raise ValueError(
+                "a pro forma cannot pass outlays on — list them on the invoice that follows it"
             )
         return self
 
@@ -756,6 +780,7 @@ class Totals(BaseModel):
     vat_amount: Decimal  # the sum over `vat_groups`
     # One per rate, highest first. Empty when no VAT is charged.
     vat_groups: list[VatGroup] = Field(default_factory=list)
+    pass_through: Decimal = Decimal("0")  # outlays passed on at cost, outside VAT
     unrounded: Decimal
     rounding: Decimal
     grand_total: Decimal
@@ -906,7 +931,10 @@ def compute(inv: Invoice, vat_registered: bool = True) -> Totals:
         ]
     rate = max(groups, key=lambda g: abs(g.net)).rate if groups else Decimal("0")
     vat = sum((g.vat for g in groups), Decimal("0"))
-    unrounded = subtotal - discount + vat
+    passed_on = sum((p.amount for p in inv.pass_through), Decimal("0")).quantize(
+        Decimal("0.01"), ROUND_HALF_UP
+    )
+    unrounded = subtotal - discount + vat + passed_on
     grand = round_step(unrounded, Decimal("0.05") if inv.rounds_to_5 else Decimal("0"))
     advances = sum((a.amount for a in inv.advances), Decimal("0"))
     if advances > grand:
@@ -920,6 +948,7 @@ def compute(inv: Invoice, vat_registered: bool = True) -> Totals:
         vat_rate=rate,
         vat_amount=vat,
         vat_groups=groups,
+        pass_through=passed_on,
         unrounded=unrounded,
         rounding=grand - unrounded,
         grand_total=grand,

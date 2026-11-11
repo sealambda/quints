@@ -163,6 +163,9 @@ def build_draft(
     legs += released
     if vat:
         legs.append((cfg.output_vat, _vat_leg(vat, ccy, chf_rate), ""))
+    if totals.pass_through:
+        # Clears the receivable the outlay became when it was paid.
+        legs.append((cfg.disbursements, f"{-totals.pass_through:>10.2f} {ccy}", ""))
     if totals.rounding:
         legs.append((cfg.rounding_income, f"{-totals.rounding:>10.2f} {ccy}", ""))
 

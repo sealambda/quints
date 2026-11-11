@@ -76,6 +76,7 @@ income_domestic = "Income:CH:Einzelfirma:Consulting:External:Domestic"
 income_export = "Income:CH:Einzelfirma:Consulting:External:Export"
 advances_domestic = "Liabilities:CH:Einzelfirma:Advances:Domestic"  # pro forma payments
 advances_export = "Liabilities:CH:Einzelfirma:Advances:Export"
+disbursements = "Assets:CH:Einzelfirma:Receivable:Disbursements"  # outlays in a customer's name
 fx_gain = "Income:CH:Einzelfirma:FX:CurrencyGain"
 fx_loss = "Expenses:CH:Einzelfirma:FX:CurrencyLoss"
 rounding_income = "Income:CH:Einzelfirma:Rounding"

@@ -38,6 +38,7 @@ income_domestic = "Income:CH:GmbH:Consulting:External:Domestic"
 income_export = "Income:CH:GmbH:Consulting:External:Export"
 advances_domestic = "Liabilities:CH:GmbH:Advances:Domestic"  # pro forma payments, until invoiced
 advances_export = "Liabilities:CH:GmbH:Advances:Export"
+disbursements = "Assets:CH:GmbH:Receivable:Disbursements"  # outlays in a customer's name, until invoiced
 fx_gain = "Income:CH:GmbH:FX:CurrencyGain"
 fx_loss = "Expenses:CH:GmbH:FX:CurrencyLoss"
 rounding_income = "Income:CH:GmbH:Rounding"

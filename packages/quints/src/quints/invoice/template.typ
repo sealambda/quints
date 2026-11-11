@@ -177,7 +177,7 @@
 // due). A subtotal alone would only repeat the amount due: the breakdown
 // prints when something stands between the two.
 #let vat-row = not d.totals.export and d.totals.vat_registered
-#let breakdown = vat-row or d.totals.show_rounding or d.totals.show_discount or d.advances.len() > 0
+#let breakdown = d.pass_through.len() > 0 or vat-row or d.totals.show_rounding or d.totals.show_discount or d.advances.len() > 0
 #v(4mm)
 // Wider when it credits advances: their labels name the pro forma and date.
 // Unbreakable: the breakdown never leaves the amount due on the next page.
@@ -194,6 +194,11 @@
           L.vat + " " + g.rate + "%" + if d.totals.vat_groups.len() > 1 { " · " + g.net } else { "" },
           g.vat,
         )).flatten()
+      } else { () }),
+      // Outlays passed on at cost: named as such, outside the VAT above.
+      ..(if d.pass_through.len() > 0 {
+        (grid.cell(colspan: 2, label(L.pass_through)),)
+        d.pass_through.map(p => (text(size: 8.5pt)[#p.description], fig(p.amount))).flatten()
       } else { () }),
       ..(if d.totals.show_rounding { row(L.rounding, d.totals.rounding) } else { () }),
       // Advances credited from pro formas: the invoice total — VAT on the

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -107,3 +108,33 @@ def test_a_discount_is_percent_or_amount_and_no_more_than_the_lines(project: Pat
         Path("invoicing/new.yaml").write_text(MIXED + f"discount: {discount}\n")
         res = runner.invoke(app, ["invoice", "invoicing/new.yaml"])
         assert res.exit_code == 1 and message in res.stderr, res.stderr
+
+
+def test_pass_through_items_are_outside_vat_and_revenue(project: Path) -> None:
+    """An outlay in the customer's name: a receivable when paid, cleared by
+    the invoice that passes it on — never income, never VAT."""
+    with Path("books/2026.bean").open("a") as f:
+        f.write(
+            '\n2026-08-20 * "Handelsregisteramt" "Fee paid for Acme AG"\n'
+            "  Assets:CH:GmbH:Receivable:Disbursements  120.00 CHF\n"
+            "  Assets:CH:GmbH:Current:UBS:CHF          -120.00 CHF\n"
+        )
+    before = _vat_report()
+    d = _issue(
+        "number: INV2026016\nkind: domestic\ncurrency: CHF\nissue_date: 2026-09-01\n"
+        "supply: 2026-08\ncustomer: acme\n"
+        "items:\n  - {description: Filing, quantity: 1, unit_price: 500.00}\n"
+        "pass_through:\n  - {description: Commercial register fee, amount: 120.00}\n"
+    )
+    totals = d["totals"]
+    assert isinstance(totals, dict)
+    assert totals["vat_amount"] == "40.50" and totals["pass_through"] == "120.00"
+    assert totals["grand_total"] == "660.50"
+    assert "Receivable:Disbursements" in str(d["ledger_draft"])
+    assert runner.invoke(app, ["check"]).exit_code == 0
+    res = runner.invoke(app, ["invoice", "invoicing/new.yaml", "--json"])
+    assert json.loads(res.stdout)["cross_check"]["ok"]
+    # The return gains the 500.00 and its VAT, not the outlay.
+    after = _vat_report()
+    assert not after["violations"]
+    assert Decimal(str(after["z303_tax"])) - Decimal(str(before["z303_tax"])) == Decimal("40.50")

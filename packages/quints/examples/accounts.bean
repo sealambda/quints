@@ -7,6 +7,8 @@
   kmu: "1020"  ; Bank deposits
 2026-01-01 open Assets:CH:GmbH:Receivable:Trade
   kmu: "1100"  ; Trade receivables
+2026-01-01 open Assets:CH:GmbH:Receivable:Disbursements
+  kmu: "1190"  ; Other short-term receivables
 2026-01-01 open Assets:CH:GmbH:Tax:InputVAT CHF
   kmu: "1170"  ; Input VAT
 2026-01-01 open Liabilities:CH:GmbH:Payable:Trade

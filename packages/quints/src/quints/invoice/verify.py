@@ -64,7 +64,8 @@ def _tagged(e: data.Transaction, key: str, number: str) -> bool:
 def _booked(txns: list[data.Transaction], currency: str, cfg: config.Config) -> Decimal | None:
     """What the transactions owe the customer, net of tax: −(turnover legs).
 
-    The turnover legs are income, output VAT and customer advances — an
+    The turnover legs are income, output VAT, customer advances and outlays
+    passed on — an
     invoice books them against its receivable, a pro forma's payment against
     the bank. None when no leg is in `currency`."""
     total = None
@@ -78,6 +79,7 @@ def _booked(txns: list[data.Transaction], currency: str, cfg: config.Config) -> 
                 p.account.startswith(cfg.income_prefix)
                 or p.account == cfg.output_vat
                 or p.account in cfg.advances
+                or p.account == cfg.disbursements
             ):
                 total = (total or Decimal("0")) - weight.number
     return total

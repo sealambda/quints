@@ -244,6 +244,10 @@ class Config:
     # like the income account they mirror — the export one carries the marker.
     advances_domestic: str = "Liabilities:CH:GmbH:Advances:Domestic"
     advances_export: str = "Liabilities:CH:GmbH:Advances:Export"
+    # Outlays made in a customer's name and on their account (KMU 1190): a
+    # receivable from the day they are paid until the invoice passes them on.
+    # Neither revenue nor consideration (Art. 24 Abs. 6 Bst. b MWSTG).
+    disbursements: str = "Assets:CH:GmbH:Receivable:Disbursements"
     # Saldosteuersatz method only. The difference between the statutory VAT
     # invoiced and the SSS owed lands in `saldo_difference` at settlement;
     # Bezugsteuer is a cost, not a deduction, so it lands in
@@ -461,6 +465,7 @@ _ACCOUNT_KEYS = (
     "income_export",
     "advances_domestic",
     "advances_export",
+    "disbursements",
     "saldo_difference",
     "bezugsteuer_expense",
 )
