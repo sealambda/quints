@@ -94,6 +94,93 @@ class Answers:
     include_samples: bool = False
 
 
+@dataclass(frozen=True)
+class Question:
+    """One thing ``quints init`` has to be told, and where the answer comes from.
+
+    The interactive questionnaire and ``quints init --questions`` both read
+    :data:`QUESTIONS`, so a caller that cannot be prompted (an agent, a
+    script) is shown exactly what a human at a terminal is asked.
+    """
+
+    key: str  # the Answers field, and the answers.toml key
+    flag: str  # the CLI flag that answers it
+    prompt: str  # what the interactive questionnaire asks
+    choices: tuple[str, ...] = ()  # () = free text
+    asked_if: str = ""  # "" = always
+    source: str = ""  # where the answer is found — it is never a guess
+
+
+QUESTIONS: tuple[Question, ...] = (
+    Question(
+        "legal_form",
+        "--legal-form",
+        "Legal form (gmbh/ag/einzelfirma)",
+        choices=tuple(config.LEGAL_FORMS),
+        source="The commercial-register entry (zefix.ch). A freelancer or sole "
+        "proprietor without a company is an einzelfirma. Partnerships are not "
+        "supported.",
+    ),
+    Question(
+        "entity_name",
+        "--name",
+        "Entity name",
+        source="The name as registered (zefix.ch); for an Einzelfirma without an "
+        "entry, the owner's name.",
+    ),
+    Question(
+        "report_language",
+        "--lang",
+        "Report language (en/de)",
+        choices=("en", "de"),
+        source="A preference: the language of statements and VAT reports. "
+        "Any command overrides it with --lang.",
+    ),
+    Question(
+        "vat_registered_since",
+        "--vat-registered-since",
+        "VAT-registered since (YYYY-MM-DD, or 'no' if below the CHF 100'000 threshold)",
+        source="The start of tax liability on the ESTV's registration "
+        "confirmation; the UID register (uid.admin.ch) shows whether the business "
+        "is in the VAT register. 'no' when it is not registered (Art. 10 MWSTG).",
+    ),
+    Question(
+        "vat_method",
+        "--vat-method",
+        "VAT method (effective/saldo)",
+        choices=tuple(config.VAT_METHODS),
+        asked_if="VAT-registered",
+        source="saldo only if the ESTV approved the Saldosteuersatz method for "
+        "this business (Art. 37 MWSTG); otherwise effective.",
+    ),
+    Question(
+        "saldo_rates",
+        "--saldo-rate",
+        "Saldosteuersatz/-sätze granted by the ESTV, in per cent "
+        "(comma-separated; see SR 641.202.62)",
+        asked_if="vat_method is saldo",
+        source="The rate or rates on the ESTV's approval of the Saldosteuersatz method.",
+    ),
+    Question(
+        "importers",
+        "--importers",
+        "Statement importers to pre-configure (comma-separated, optional)",
+        choices=_KNOWN_IMPORTERS,
+        source="The banks and payment providers the business holds accounts "
+        "with. Leave out any that is not listed; importers can be added to "
+        "quints.toml later.",
+    ),
+    Question(
+        "include_samples",
+        "--samples",
+        "Book a demo quarter",
+        choices=("true", "false"),
+        source="Only for a test drive: it books invented transactions and a "
+        "sample issuer. Leave it off for real books.",
+    ),
+)
+
+
 def answers_from_mapping(raw: dict[str, Any]) -> Answers:
     """Build :class:`Answers` from a parsed ``answers.toml`` mapping.
 

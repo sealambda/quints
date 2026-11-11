@@ -517,6 +517,32 @@ def test_cli_init_without_tty_aborts_cleanly_before_writing(tmp_path: Path):
     res = runner.invoke(app, ["init", str(proj), "--samples"])
     assert res.exit_code != 0
     assert not proj.exists()
+    assert "--questions" in res.output  # says where the questions are listed
+
+
+def test_cli_init_questions_lists_what_an_agent_must_answer(tmp_path: Path):
+    # An agent can't be prompted: `--questions --json` hands it the
+    # questionnaire. Every listed flag must be one `init` really accepts, and
+    # answering them all scaffolds without a prompt and without --yes.
+    res = runner.invoke(app, ["init", "--questions", "--json"])
+    assert res.exit_code == 0, res.output
+    listed = json.loads(res.output)["questions"]
+    assert all(q["source"] for q in listed)
+    help_text = runner.invoke(app, ["init", "--help"], terminal_width=200).output
+    assert all(q["flag"] in help_text for q in listed)
+
+    flags = {q["key"]: q["flag"] for q in listed}
+    proj = tmp_path / "books"
+    argv = ["init", str(proj), "--no-git", "--json"]
+    argv += [flags["legal_form"], "einzelfirma", flags["entity_name"], "Jane Doe"]
+    argv += [flags["report_language"], "de", flags["vat_registered_since"], "no"]
+    done = runner.invoke(app, argv)
+    assert done.exit_code == 0, done.output
+    # The resolved answers are echoed, so the caller can show a human what
+    # the books were scaffolded as.
+    echoed = json.loads(done.output)["answers"]
+    assert echoed["legal_form"] == "einzelfirma"
+    assert echoed["vat_registered"] is False
 
 
 def test_cli_version_flag():
