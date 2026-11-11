@@ -55,6 +55,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: uv sync --all-packages
       - run: uv run pytest packages -q
+      # Weekly: many more generated cases, and legal sources nobody has
+      # re-read for a year fail the run.
+      - name: Property tests, deep profile
+        if: ${{ github.event_name == 'schedule' }}
+        env:
+          QUINTS_WEEKLY: "1"
+        run: uv run pytest packages/quints/tests/test_properties.py -q
 
   # The invoices claim PDF/A-2a + PDF/UA-1; veraPDF checks they are.
   pdf:
@@ -128,6 +135,11 @@ jobs:
         run: nix develop .#docs -c markdownlint-cli2 "**/*.md"
       - name: lychee
         run: nix develop .#docs -c lychee --no-progress "**/*.md"
+      # The legal sources the rate tables cite (ledger.RATE_SOURCES). The synced
+      # lychee.toml is offline-only, so this one run goes without it.
+      - name: lychee on the cited legal sources
+        if: ${{ github.event_name == 'schedule' }}
+        run: nix develop .#docs -c lychee --no-progress --config /dev/null packages/quints/src/quints/ledger.py
 
   # The one required status check. It fails unless every job it needs
   # succeeded, so a skipped or cancelled job can't pass by omission.

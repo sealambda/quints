@@ -17,6 +17,7 @@ dev = [
     "basedpyright>=1.39.9",
     "beanprice>=2.1",
     "deptry>=0.25.1",
+    "hypothesis>=6.170.15",
     "import-linter>=2.13",
     "pytest>=8",
     "pytest-cov>=7.1.0",
