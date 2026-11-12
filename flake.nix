@@ -1,11 +1,12 @@
-# Dev shells, formatter and checks from the Sealambda hub (sealambda/.github).
+# Dev shells, formatter and checks from the Sealambda hub. The hub input is the hub's earlier
+# repository (sealambda/.github-old), pinned to one commit.
 # Python stays with uv: `make check` is the gate for the code, and
 # `nix flake check` adds the hub's formatting and tool-configuration checks.
 {
   description = "quints: Swiss bookkeeping on Beancount";
 
   inputs = {
-    hub.url = "github:sealambda/.github";
+    hub.url = "github:sealambda/.github-old/527e23e6587f21aab7ff1c9f80e3c7149037db43";
     nixpkgs.follows = "hub/nixpkgs";
   };
 
