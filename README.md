@@ -11,10 +11,10 @@ Plain-text accounting for Swiss micro-companies, on top of
 Swiss VAT (MWST) returns, Bezugsteuer, QR-bill invoicing, statutory KMU
 statements, and official BAZG FX rates — the things a Swiss micro-company
 (GmbH, AG, or Einzelfirma) actually has to do, on a ledger you own as text.
-There's no incumbent for this niche, and
+
 `quints` is built to be **driven by an AI coding agent** (Claude Code, Codex,
 …): it's a deterministic CLI with machine-readable output, so the agent
-proposes bookings and `quints` checks and reports on them — it never calls a
+proposes bookings and `quints` checks and reports on them. It never calls a
 model itself.
 
 ![quints init scaffolds sample books, quints check validates them, and quints vat report prints the Form-310 VAT return](docs/assets/quickstart.gif)
@@ -65,23 +65,25 @@ https://sealambda.github.io/quints/llms.txt
 
 Or do it by hand: [Getting started](https://sealambda.github.io/quints/getting-started/).
 
-`quints init` writes a runnable project: a Swiss KMU chart of accounts in
-`accounts.bean` (every account mapped to its Kontenrahmen code), transactions
-in `books/<year>.bean` (one file per fiscal year), a `quints.toml`, a
-`pyproject.toml` (after `uv sync`, the plain beancount toolchain —
-`bean-check main.bean`, `fava main.bean` — works too), and an `AGENTS.md`
-(plus a `CLAUDE.md` that auto-loads it in Claude Code) that tells a coding
-agent how to extend the books and validate them with `quints check`. The
-project starts as a git repository with the pristine scaffold committed, so
-every change is a reviewable diff. Drop `--samples` for empty books.
+`quints init` writes a runnable project. Drop `--samples` for empty books.
+
+| File | What it holds |
+|---|---|
+| `accounts.bean` | Swiss KMU chart of accounts, every account mapped to its Kontenrahmen code |
+| `books/<year>.bean` | transactions, one file per fiscal year |
+| `quints.toml` | everything entity-specific: name, VAT registration, account names, importer rules |
+| `pyproject.toml` | after `uv sync`, the plain beancount toolchain (`bean-check main.bean`, `fava main.bean`) works too |
+| `AGENTS.md`, `CLAUDE.md` | how a coding agent extends the books and validates them with `quints check` |
+
+The project starts as a git repository with the pristine scaffold committed,
+so every change is a reviewable diff.
 
 It asks for your legal form — `gmbh`, `ag`, or `einzelfirma` (sole
 proprietorship / freelancer) — and scaffolds the matching equity block from
 the official KMU Kontenrahmen: share capital for a GmbH/AG; owner's equity,
 capital contributions, and the Privat account for an Einzelunternehmen. The
 account namespace follows (`:CH:GmbH:`, `:CH:AG:`, `:CH:Einzelfirma:`).
-Everything entity-specific (name, VAT registration, account names, importer
-rules) is configuration; VAT *rates* are law and ship date-ranged in code.
+VAT *rates* are law, not configuration, and ship date-ranged in code.
 
 ## What it does — by the job
 
@@ -92,6 +94,7 @@ Run these from your project directory; with `--samples` they work out of the box
 ```bash
 quints vat liability            # must you register? turnover vs the CHF 100'000 threshold
 quints vat report -p 2026-Q3    # the return, Ziffer by Ziffer — effective or Saldosteuersatz
+quints vat settle -p 2026-Q3    # the settlement entry to paste once the return is filed
 quints vat status               # VAT filed but not yet paid, with due dates
 ```
 
@@ -99,17 +102,20 @@ Registration, a switch of method, annual filing and deregistration are dated
 entries in `quints.toml`; every period is computed under the rules in force
 for it, and invoices dated before registration carry no VAT.
 
-### See who owes you
+### See who owes you, and whom you owe
 
 ```bash
-quints receivables        # open invoices, aged by due date
+quints receivables                              # open invoices, aged by due date
+quints receivables --remind --at 2026-10-15     # a reminder PDF per overdue invoice
+quints payables                                 # open supplier bills, aged by due date
 ```
 
 ![quints receivables lists open invoices aged by due date](docs/assets/receivables.gif)
 
-### Year-end statements for your Treuhänder / auditor
+### Close the year, with statements for your Treuhänder / auditor
 
 ```bash
+quints close check --year 2026                   # what is still open before the year can close
 quints report bilanz --at 2026-12-31             # balance sheet (OR Art. 959a)
 quints report erfolg --year 2026                 # income statement (OR Art. 959b)
 quints report statements --year 2026 --lang de   # both, as one PDF
@@ -148,6 +154,10 @@ Renders a QR-bill PDF (domestic or export / reverse-charge) and reconciles the
 total against the matching booking in your ledger, so an invoice can't silently
 diverge from your books. The PDF is filed under `documents/` in the income
 account's folder, date-prefixed — where beancount and Fava expect documents.
+It is PDF/A with Factur-X data embedded, labelled in German, French, Italian,
+English or Spanish. Discounts, pass-through items, credit notes, pro forma
+invoices and the next invoice of a recurring one are covered in
+[Invoicing](https://sealambda.github.io/quints/guides/invoicing/).
 
 ![Generated Swiss QR-bill invoice PDF with payment
 part](docs/assets/invoice-qr-bill.png)

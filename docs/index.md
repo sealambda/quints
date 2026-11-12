@@ -54,9 +54,13 @@ which does the setup with you.
 | Know whether you must register for VAT | `quints vat liability` | [Register, switch method, deregister](guides/vat-registration.md) |
 | File a VAT return | `quints vat report -p 2026-Q3` | [File your VAT return](guides/vat.md) |
 | Record a registration, method switch or deregistration | `quints.toml` → `[entity]`, `[[vat.change]]` | [Register, switch method, deregister](guides/vat-registration.md) |
-| See who owes you | `quints receivables` | [Invoicing](guides/invoicing.md) |
+| See who owes you | `quints receivables` | [Allocate customer payments](guides/receivables.md) |
+| Remind overdue invoices | `quints receivables --remind` | [Allocate customer payments](guides/receivables.md#remind-what-is-overdue) |
 | See what you owe | `quints payables` | [Import statements](guides/importing.md) |
 | Send a QR-bill invoice | `quints invoice <invoice.yaml>` | [Invoicing](guides/invoicing.md) |
+| Take an advance before the invoice is dated | a pro forma, then `quints invoice` | [Get paid before you invoice](guides/pro-forma.md) |
+| Cancel or reduce an invoice | a credit note file, then `quints invoice` | [Invoicing](guides/invoicing.md#cancel-or-reduce-an-invoice-credit-note) |
+| Send the next recurring invoice | `quints invoice new --from <last.yaml> --period 2026-08` | [Invoicing](guides/invoicing.md#the-next-invoice-of-a-recurring-one) |
 | Check an IBAN and its BIC | `quints iban` | [Invoicing](guides/invoicing.md) |
 | Pick QRR or SCOR for your QR-bills | `issuer.yaml` → `bank.<CCY>` | [Payment references](guides/payment-references.md) |
 | Book bank/PSP activity | `quints import ubs <statement.mt940>` | [Import statements](guides/importing.md) |

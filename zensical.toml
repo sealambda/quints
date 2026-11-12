@@ -19,6 +19,7 @@ nav = [
         { "File your VAT return" = "guides/vat.md" },
         { "Import statements" = "guides/importing.md" },
         { "Invoicing" = "guides/invoicing.md" },
+        { "Get paid before you invoice" = "guides/pro-forma.md" },
         { "Payment references" = "guides/payment-references.md" },
         { "Allocate customer payments" = "guides/receivables.md" },
         { "Statutory reports" = "guides/reports.md" },
