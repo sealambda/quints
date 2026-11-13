@@ -1,7 +1,7 @@
 # `make check` split into jobs, the PDF/A validation, the build, and the hub's
-# checks: `nix flake check` (formatting, actionlint, zizmor, typos, synced tool
-# configuration), gitleaks, markdownlint and lychee. Drafts skip it (the
-# organization's CONTRIBUTING.md). The `ci` job is the one required check.
+# checks: `nix flake check` (formatting, actionlint, zizmor, typos), markdownlint
+# and lychee. Drafts skip it (the organization's CONTRIBUTING.md). The `ci` job
+# is the one required check.
 name: CI
 
 on:
@@ -111,12 +111,6 @@ jobs:
       - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
       - run: nix flake check -L
 
-  secrets:
-    if: ${{ !github.event.pull_request.draft }}
-    uses: sealambda/.github-old/.github/workflows/secrets.yml@527e23e6587f21aab7ff1c9f80e3c7149037db43 # main
-    permissions:
-      contents: read
-
   # The hub's docs.yml minus Vale: the synced Vale config flags the verbatim
   # German statute quotations and the house style (spaced em dashes), so Vale
   # waits for a hub-side rule change. Same commands as the hub otherwise.
@@ -146,7 +140,7 @@ jobs:
   ci:
     name: ci
     if: ${{ always() && !github.event.pull_request.draft }}
-    needs: [quality, test, pdf, build, flake-check, secrets, docs-lint]
+    needs: [quality, test, pdf, build, flake-check, docs-lint]
     runs-on: ubuntu-latest
     permissions: {}
     steps:

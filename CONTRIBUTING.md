@@ -60,6 +60,9 @@ What each tool guards:
 - **pytest** — the suite runs in ~2s. Keep it that way: no network, no sleeps.
   Fixtures and the example project stand in for live services.
 
+GitHub secret scanning and push protection guard this repository against
+leaked secrets. CI has no secret scan of its own.
+
 ## Reliability rules
 
 quints computes tax returns and statements, so a wrong number filed is the
