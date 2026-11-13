@@ -19,7 +19,7 @@ concurrency:
 jobs:
   quality:
     name: Static checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -35,7 +35,7 @@ jobs:
 
   test:
     name: Tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -63,7 +63,7 @@ jobs:
   # The invoices claim PDF/A-3a + PDF/UA-1; veraPDF checks they are.
   pdf:
     name: PDF/A and PDF/UA validation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -79,7 +79,7 @@ jobs:
 
   build:
     name: Build distributions
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -97,7 +97,7 @@ jobs:
   # No job lints the workflows: treefmt in the flake check runs actionlint and zizmor.
   flake-check:
     name: nix flake check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -110,7 +110,7 @@ jobs:
 
   docs-lint:
     name: markdownlint and lychee
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
