@@ -1,6 +1,0 @@
-actionlint
-gitleaks
-nixpkgs
-Sealambda
-treefmt
-zizmor
