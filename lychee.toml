@@ -1,15 +1,12 @@
-# Link check of every Sealambda repository.
-# https://lychee.cli.rs
+# Link check settings of this repository. https://lychee.cli.rs
 #
-# The check is offline: it resolves relative links and file paths. A check of
+# The check is offline. It resolves relative links and file paths. A check of
 # external links would fail on other people's outages and rate limits.
 offline = true
 
-# A link to a heading of a Markdown file, such as `page.md#heading`, or to a
-# heading of the same file, such as `#heading`, fails when the heading is
-# missing. lychee 0.24 reads the headings of a local file offline. The option
-# takes a string in this version, not a boolean. `anchor-only` checks anchors
-# and not text fragments, which only a browser can check.
+# A link to a missing heading fails, for `page.md#heading` and for `#heading`.
+# lychee 0.24 reads the headings of a local file offline. `anchor-only` checks
+# anchors and skips text fragments, which only a browser can check.
 include_fragments = "anchor-only"
 
 exclude_path = [

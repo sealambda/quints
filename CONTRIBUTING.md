@@ -12,19 +12,19 @@ uv run quints --help
 ```
 
 With [Nix](https://nixos.org) and direnv, `direnv allow` enters the dev shell
-(uv, make, and the [Sealambda hub](https://github.com/sealambda/.github)'s
-linters) on `cd`. Nix is optional: uv alone runs `make check`. Nix adds the
-checks for everything that isn't Python:
+on `cd`: uv, make, actionlint, zizmor, markdownlint-cli2 and lychee. Nix is
+optional: uv alone runs `make check`. Nix adds the checks for everything that
+isn't Python (actionlint, zizmor, shellcheck, shfmt, nixfmt, typos) and the
+formatters:
 
 ```bash
-nix flake check  # actionlint, zizmor, shellcheck, shfmt, nixfmt, typos, synced config
 nix fmt          # apply the formatters (typos rewrites in place: see _typos.toml)
 ```
 
 ## The quality gate
 
-One command runs everything — CI and the local pre-finish hook both run exactly
-it, so keep it green:
+`make check` is the gate for the Python code. The local pre-finish hook runs
+it. Keep it green:
 
 ```bash
 make check       # ruff, basedpyright, import-linter, deptry, vulture, pytest
@@ -38,12 +38,33 @@ make format      # apply ruff autofixes (format + safe lint fixes)
 make test        # uv run pytest packages -q
 ```
 
-Touching the invoice template or its PDF export? CI also validates the sample
-invoices as PDF/A-3a + PDF/UA-1 with veraPDF; run it locally with Docker:
+CI runs on GitHub-hosted runners and does more than `make check`. Each job
+calls one command that you can run on a fresh clone:
+
+| CI job                      | Command                                                    |
+| --------------------------- | ---------------------------------------------------------- |
+| Static checks               | `uv sync --all-packages && make static`                    |
+| Tests (Python 3.11 to 3.14) | `uv sync --all-packages && make test`                      |
+| PDF/A and PDF/UA validation | `make pdfcheck` (needs Docker)                             |
+| Build distributions         | `uv build --all-packages`                                  |
+| nix flake check             | `nix flake check`                                          |
+| markdownlint and lychee     | `nix develop -c make docs-lint`                            |
+| Docs: build the site        | `uv run --only-group docs zensical build --clean --strict` |
+
+The flake check needs Nix. The markdownlint row needs it only for
+markdownlint-cli2 and lychee: with both on your `PATH`, drop `nix develop -c`.
+
+A weekly run adds two more commands. The first runs the deep property tests:
 
 ```bash
-make pdfcheck
+QUINTS_WEEKLY=1 uv run pytest packages/quints/tests/test_properties.py -q
 ```
+
+The second, `make legal-links`, checks the legal sources that the rate tables
+cite.
+
+Touching the invoice template or its PDF export? Run `make pdfcheck`: veraPDF
+validates the sample invoices as PDF/A-3a and PDF/UA-1.
 
 What each tool guards:
 
@@ -57,8 +78,11 @@ What each tool guards:
 - **deptry** — each package declares its own dependencies in its own
   `pyproject.toml`; undeclared or unused ones fail.
 - **vulture** — dead code.
-- **pytest** — the suite runs in ~2s. Keep it that way: no network, no sleeps.
-  Fixtures and the example project stand in for live services.
+- **pytest** — the suite stays fast: no network, no sleeps. Fixtures and the
+  example project stand in for live services.
+
+GitHub secret scanning and push protection guard this repository against
+leaked secrets. CI has no secret scan of its own.
 
 ## Reliability rules
 
@@ -211,17 +235,22 @@ write a page that only works for a company that never changed.
 
 ## Releases
 
-Only `quints` is published to PyPI. To cut a release: bump `version` in
+All six distributions go to PyPI: `quints` and the five `beangulp-*` /
+`beanprice-*` building blocks. A tag that does not bump a building block
+skips its version, which PyPI already has. To cut a release, bump `version` in
 `packages/quints/pyproject.toml`, then push a matching tag:
 
 ```bash
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-`.github/workflows/publish.yaml` runs the quality gate, builds `quints`, and
-publishes it via PyPI trusted publishing (OIDC — no token), then creates a
-signed GitHub release. The `beangulp-*` / `beanprice-*` building blocks are not
-published; they live here in the workspace.
+`.github/workflows/publish.yaml` runs the quality gate, builds the
+distributions, and publishes each one via PyPI trusted publishing (OIDC, no
+token). Then it signs them with Sigstore and attaches them to the GitHub
+release. The job creates the release if it is missing.
+
+If the release job fails, re-run the failed job. It keeps an existing release
+and replaces assets of the same name.
 
 By contributing you agree your work is licensed under GPL-2.0-only (see
 [LICENSE](LICENSE)).

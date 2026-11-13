@@ -1,4 +1,4 @@
-# Zensical pages, merged with the hub's root settings.
+# Zensical pages, merged with the root settings.
 config:
   # Admonition and tab bodies are indented four spaces, which plain Markdown
   # reads as code blocks: the code-block style looks mixed, and footnotes cited

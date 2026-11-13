@@ -1,9 +1,10 @@
-# Quality gates. `make check` is the single entrypoint — CI and the Claude
-# Code Stop hook both run it. Keep it green.
+# Quality gates. `make check` is the Python gate: the Claude Code Stop hook runs
+# it, and the CI jobs `quality` and `test` run its two halves. Every other CI
+# job has a command here or in flake.nix: see CONTRIBUTING.md.
 
 PKG_DIRS := packages/quints packages/beangulp-mt940 packages/beangulp-stripe packages/beangulp-wise packages/beangulp-yapeal packages/beanprice-bazg
 
-.PHONY: check static test format typebaseline docs docs-serve media pdfcheck
+.PHONY: check static test format typebaseline docs docs-serve docs-lint legal-links media pdfcheck
 
 check: static test
 
@@ -42,6 +43,18 @@ docs:
 
 docs-serve:
 	uv run --only-group docs zensical serve
+
+# Lint the Markdown and its links. Needs markdownlint-cli2 and lychee: the Nix
+# dev shell has both (`nix develop -c make docs-lint`). lychee reads the tracked
+# files only, because a glob would also reach the Markdown in `.venv`.
+docs-lint:
+	markdownlint-cli2 "**/*.md"
+	git ls-files -z '*.md' | xargs -0 lychee --no-progress
+
+# Check the legal sources that the rate tables cite (ledger.RATE_SOURCES). This
+# run needs the network, so it skips the offline `lychee.toml`.
+legal-links:
+	lychee --no-progress --config /dev/null packages/quints/src/quints/ledger.py
 
 # Regenerate the terminal GIFs and PDF previews in docs/assets/ from the
 # committed VHS tapes (media/*.tape) and the sample project. Needs vhs and

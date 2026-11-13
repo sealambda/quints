@@ -1,12 +1,9 @@
-# `make check` split into jobs, the PDF/A validation, the build, and the hub's
-# checks: `nix flake check` (formatting, actionlint, zizmor, typos, synced tool
-# configuration), gitleaks, markdownlint and lychee. Drafts skip it (the
-# organization's CONTRIBUTING.md). The `ci` job is the one required check.
+# Every job runs one command that a contributor can run too: CONTRIBUTING.md
+# has the table. All jobs run on GitHub-hosted runners, drafts included.
 name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   # Weekly, so dependency, validator and link drift shows up between pull requests.
@@ -22,8 +19,8 @@ concurrency:
 jobs:
   quality:
     name: Static checks
-    if: ${{ !github.event.pull_request.draft }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -38,8 +35,8 @@ jobs:
 
   test:
     name: Tests (Python ${{ matrix.python-version }})
-    if: ${{ !github.event.pull_request.draft }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: read
     strategy:
@@ -66,8 +63,8 @@ jobs:
   # The invoices claim PDF/A-3a + PDF/UA-1; veraPDF checks they are.
   pdf:
     name: PDF/A and PDF/UA validation
-    if: ${{ !github.event.pull_request.draft }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -82,8 +79,8 @@ jobs:
 
   build:
     name: Build distributions
-    if: ${{ !github.event.pull_request.draft }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -100,57 +97,30 @@ jobs:
   # No job lints the workflows: treefmt in the flake check runs actionlint and zizmor.
   flake-check:
     name: nix flake check
-    if: ${{ !github.event.pull_request.draft }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
       - run: nix flake check -L
 
-  secrets:
-    if: ${{ !github.event.pull_request.draft }}
-    uses: sealambda/.github-old/.github/workflows/secrets.yml@527e23e6587f21aab7ff1c9f80e3c7149037db43 # main
-    permissions:
-      contents: read
-
-  # The hub's docs.yml minus Vale: the synced Vale config flags the verbatim
-  # German statute quotations and the house style (spaced em dashes), so Vale
-  # waits for a hub-side rule change. Same commands as the hub otherwise.
   docs-lint:
     name: markdownlint and lychee
-    if: ${{ !github.event.pull_request.draft }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
-      - name: markdownlint-cli2
-        run: nix develop .#docs -c markdownlint-cli2 "**/*.md"
-      - name: lychee
-        run: nix develop .#docs -c lychee --no-progress "**/*.md"
-      # The legal sources the rate tables cite (ledger.RATE_SOURCES). The synced
-      # lychee.toml is offline-only, so this one run goes without it.
-      - name: lychee on the cited legal sources
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+      - run: nix develop -c make docs-lint
+      # The rate tables cite legal sources. A weekly run checks that they load.
+      - name: Legal sources
         if: ${{ github.event_name == 'schedule' }}
-        run: nix develop .#docs -c lychee --no-progress --config /dev/null packages/quints/src/quints/ledger.py
-
-  # The one required status check. It fails unless every job it needs
-  # succeeded, so a skipped or cancelled job can't pass by omission.
-  ci:
-    name: ci
-    if: ${{ always() && !github.event.pull_request.draft }}
-    needs: [quality, test, pdf, build, flake-check, secrets, docs-lint]
-    runs-on: ubuntu-latest
-    permissions: {}
-    steps:
-      - name: Require every needed job to succeed
-        env:
-          NEEDS: ${{ toJSON(needs) }}
-        run: echo "$NEEDS" | jq -e 'all(.[]; .result == "success")'
+        run: nix develop -c make legal-links
