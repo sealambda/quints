@@ -1,4 +1,4 @@
-# Publish all five distributions to PyPI on a version tag (v1.2.3).
+# Publish all six distributions to PyPI on a version tag (v1.2.3).
 # Trusted publishing (OIDC) — no API token. `quints` imports the
 # beangulp-*/beanprice-* building blocks at runtime, so they must be on PyPI
 # too or `uvx quints` cannot resolve.
@@ -6,7 +6,7 @@
 # Each package publishes from its own GitHub environment (`pypi-<package>`),
 # because PyPI rejects two *pending* trusted publishers with the identical
 # (repo, workflow, environment) configuration — one environment shared by all
-# five can only ever be registered for one project name. On PyPI, register the
+# six can only ever be registered for one project name. On PyPI, register the
 # publisher for each project with environment `pypi-<package>`.
 # https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/
 name: Publish
@@ -105,17 +105,20 @@ jobs:
           inputs: >-
             ./dist/*.tar.gz
             ./dist/*.whl
-      - name: Create the GitHub Release
+      # A re-run of this job must give the same result. A release that exists
+      # already, from the first attempt or made by hand, is kept as it is, and
+      # `--clobber` replaces assets of the same name. `--verify-tag` stops `gh`
+      # from creating a tag.
+      - name: Create the GitHub Release if it is missing
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
-          gh release create "$GITHUB_REF_NAME"
-          --repo "$GITHUB_REPOSITORY"
-          --title "quints $GITHUB_REF_NAME"
-          --notes ""
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null ||
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
+          --verify-tag --title "quints $GITHUB_REF_NAME" --notes ""
       - name: Upload the signed distribution to the Release
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
-          gh release upload "$GITHUB_REF_NAME" dist/**
+          gh release upload "$GITHUB_REF_NAME" dist/** --clobber
           --repo "$GITHUB_REPOSITORY"
