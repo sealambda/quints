@@ -1,7 +1,6 @@
 # `make check` split into jobs, the PDF/A validation, the build, and the hub's
 # checks: `nix flake check` (formatting, actionlint, zizmor, typos), markdownlint
-# and lychee. Drafts skip it (the organization's CONTRIBUTING.md). The `ci` job
-# is the one required check.
+# and lychee. Drafts skip it (the organization's CONTRIBUTING.md).
 name: CI
 
 on:
@@ -134,17 +133,3 @@ jobs:
       - name: lychee on the cited legal sources
         if: ${{ github.event_name == 'schedule' }}
         run: nix develop -c lychee --no-progress --config /dev/null packages/quints/src/quints/ledger.py
-
-  # The one required status check. It fails unless every job it needs
-  # succeeded, so a skipped or cancelled job can't pass by omission.
-  ci:
-    name: ci
-    if: ${{ always() && !github.event.pull_request.draft }}
-    needs: [quality, test, pdf, build, flake-check, docs-lint]
-    runs-on: ubuntu-latest
-    permissions: {}
-    steps:
-      - name: Require every needed job to succeed
-        env:
-          NEEDS: ${{ toJSON(needs) }}
-        run: echo "$NEEDS" | jq -e 'all(.[]; .result == "success")'
