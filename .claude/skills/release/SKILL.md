@@ -5,7 +5,7 @@ description: Cut and publish a quints monorepo release — decide per-package ve
 
 # Releasing quints
 
-Five independently-versioned distributions in one uv workspace
+Six independently-versioned distributions in one uv workspace
 (`packages/*`). One git tag — `vX.Y.Z`, following the **quints** version —
 publishes everything; unchanged packages are no-ops.
 
