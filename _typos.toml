@@ -1,4 +1,4 @@
-# typos runs in `nix fmt` / `nix flake check` (the hub's treefmt) and rewrites
+# typos runs in `nix fmt` and `nix flake check` (treefmt.nix) and rewrites
 # files in place. quints quotes Swiss law and labels documents in de/fr/it/es,
 # so foreign words are accepted here rather than "corrected" into English.
 [default.extend-words]

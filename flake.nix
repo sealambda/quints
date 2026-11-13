@@ -1,20 +1,21 @@
-# Dev shells, formatter and checks from the Sealambda hub. The hub input is the hub's earlier
-# repository (sealambda/.github-old), pinned to one commit.
-# Python stays with uv: `make check` is the gate for the code, and
-# `nix flake check` adds the hub's formatting and tool-configuration checks.
+# Dev shell, formatter and format check. Python stays with uv: `make check` is
+# the gate for the code. Nix adds the tools for everything else (CONTRIBUTING.md).
 {
   description = "quints: Swiss bookkeeping on Beancount";
 
   inputs = {
-    hub.url = "github:sealambda/.github-old/527e23e6587f21aab7ff1c9f80e3c7149037db43";
-    nixpkgs.follows = "hub/nixpkgs";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    treefmt-nix = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
     {
       self,
       nixpkgs,
-      hub,
+      treefmt-nix,
     }:
     let
       systems = [
@@ -24,49 +25,31 @@
       ];
       eachSystem = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-      # No Python formatter here: ruff is `make format`'s job, at the version
-      # uv.lock pins. typos still reads the Python files (see _typos.toml).
-      treefmtFor = eachSystem (
-        pkgs:
-        hub.lib.mkTreefmt pkgs [
-          {
-            settings.global.excludes = [
-              "*.lock"
-              ".basedpyright/*"
-              "docs/schema/*"
-            ];
-          }
-        ]
-      );
+      treefmtFor = eachSystem (pkgs: treefmt-nix.lib.evalModule pkgs ./treefmt.nix);
     in
     {
-      devShells = eachSystem (
-        pkgs:
-        let
-          inherit (pkgs.stdenv.hostPlatform) system;
-        in
-        {
-          default = pkgs.mkShell {
-            inputsFrom = [ hub.devShells.${system}.base ];
-            packages = [
-              pkgs.gnumake
-              pkgs.uv
-              treefmtFor.${system}.config.build.wrapper
-            ];
-            # uv builds the venv on the shell's Python, not a downloaded one.
-            env = {
-              UV_PYTHON = pkgs.python314.interpreter;
-              UV_PYTHON_DOWNLOADS = "never";
-            };
+      devShells = eachSystem (pkgs: {
+        default = pkgs.mkShell {
+          packages = [
+            pkgs.actionlint
+            pkgs.gnumake
+            pkgs.lychee
+            pkgs.markdownlint-cli2
+            pkgs.uv
+            pkgs.zizmor
+            treefmtFor.${pkgs.stdenv.hostPlatform.system}.config.build.wrapper
+          ];
+          # uv builds the venv on the shell's Python, not a downloaded one.
+          env = {
+            UV_PYTHON = pkgs.python314.interpreter;
+            UV_PYTHON_DOWNLOADS = "never";
           };
-          docs = hub.devShells.${system}.docs;
-        }
-      );
+        };
+      });
 
       formatter = eachSystem (pkgs: treefmtFor.${pkgs.stdenv.hostPlatform.system}.config.build.wrapper);
 
       checks = eachSystem (pkgs: {
-        config-in-sync = hub.lib.mkConfigCheck pkgs self;
         formatting = treefmtFor.${pkgs.stdenv.hostPlatform.system}.config.build.check self;
       });
     };
