@@ -12,12 +12,12 @@ uv run quints --help
 ```
 
 With [Nix](https://nixos.org) and direnv, `direnv allow` enters the dev shell
-(uv, make, and the [Sealambda hub](https://github.com/sealambda/.github)'s
-linters) on `cd`. Nix is optional: uv alone runs `make check`. Nix adds the
-checks for everything that isn't Python:
+on `cd`: uv, make, actionlint, zizmor, markdownlint-cli2 and lychee. Nix is
+optional: uv alone runs `make check`. Nix adds the checks for everything that
+isn't Python:
 
 ```bash
-nix flake check  # actionlint, zizmor, shellcheck, shfmt, nixfmt, typos, synced config
+nix flake check  # actionlint, zizmor, shellcheck, shfmt, nixfmt, typos
 nix fmt          # apply the formatters (typos rewrites in place: see _typos.toml)
 ```
 

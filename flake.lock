@@ -1,32 +1,12 @@
 {
   "nodes": {
-    "hub": {
-      "inputs": {
-        "nixpkgs": "nixpkgs",
-        "treefmt-nix": "treefmt-nix"
-      },
-      "locked": {
-        "lastModified": 1794221962,
-        "narHash": "sha256-8LKVxCw7DBmB48GMSqDxs0fwSamOEAAZWnupx+5p1Ks=",
-        "owner": "sealambda",
-        "repo": ".github-old",
-        "rev": "527e23e6587f21aab7ff1c9f80e3c7149037db43",
-        "type": "github"
-      },
-      "original": {
-        "owner": "sealambda",
-        "repo": ".github-old",
-        "rev": "527e23e6587f21aab7ff1c9f80e3c7149037db43",
-        "type": "github"
-      }
-    },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1793582901,
-        "narHash": "sha256-WDValiY9se78X2Wh7aWWaq/c7HN29U555+OKbHEzYrw=",
+        "lastModified": 1794495034,
+        "narHash": "sha256-E0hYoioqUtM2XmPPvYYpJgdADF5AW9oOoPSEiM9dTHQ=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "5c9de89ec55bff981cb8da1a4ee92b10f1438ffc",
+        "rev": "2074cc672349f14240fb7ea90d509e0b643e9dd4",
         "type": "github"
       },
       "original": {
@@ -38,17 +18,13 @@
     },
     "root": {
       "inputs": {
-        "hub": "hub",
-        "nixpkgs": [
-          "hub",
-          "nixpkgs"
-        ]
+        "nixpkgs": "nixpkgs",
+        "treefmt-nix": "treefmt-nix"
       }
     },
     "treefmt-nix": {
       "inputs": {
         "nixpkgs": [
-          "hub",
           "nixpkgs"
         ]
       },
