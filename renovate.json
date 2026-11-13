@@ -1,11 +1,61 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>sealambda/.github"],
+  "extends": [
+    "config:best-practices",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(build)",
+    ":label(dependencies)",
+    ":approveMajorUpdates"
+  ],
+  "schedule": ["* 0-9 * * 1"],
+  "minimumReleaseAge": "7 days",
+  "osvVulnerabilityAlerts": true,
+  "lockFileMaintenance": {
+    "schedule": ["* 0-9 1 * *"]
+  },
+  "nix": {
+    "enabled": true
+  },
   "packageRules": [
+    {
+      "description": "These update types have no release date, so Renovate cannot check their age. Without this rule the age check stays pending and Renovate never creates the branch.",
+      "matchUpdateTypes": [
+        "lockFileMaintenance",
+        "pin",
+        "replacement",
+        "bump",
+        "lockfileUpdate",
+        "rollback"
+      ],
+      "minimumReleaseAge": null
+    },
+    {
+      "description": "A flake input that follows a Git ref has no release date, so its age cannot be checked.",
+      "matchManagers": ["nix"],
+      "minimumReleaseAge": null
+    },
     {
       "description": "The published packages declare ranges for their users: widen them only when a new release falls outside, and let uv.lock carry the exact versions.",
       "matchManagers": ["pep621"],
       "rangeStrategy": "widen"
+    },
+    {
+      "description": "The actions that the workflows pin by commit SHA, with the version in a comment: one pull request for all of them.",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "A security fix inside the declared range changes only the lock file. Renovate merges it after the checks pass.",
+      "matchJsonata": ["isVulnerabilityAlert = true and newValue = currentValue"],
+      "addLabels": ["security"],
+      "automerge": true
+    },
+    {
+      "description": "Any other security fix changes a declared range or a major version. It opens as a draft pull request. A person reviews it, and Renovate never merges it.",
+      "matchJsonata": ["isVulnerabilityAlert = true and newValue != currentValue"],
+      "addLabels": ["security"],
+      "automerge": false,
+      "draftPR": true
     }
   ]
 }
