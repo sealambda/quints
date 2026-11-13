@@ -194,9 +194,11 @@ uv sync
 make check     # ruff, basedpyright, import-linter, deptry, vulture, pytest
 ```
 
-`make check` is the whole quality gate; CI runs exactly it. Pushing a `vX.Y.Z`
-tag builds and publishes every distribution to PyPI (trusted publishing). See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the architecture and conventions.
+`make check` is the quality gate for the Python code. CI runs more checks:
+[CONTRIBUTING.md](CONTRIBUTING.md#the-quality-gate) lists them. Pushing a
+`vX.Y.Z` tag builds and publishes every distribution to PyPI (trusted
+publishing). See [CONTRIBUTING.md](CONTRIBUTING.md) for the architecture and
+conventions.
 
 ## License
 
