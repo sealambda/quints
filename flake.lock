@@ -9,13 +9,14 @@
         "lastModified": 1794221962,
         "narHash": "sha256-8LKVxCw7DBmB48GMSqDxs0fwSamOEAAZWnupx+5p1Ks=",
         "owner": "sealambda",
-        "repo": ".github",
+        "repo": ".github-old",
         "rev": "527e23e6587f21aab7ff1c9f80e3c7149037db43",
         "type": "github"
       },
       "original": {
         "owner": "sealambda",
-        "repo": ".github",
+        "repo": ".github-old",
+        "rev": "527e23e6587f21aab7ff1c9f80e3c7149037db43",
         "type": "github"
       }
     },
