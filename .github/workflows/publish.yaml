@@ -26,6 +26,7 @@ jobs:
   build:
     name: Build all distributions 📦
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read # check out the tagged source
     steps:
@@ -51,6 +52,7 @@ jobs:
     name: Publish ${{ matrix.package }} 🐍 to PyPI
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -88,6 +90,7 @@ jobs:
     name: Sign 📦 with Sigstore and create a GitHub Release
     needs: publish-to-pypi
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write        # create the release
       id-token: write        # sigstore signing
