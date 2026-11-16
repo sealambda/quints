@@ -1,12 +1,9 @@
-# `make check` split into jobs, the PDF/A validation, the build, and the hub's
-# checks: `nix flake check` (formatting, actionlint, zizmor, typos), markdownlint
-# and lychee. Drafts skip it (the organization's CONTRIBUTING.md). The `ci` job
-# is the one required check.
+# Every job runs one command that a contributor can run too: CONTRIBUTING.md
+# has the table. All jobs run on GitHub-hosted runners, drafts included.
 name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   # Weekly, so dependency, validator and link drift shows up between pull requests.
@@ -22,7 +19,6 @@ concurrency:
 jobs:
   quality:
     name: Static checks
-    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -38,7 +34,6 @@ jobs:
 
   test:
     name: Tests (Python ${{ matrix.python-version }})
-    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -66,7 +61,6 @@ jobs:
   # The invoices claim PDF/A-3a + PDF/UA-1; veraPDF checks they are.
   pdf:
     name: PDF/A and PDF/UA validation
-    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -82,7 +76,6 @@ jobs:
 
   build:
     name: Build distributions
-    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -100,7 +93,6 @@ jobs:
   # No job lints the workflows: treefmt in the flake check runs actionlint and zizmor.
   flake-check:
     name: nix flake check
-    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -111,12 +103,8 @@ jobs:
       - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
       - run: nix flake check -L
 
-  # The hub's docs.yml minus Vale: the synced Vale config flags the verbatim
-  # German statute quotations and the house style (spaced em dashes), so Vale
-  # waits for a hub-side rule change. Same commands as the hub otherwise.
   docs-lint:
     name: markdownlint and lychee
-    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -125,26 +113,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
-      - name: markdownlint-cli2
-        run: nix develop -c markdownlint-cli2 "**/*.md"
-      - name: lychee
-        run: nix develop -c lychee --no-progress "**/*.md"
-      # The legal sources the rate tables cite (ledger.RATE_SOURCES). The synced
-      # lychee.toml is offline-only, so this one run goes without it.
-      - name: lychee on the cited legal sources
+      - run: nix develop -c make docs-lint
+      # The rate tables cite legal sources. A weekly run checks that they load.
+      - name: Legal sources
         if: ${{ github.event_name == 'schedule' }}
-        run: nix develop -c lychee --no-progress --config /dev/null packages/quints/src/quints/ledger.py
-
-  # The one required status check. It fails unless every job it needs
-  # succeeded, so a skipped or cancelled job can't pass by omission.
-  ci:
-    name: ci
-    if: ${{ always() && !github.event.pull_request.draft }}
-    needs: [quality, test, pdf, build, flake-check, docs-lint]
-    runs-on: ubuntu-latest
-    permissions: {}
-    steps:
-      - name: Require every needed job to succeed
-        env:
-          NEEDS: ${{ toJSON(needs) }}
-        run: echo "$NEEDS" | jq -e 'all(.[]; .result == "success")'
+        run: nix develop -c make legal-links
