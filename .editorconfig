@@ -1,4 +1,4 @@
-# Text style of every Sealambda repository. Editors and shfmt read it.
+# Text style of this repository. Editors and shfmt read it.
 # https://editorconfig.org
 root = true
 

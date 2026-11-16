@@ -1,2 +1,0 @@
-# Fake SCA challenge UUID that the Wise signing test signs and verifies.
-60683751a0bb33619abe11b2aa14e4c074755b80:packages/beangulp-wise/tests/test_wise_client.py:generic-api-key:27

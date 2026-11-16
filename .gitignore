@@ -13,6 +13,3 @@ site/
 # Nix and direnv
 .direnv/
 result
-# Vale: the styles come from Nix (see `.vale.ini`); only the vocabularies are tracked.
-.vale/styles/*
-!.vale/styles/config/
