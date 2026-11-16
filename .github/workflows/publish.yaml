@@ -25,7 +25,8 @@ concurrency:
 jobs:
   build:
     name: Build all distributions 📦
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read # check out the tagged source
     steps:
@@ -50,7 +51,8 @@ jobs:
   publish-to-pypi:
     name: Publish ${{ matrix.package }} 🐍 to PyPI
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -87,7 +89,8 @@ jobs:
   github-release:
     name: Sign 📦 with Sigstore and create a GitHub Release
     needs: publish-to-pypi
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: write        # create the release
       id-token: write        # sigstore signing
