@@ -901,6 +901,32 @@ def digest(
         typer.echo(digest_mod.render(d, markdown=output_format == "markdown"), nl=False)
 
 
+skills_app = typer.Typer(
+    no_args_is_help=True,
+    help="Skills for AI agents, in the books' .agents/skills/ and .claude/skills/.",
+)
+app.add_typer(skills_app, name="skills", rich_help_panel=PANEL_START)
+
+
+@skills_app.command("install")
+def skills_install(
+    directory: Path = typer.Argument(Path("."), help="The books' directory (holds quints.toml)."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+):
+    """Write this version's agent skills into the books, replacing older copies.
+
+    `quints init` scaffolds them; run this after upgrading quints. Edits to
+    those files are overwritten: `git diff` shows what changed."""
+    if not (directory / "quints.toml").is_file():
+        _fail(f"no quints.toml in {directory}: run this in books made by `quints init`")
+    result = init_mod.write(directory, init_mod.skill_files(), force=True)
+    if as_json:
+        _json_out({"written": [str(p) for p in result.written]})
+        return
+    for path in result.written:
+        ui.console.print(f"[ok]wrote[/] {path}")
+
+
 # ── VAT ───────────────────────────────────────────────────────────────────────
 
 vat_app = typer.Typer(

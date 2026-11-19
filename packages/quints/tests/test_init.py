@@ -15,6 +15,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from quints import config, init, kmu, ledger, mwst, payables, receivables
@@ -443,6 +444,57 @@ def test_agent_payload_is_loaded_and_accurate():
     bare = _files(init.Answers())["AGENTS.md"]
     assert "Sample data" not in bare
     assert "quints.toml` (supported: ubs, yapeal, wise, stripe)" in bare
+
+
+PLUGIN = Path(init.__file__).parent / "agent_plugin"
+
+
+def test_skills_are_scaffolded_for_every_agent():
+    # Claude Code reads .claude/skills/, Codex .agents/skills/: the same
+    # files in both, with the only frontmatter every agent parses.
+    skills = {str(f.path): f.content for f in init.plan(init.Answers()) if "skills" in f.path.parts}
+    names = sorted(p.name for p in (PLUGIN / "skills").iterdir())
+    assert names == ["book-expense", "close-vat-period", "reconcile"]
+    for name in names:
+        source = (PLUGIN / "skills" / name / "SKILL.md").read_text()
+        assert skills[f".agents/skills/{name}/SKILL.md"] == source
+        assert skills[f".claude/skills/{name}/SKILL.md"] == source
+        front = yaml.safe_load(source.split("---\n")[1])
+        assert set(front) == {"name", "description"}
+        assert front["name"] == name  # the Agent Skills spec: name = folder
+        # Bare `quints`, never a launcher: the agent may run quints from pipx.
+        assert "uv run" not in source and "uvx" not in source
+    assert len(skills) == 2 * len(names)
+
+
+def test_skills_install_refreshes_only_the_skills(tmp_path: Path):
+    books = tmp_path / "books"
+    assert runner.invoke(app, ["init", str(books), "--yes", "--no-git"]).exit_code == 0
+    stale = books / ".claude/skills/reconcile/SKILL.md"
+    stale.write_text("an older version")
+    (books / "AGENTS.md").write_text("edited by hand")
+    result = runner.invoke(app, ["skills", "install", str(books), "--json"])
+    assert result.exit_code == 0, result.output
+    assert len(json.loads(result.output)["written"]) == 6
+    assert stale.read_text() == (PLUGIN / "skills/reconcile/SKILL.md").read_text()
+    assert (books / "AGENTS.md").read_text() == "edited by hand"
+    # Outside a quints project it writes nothing.
+    result = runner.invoke(app, ["skills", "install", str(tmp_path)])
+    assert result.exit_code == 1
+    assert not (tmp_path / ".claude").exists()
+
+
+def test_plugin_manifests_point_at_the_packaged_skills():
+    # The marketplace installs the folder `quints init` copies from, and its
+    # version follows quints: Claude Code only updates a plugin on a new version.
+    repo = Path(init.__file__).resolve().parents[4]
+    marketplace = json.loads((repo / ".claude-plugin/marketplace.json").read_text())
+    (entry,) = marketplace["plugins"]
+    assert (repo / entry["source"]).resolve() == PLUGIN.resolve()
+    manifest = json.loads((PLUGIN / ".claude-plugin/plugin.json").read_text())
+    pyproject = tomllib.loads((repo / "packages/quints/pyproject.toml").read_text())
+    assert manifest["name"] == entry["name"] == "quints"
+    assert manifest["version"] == pyproject["project"]["version"]
 
 
 def test_invoicing_yaml_carries_hosted_schema_modeline():

@@ -1,0 +1,15 @@
+{
+  "name": "sealambda",
+  "description": "Plugins for quints, the Swiss VAT and accounting toolkit for plain-text books.",
+  "owner": {
+    "name": "Sealambda",
+    "url": "https://github.com/sealambda"
+  },
+  "plugins": [
+    {
+      "name": "quints",
+      "source": "./packages/quints/src/quints/agent_plugin",
+      "description": "Swiss bookkeeping skills for books kept with quints: book an expense, reconcile statements, close a VAT period."
+    }
+  ]
+}

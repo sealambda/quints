@@ -15,6 +15,10 @@ This project is a git repository; `quints init` committed the pristine
 scaffold. Work in reviewable steps: `git diff` before moving drafts into
 `books/`, commit once `quints check` passes — the history is the audit trail.
 
+The recurring jobs have step-by-step skills in `.agents/skills/` and
+`.claude/skills/`: `book-expense`, `close-vat-period`, `reconcile`.
+After upgrading quints, `quints skills install` refreshes them.
+
 ## Confidential data
 
 These are the company's books: its customers, suppliers, bank balances and

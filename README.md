@@ -75,7 +75,14 @@ Or do it by hand: [Getting started](https://sealambda.github.io/quints/getting-s
 | `pyproject.toml` | after `uv sync`, the plain beancount toolchain (`bean-check main.bean`, `fava main.bean`) works too |
 | `AGENTS.md`, `CLAUDE.md` | how a coding agent extends the books and validates them with `quints check` |
 | `.claude/settings.json` | Claude Code runs `quints check` after each edit it makes, and sees the problems the edit brought |
+| `.claude/skills/`, `.agents/skills/` | step-by-step skills for the recurring jobs: book an expense, reconcile statements, close a VAT period |
 | `.github/workflows/books.yml` | `quints check` on every pull request, the statements every month (`--ci gitlab` or `--ci none` instead) |
+
+In Claude Code, the same skills install as a plugin, for any books:
+
+```text
+/plugin install quints --marketplace sealambda/quints
+```
 
 The project starts as a git repository with the pristine scaffold committed,
 so every change is a reviewable diff.
