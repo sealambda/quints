@@ -1,7 +1,8 @@
 # Working with AI agents
 
-quints is built to be driven by an AI coding agent — Claude Code, Codex, the
-Agent SDK. The division of labour is strict:
+quints is built to be driven by an AI coding agent: Claude Code, Codex,
+Cursor, GitHub Copilot, opencode, or one built on an agent SDK. The division
+of labour is strict:
 
 - **The agent** reads documents, proposes bookings, extends the chart of
   accounts, writes transactions. The judgement calls.
@@ -63,9 +64,10 @@ Switzerland.[^processor] Before you point an agent at real books:
 `quints init` scaffolds an `AGENTS.md` into every project: the layout, the
 KMU-code rule, both halves of the loop (bank statements in, invoices out),
 the configured importer roster with its credentials, and the
-machine-readable surfaces. A one-line `CLAUDE.md` (`@AGENTS.md`) sits next
-to it, so a Claude Code session loads the playbook automatically — other
-agents find `AGENTS.md` by convention. The fenced commands in the generated
+machine-readable surfaces. Codex, Cursor, GitHub Copilot, opencode, Amp,
+Goose and most other coding agents read `AGENTS.md` on their own.[^agentsmd]
+Claude Code reads `CLAUDE.md`, so a one-line `CLAUDE.md` (`@AGENTS.md`) sits
+next to it and pulls the playbook in. The fenced commands in the generated
 file run in CI against the example project, like every page of these docs.
 
 It opens with the entity's **VAT status**: whether the books are
@@ -92,6 +94,42 @@ agent and editor.
 The scaffold is also a git repository with the pristine project as its
 initial commit — "what did the agent change" is always one `git diff` away,
 and a wrong edit is a revert, not an archaeology dig. Always.
+
+## Skills
+
+`AGENTS.md` says who the company is. Skills say how a recurring job is
+done, step by step, so the agent doesn't work it out again each time:
+
+- **`book-expense`:** a receipt or supplier invoice, booked with the VAT
+  legs the VAT status calls for, and its document filed.
+- **`reconcile`:** statements imported, every draft booked or raised with
+  you, the balance assertions landed.
+- **`close-vat-period`:** a quarter, half-year or year checked for
+  completeness, reported and settled, then tracked until it is filed and
+  paid.
+
+`quints init` writes each skill twice: to `.claude/skills/` for Claude Code
+and to `.agents/skills/` for Codex. Most other agents read one of the
+two.[^skills] The skills are the same for every company: they read the VAT
+status and the account names from `AGENTS.md` and `quints.toml`.
+
+They come with the installed quints. After an upgrade, refresh them from
+inside the books:
+
+```bash
+quints skills install
+```
+
+It overwrites the skill files and nothing else; `git diff` shows what
+changed. In Claude Code, the same skills also install as a plugin:
+
+```text
+/plugin install quints --marketplace sealambda/quints
+```
+
+Every skill keeps a human in the loop. A draft the agent can't explain
+stays in `staging/`, quints computes every VAT figure and rate, and a person
+files the return and makes the payment.
 
 ## Machine-readable surfaces
 
@@ -152,6 +190,8 @@ answer file and byte-checked in CI — the same mechanism that runs every
 command in these docs against a real ledger. What you read here is executed,
 not asserted.
 
+[^agentsmd]: [agents.md](https://agents.md) lists the agents that read the file.
+[^skills]: [Agent Skills](https://agentskills.io) lists the agents that load skills, and where each looks for them.
 [^processor]: Art. 9 DSG (processing by a processor), [SR 235.1](https://www.fedlex.admin.ch/eli/cc/2022/491/de#art_9). For personal data of people in the EU, also Art. 28 GDPR.
 [^abroad]: Art. 16 f. DSG (disclosure abroad: a country with adequate protection per Annex 1 DSV, or safeguards such as standard contractual clauses), [SR 235.1](https://www.fedlex.admin.ch/eli/cc/2022/491/de#art_16); Art. 44 ff. GDPR.
 [^inform]: Art. 19 Abs. 4 DSG: the information duty names the country a disclosure abroad goes to. [SR 235.1](https://www.fedlex.admin.ch/eli/cc/2022/491/de#art_19).

@@ -1,6 +1,10 @@
 ---
 name: release
 description: Cut and publish a quints monorepo release — decide per-package version bumps, tag, PyPI trusted publishing, release notes, post-release smoke test. Use when asked to release, publish, or tag a new version.
+# For maintainers of this repo: keeps `npx skills add sealambda/quints` from
+# offering it to users of quints.
+metadata:
+  internal: "true"
 ---
 
 # Releasing quints
@@ -24,7 +28,10 @@ publishes everything; unchanged packages are no-ops.
 
 - Edit `version = "X.Y.Z"` in each bumped package's `pyproject.toml`. That is
   the only place: `__version__` attributes are derived from installed
-  metadata, never edited by hand.
+  metadata, never edited by hand. One exception: a quints bump also edits
+  `"version"` in `packages/quints/src/quints/agent_plugin/.claude-plugin/plugin.json`
+  (Claude Code only updates an installed plugin when it changes; a test
+  pins the two together).
 - `uv lock` (records the new workspace versions), then `make check`.
 - If CLI output, the scaffold, or the PDFs changed since the last release,
   refresh the visuals: `make media` locally (needs vhs + poppler) or the

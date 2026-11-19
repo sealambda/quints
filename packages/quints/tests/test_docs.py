@@ -47,7 +47,11 @@ DOC_PAGES = sorted(p.relative_to(REPO) for p in (REPO / "docs").rglob("*.md"))
 # The generated AGENTS.md is a doc page too — the one an agent actually reads.
 # Its fenced commands run against the example project like every other page.
 AGENTS_MD = EXAMPLES.relative_to(REPO) / "AGENTS.md"
-PAGES = [Path("README.md"), AGENTS_MD, *DOC_PAGES]
+# So are the agent skills and their plugin README.
+PLUGIN_PAGES = sorted(
+    p.relative_to(REPO) for p in (REPO / "packages/quints/src/quints/agent_plugin").rglob("*.md")
+)
+PAGES = [Path("README.md"), AGENTS_MD, *PLUGIN_PAGES, *DOC_PAGES]
 
 # Indented fences count: content tabs (`=== "GmbH"`) and admonitions nest
 # their code blocks four spaces deep, and those commands must run too.

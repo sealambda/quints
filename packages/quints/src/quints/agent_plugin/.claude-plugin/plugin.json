@@ -1,0 +1,13 @@
+{
+  "name": "quints",
+  "version": "0.23.0",
+  "description": "Swiss bookkeeping with quints: book expenses with the right VAT legs, reconcile bank statements, and close a VAT period. The agent drafts; quints computes and validates; a human approves.",
+  "author": {
+    "name": "Sealambda",
+    "url": "https://github.com/sealambda"
+  },
+  "homepage": "https://sealambda.github.io/quints/reference/ai-agents/",
+  "repository": "https://github.com/sealambda/quints",
+  "license": "GPL-2.0-only",
+  "keywords": ["accounting", "bookkeeping", "beancount", "switzerland", "vat", "mwst"]
+}

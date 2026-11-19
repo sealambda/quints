@@ -1235,6 +1235,7 @@ def _agents_md(answers: Answers) -> str:
             1:
         ]
     )
+    skills = ", ".join(f"`{src.parent.name}`" for src in _skill_sources())
     return f"""# Working on {answers.entity_name}'s books with an AI agent
 
 These are plain-text ([beancount](https://beancount.github.io)) books managed
@@ -1251,6 +1252,10 @@ standard beancount tools directly).
 This project is a git repository; `quints init` committed the pristine
 scaffold. Work in reviewable steps: `git diff` before moving drafts into
 `books/`, commit once `quints check` passes — the history is the audit trail.
+
+The recurring jobs have step-by-step skills in `.agents/skills/` and
+`.claude/skills/`: {skills}.
+After upgrading quints, `quints skills install` refreshes them.
 
 ## Confidential data
 
@@ -1520,6 +1525,28 @@ def _claude_md() -> str:
     return "@AGENTS.md\n"
 
 
+# The agent skills ship in the package; agent_plugin/ is also the Claude Code
+# plugin the repo's .claude-plugin/marketplace.json points at. They are static:
+# AGENTS.md says who the entity is, a skill says how a job is done.
+_SKILLS = Path(__file__).parent / "agent_plugin" / "skills"
+# Claude Code reads .claude/skills/, Codex .agents/skills/; no one directory
+# serves both, so each skill is written twice.
+_SKILL_DIRS = (Path(".agents/skills"), Path(".claude/skills"))
+
+
+def _skill_sources() -> list[Path]:
+    return sorted(_SKILLS.glob("*/SKILL.md"))
+
+
+def skill_files() -> list[ScaffoldFile]:
+    """This version's agent skills, once per skill directory."""
+    return [
+        ScaffoldFile(base / src.relative_to(_SKILLS), src.read_text())
+        for base in _SKILL_DIRS
+        for src in _skill_sources()
+    ]
+
+
 def _gitignore() -> str:
     return "\n".join(
         [
@@ -1566,6 +1593,7 @@ def plan(answers: Answers) -> list[ScaffoldFile]:
         ScaffoldFile(Path("AGENTS.md"), _agents_md(answers)),
         ScaffoldFile(Path("CLAUDE.md"), _claude_md()),
         ScaffoldFile(Path(".claude/settings.json"), _claude_settings()),
+        *skill_files(),
         ScaffoldFile(Path(".gitignore"), _gitignore()),
         *_ci_files(answers),
         ScaffoldFile(Path("inbox/.gitkeep"), ""),
