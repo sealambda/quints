@@ -25,11 +25,13 @@ nav = [
         { "Statutory reports" = "guides/reports.md" },
         { "Close the year" = "guides/year-end.md" },
         { "FX rates" = "guides/fx.md" },
+        { "Check the books in CI" = "guides/ci.md" },
     ] },
     { "Reference" = [
         { "quints.toml" = "reference/configuration.md" },
         { "How quints fills the VAT return" = "reference/vat-rules.md" },
         { "Working with AI agents" = "reference/ai-agents.md" },
+        { "Diagnostics" = "reference/diagnostics.md" },
     ] },
 ]
 

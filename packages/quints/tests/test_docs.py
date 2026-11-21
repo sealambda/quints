@@ -209,3 +209,13 @@ def test_agents_md_commands_run_for_every_vat_situation(
             assert result.exit_code == 0, f"AGENTS.md: `{cmd.line}`:\n{result.output}"
     finally:
         config.set_path(None)
+
+
+def test_every_diagnostic_code_has_its_entry() -> None:
+    """SARIF links each code to its heading on the diagnostics page: every
+    code the source sets must have one, and the page lists no stale code."""
+    source = "\n".join(f.read_text() for f in (REPO / "packages/quints/src/quints").rglob("*.py"))
+    codes = set(re.findall(r'\bcode="([a-z-]+)"', source)) - {"x-test"}
+    page = (REPO / "docs/reference/diagnostics.md").read_text()
+    headings = set(re.findall(r"^## ([a-z-]+)$", page, flags=re.MULTILINE))
+    assert codes and codes == headings
