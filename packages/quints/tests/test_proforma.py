@@ -268,11 +268,11 @@ def test_cli_pro_forma_to_invoice_end_to_end(
         "kind: export\ncurrency: EUR\ncustomer: globex\n"
         "supply: {from: 2027-01-01, to: 2027-03-31}\n"
     )
-    Path("invoicing/globex-pf.yaml").write_text(
+    Path("invoicing/invoices/globex-pf.yaml").write_text(
         f"number: PF2026001\nproforma: true\nissue_date: 2026-11-02\n{head}"
         "items:\n  - {description: Advance 50 %, quantity: 1, unit_price: 10000.00}\n"
     )
-    res = runner.invoke(app, ["invoice", "invoicing/globex-pf.yaml"])
+    res = runner.invoke(app, ["invoice", "invoicing/invoices/globex-pf.yaml"])
     assert res.exit_code == 0, res.output
     assert "No payment booked for pro forma PF2026001" in res.output, res.output
     assert Path("documents/Liabilities/CH/Einzelfirma/Advances/Export").is_dir()
@@ -281,7 +281,7 @@ def test_cli_pro_forma_to_invoice_end_to_end(
     receipt = "\n".join(bank if "TODO the bank leg" in ln else ln for ln in legs.splitlines())
     with Path("books/2026.bean").open("a") as f:
         f.write("\n" + receipt.replace("2026-11-02 *", "2026-11-20 *") + "\n")
-    res = runner.invoke(app, ["invoice", "invoicing/globex-pf.yaml"])
+    res = runner.invoke(app, ["invoice", "invoicing/invoices/globex-pf.yaml"])
     assert "Advance received (2026-11-20): EUR 10'000.00" in res.output, res.output
 
     # Year end: the advance is settled by the work, not in money — neither
@@ -294,12 +294,12 @@ def test_cli_pro_forma_to_invoice_end_to_end(
     codes = {c["code"]: c["amount"] for r in rows for c in r["codes"]}
     assert codes["2030"] == "9300.00", rows
 
-    Path("invoicing/globex-2027-01.yaml").write_text(
+    Path("invoicing/invoices/globex-2027-01.yaml").write_text(
         f"number: INV2027001\nissue_date: 2027-01-29\n{head}"
         "items:\n  - {description: Project, quantity: 1, unit_price: 20000.00}\n"
         "advances:\n  - {proforma: PF2026001, received: 2026-11-20, amount: 10000.00}\n"
     )
-    res = runner.invoke(app, ["invoice", "invoicing/globex-2027-01.yaml", "--json"])
+    res = runner.invoke(app, ["invoice", "invoicing/invoices/globex-2027-01.yaml", "--json"])
     assert res.exit_code == 0, res.output
     d = json.loads(res.output)
     assert d["totals"]["amount_due"] == "10000.00" and not d["cross_check"]["advance_problems"]

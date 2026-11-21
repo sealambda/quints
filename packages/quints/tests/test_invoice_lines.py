@@ -177,7 +177,7 @@ def test_refund_after_a_credit_note_on_a_paid_invoice(project: Path) -> None:
         return {o["number"]: o["open_amount"] for o in json.loads(res.stdout)["open"]}
 
     _issue(
-        Path("invoicing/acme-2026-07.yaml").read_text()
+        Path("invoicing/invoices/acme-2026-07.yaml").read_text()
         + "number: CN2026001\nissue_date: 2026-08-10\ncredit_note_for: INV2026014\n"
     )
     assert open_items()["INV2026014"] == "-1081.00"

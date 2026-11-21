@@ -37,8 +37,8 @@ trap 'rm -rf "$work"' EXIT
   cd "$work"
   quints init my-books --samples --yes >/dev/null
   cd my-books
-  quints invoice invoicing/acme-2026-07.yaml
-  quints invoice invoicing/globex-2026-08.yaml
+  quints invoice invoicing/invoices/acme-2026-07.yaml
+  quints invoice invoicing/invoices/globex-2026-08.yaml
   quints report statements --year 2026 --lang de
   # Invoices are filed like any other beancount document: under the income
   # account's folder in documents/, date-prefixed.
@@ -51,7 +51,7 @@ trap 'rm -rf "$work"' EXIT
   # whole configuration change, so the docs' pair stays honest.
   sed -e 's/^    # qr_iban:/    qr_iban:/' -e 's/^    # qr_reference_id:/    qr_reference_id:/' \
     invoicing/issuer.yaml >invoicing/issuer-qrr.yaml
-  quints invoice invoicing/acme-2026-07.yaml --issuer invoicing/issuer-qrr.yaml \
+  quints invoice invoicing/invoices/acme-2026-07.yaml --issuer invoicing/issuer-qrr.yaml \
     --no-verify -o acme-qrr.pdf
   # Payment parts side by side: the bottom 105 mm of each A4 page at 150 dpi
   # (1240 x 1754 px; the payment part starts at 192 mm = 1134 px; a 3 mm margin above keeps the perforation line).

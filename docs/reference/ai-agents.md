@@ -142,7 +142,7 @@ quints vat status --json
 quints report bilanz --at 2026-12-31 --json
 quints receivables --json
 quints payables --json
-quints invoice invoicing/acme-2026-07.yaml --json
+quints invoice invoicing/invoices/acme-2026-07.yaml --json
 ```
 
 The invoice one adds `reference` and `reference_type` (the payment reference

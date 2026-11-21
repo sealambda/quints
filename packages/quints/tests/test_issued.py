@@ -31,12 +31,12 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     res = runner.invoke(app, [*args, "--lang", "en", "--vat-method", "effective", "--samples"])
     assert res.exit_code == 0, res.output
     monkeypatch.chdir(proj)
-    Path("invoicing/acme-2026-08.yaml").write_text(INVOICE)
+    Path("invoicing/invoices/acme-2026-08.yaml").write_text(INVOICE)
     return proj
 
 
 def _invoice(*extra: str) -> tuple[int, dict[str, object]]:
-    res = runner.invoke(app, ["invoice", "invoicing/acme-2026-08.yaml", "--json", *extra])
+    res = runner.invoke(app, ["invoice", "invoicing/invoices/acme-2026-08.yaml", "--json", *extra])
     return res.exit_code, json.loads(res.stdout)
 
 
@@ -67,7 +67,7 @@ def test_issue_verify_tamper_and_reissue(project: Path) -> None:
     # …a reissue has to be asked for, and has to say that it is one.
     code, refused = _invoice("--reissue")
     assert code == 1 and "corrected" in str(refused["errors"])
-    Path("invoicing/acme-2026-08.yaml").write_text(INVOICE + "corrected: 2026-09-03\n")
+    Path("invoicing/invoices/acme-2026-08.yaml").write_text(INVOICE + "corrected: 2026-09-03\n")
     code, reissued = _invoice("--reissue")
     assert code == 0 and reissued["pdf_sha256"] != digest
 
@@ -87,7 +87,7 @@ def test_issue_verify_tamper_and_reissue(project: Path) -> None:
 def test_a_booking_without_a_hash_is_issued_once_its_pdf_is_filed(project: Path) -> None:
     """Books from before hashes were recorded: the sample invoice is booked
     with a bare ^link. The first run files its PDF; after that it is fixed."""
-    sample = ["invoice", "invoicing/acme-2026-07.yaml"]
+    sample = ["invoice", "invoicing/invoices/acme-2026-07.yaml"]
     first = json.loads(runner.invoke(app, [*sample, "--json"]).stdout)
     assert first["issued"] is False and first["cross_check"]["sha256"] is None
     pdf = Path(first["pdf"])
@@ -107,7 +107,7 @@ def test_every_blocker_is_reported_as_data(project: Path) -> None:
     """One run lists the problems of every file and every check, with a code."""
     issuer = Path("invoicing/issuer.yaml")
     good = issuer.read_text()
-    Path("invoicing/acme-2026-08.yaml").write_text(INVOICE.replace("CHF", "chf"))
+    Path("invoicing/invoices/acme-2026-08.yaml").write_text(INVOICE.replace("CHF", "chf"))
     issuer.write_text(good + "email: [not, a, string]\n")
     code, d = _invoice()
     assert code == 1 and d["ok"] is False
@@ -122,13 +122,13 @@ def test_every_blocker_is_reported_as_data(project: Path) -> None:
     # After loading: an export in a currency with no account, to a customer
     # with no VAT number — two checks, two entries.
     issuer.write_text(good)
-    Path("invoicing/acme-2026-08.yaml").write_text(
+    Path("invoicing/invoices/acme-2026-08.yaml").write_text(
         INVOICE.replace("domestic", "export").replace("CHF", "USD")
     )
     code, d = _invoice()
     assert code == 1
     assert [e["code"] for e in d["errors"]] == ["reverse_charge", "bank_account"]  # type: ignore[union-attr]
-    res = runner.invoke(app, ["invoice", "invoicing/acme-2026-08.yaml"])
+    res = runner.invoke(app, ["invoice", "invoicing/invoices/acme-2026-08.yaml"])
     assert res.stderr.startswith("ERROR: 2 problems:")
 
 

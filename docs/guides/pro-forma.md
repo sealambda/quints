@@ -63,7 +63,7 @@ items:
 
 <!-- no-test: the pro forma flow runs end to end in tests/test_proforma.py -->
 ```bash
-quints invoice invoicing/globex-pf2026001.yaml
+quints invoice invoicing/invoices/globex-pf2026001.yaml
 ```
 
 The PDF is titled *Proforma-Rechnung* / *Pro forma invoice*, never

@@ -321,7 +321,7 @@ def test_an_unregistered_freelancer_end_to_end(
 
     monkeypatch.chdir(proj)
     assert runner.invoke(app, ["check"]).exit_code == 0
-    out = runner.invoke(app, ["invoice", "invoicing/acme-2026-07.yaml", "--json"])
+    out = runner.invoke(app, ["invoice", "invoicing/invoices/acme-2026-07.yaml", "--json"])
     assert out.exit_code == 0, out.output
     payload = json.loads(out.output)
     assert payload["totals"]["vat_amount"] == "0" and payload["cross_check"]["ok"]
@@ -474,6 +474,6 @@ def test_a_mid_year_registration_scaffolds_and_files_end_to_end(
     assert items["vat"]["data"]["periods"] == ["VAT-2026-Q2", "VAT-2026-Q3", "VAT-2026-Q4"]
     # The sample July invoice falls after registration, so it charges VAT.
     inv = json.loads(
-        runner.invoke(app, ["invoice", "invoicing/acme-2026-07.yaml", "--json"]).output
+        runner.invoke(app, ["invoice", "invoicing/invoices/acme-2026-07.yaml", "--json"]).output
     )
     assert inv["totals"]["vat_amount"] == "81.00" and inv["cross_check"]["ok"]

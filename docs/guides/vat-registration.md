@@ -79,7 +79,7 @@ A project scaffolded before registering says so:
 quints init jane-books --name "Jane Doe" --legal-form einzelfirma --vat-registered-since no --samples --yes
 cd jane-books
 quints vat liability --at 2026-12-31
-quints invoice invoicing/acme-2026-07.yaml
+quints invoice invoicing/invoices/acme-2026-07.yaml
 cd ..
 ```
 
