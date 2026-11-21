@@ -13,7 +13,6 @@ period-free or scoped by the data:
 
 from __future__ import annotations
 
-from datetime import date as Date
 from pathlib import Path
 
 from beancount.core import convert as bc_convert
@@ -48,7 +47,8 @@ def audit(
     reports = kmu.compute_bilanz(
         ledger_path, str(last), cfg, date_from=f"{last.year}-01-01", loaded=loaded
     ).violations
-    for d0, d1 in _open_vat_periods(entries, cfg, last):
+    for link in mwst.unsettled_periods(entries, cfg, last):
+        d0, d1 = mwst.period_range(link.removeprefix("VAT-"))
         reports += mwst.compute(ledger_path, d0, d1, cfg, loaded=loaded).violations
     places = {(v.file, v.line) for v in unvalued}
     found += [
@@ -82,24 +82,6 @@ def _unvalued(
                     )
                 )
     return out
-
-
-def _open_vat_periods(
-    entries: data.Directives, cfg: config.Config, last: Date
-) -> list[tuple[str, str]]:
-    """The VAT periods from registration to the one holding ``last``, minus the settled."""
-    phases = cfg.vat_phases
-    if not phases:
-        return []
-    first = phases[0].start or min(e.date for e in entries if isinstance(e, data.Transaction))
-    settled = mwst.settled_periods(entries, cfg)
-    periods: list[tuple[str, str]] = []
-    for year in range(first.year, last.year + 1):
-        for link in mwst.vat_periods(year, cfg):
-            d0, d1 = mwst.period_range(link.removeprefix("VAT-"))
-            if link not in settled and Date.fromisoformat(d0) <= last:
-                periods.append((d0, d1))
-    return periods
 
 
 def _dedupe(found: list[ledger.Violation]) -> list[ledger.Violation]:

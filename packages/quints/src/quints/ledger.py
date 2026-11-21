@@ -222,7 +222,7 @@ class Violation:
         return f"{place}: {self.message}" if place else self.message
 
 
-def _location(source: object) -> tuple[str | None, int | None]:
+def location(source: object) -> tuple[str | None, int | None]:
     """(file, line) from a directive's meta or an error's source; "<load>" is no file."""
     if not isinstance(source, dict):
         return None, None
@@ -243,7 +243,7 @@ def violation_at(
 ) -> Violation:
     """A violation located at ``entry``: its date, and a transaction's payee and narration."""
     txn = entry if isinstance(entry, data.Transaction) else None
-    file, line = _location(entry.meta)
+    file, line = location(entry.meta)
     return Violation(
         str(entry.date),
         (txn.payee or "") if txn else "",
@@ -269,7 +269,7 @@ def violations(errors: Sequence[object]) -> list[Violation]:
         entry = getattr(err, "entry", None)
         on = getattr(entry, "date", None)
         txn = entry if isinstance(entry, data.Transaction) else None
-        file, line = _location(getattr(err, "source", None))
+        file, line = location(getattr(err, "source", None))
         out.append(
             Violation(
                 str(on) if on is not None else "",
@@ -292,6 +292,13 @@ def load(ledger: Path) -> Loaded:
     """Load a ledger for a report: (entries, its loader errors as violations)."""
     entries, errors = load_entries(ledger)
     return entries, violations(errors)
+
+
+def has_document(e: data.Transaction) -> bool:
+    """A ``document…:`` key on the transaction or any of its postings."""
+    return any(key.startswith("document") for key in (e.meta or {})) or any(
+        any(key.startswith("document") for key in (p.meta or {})) for p in e.postings
+    )
 
 
 class RateUnavailable(Exception):

@@ -681,10 +681,23 @@ def _item_inbox(root: Path, entries: data.Directives) -> CheckItem:
     )
 
 
-def _item_documents(
-    entries: data.Directives, year: int, cfg: config.Config, generated_accounts: frozenset[str]
-) -> CheckItem:
-    missing: list[str] = []
+def generated_accounts(cfg: config.Config, plan: DepreciationPlan) -> frozenset[str]:
+    """Accounts quints books itself: FX revaluation, rounding, depreciation."""
+    return frozenset(
+        {cfg.fx_gain, cfg.fx_loss, cfg.rounding_income, cfg.depreciation_account}
+        | {a.expense_account for a in plan.assets}
+    )
+
+
+def undocumented(
+    entries: data.Directives, year: int, cfg: config.Config, generated: frozenset[str]
+) -> tuple[list[data.Transaction], int]:
+    """(the year's income/expense transactions with no document link, how many need one).
+
+    Generated entries — VAT settlements, FX revaluation, depreciation,
+    rounding — need none.
+    """
+    missing: list[data.Transaction] = []
     total = 0
     for e in entries:
         if not isinstance(e, data.Transaction) or e.date.year != year:
@@ -695,26 +708,30 @@ def _item_documents(
             if cfg.entity_marker in p.account
             and p.account.split(":", 1)[0] in ("Income", "Expenses")
         ]
-        if not flows or _generated(e, cfg, generated_accounts):
+        if not flows or _generated(e, cfg, generated):
             continue
         total += 1
-        linked = any(key.startswith("document") for key in (e.meta or {}))
-        linked = linked or any(
-            any(key.startswith("document") for key in (p.meta or {})) for p in e.postings
-        )
-        if not linked:
-            missing.append(f"{e.date} {e.payee or ''} {e.narration}".strip())
+        if not ledger.has_document(e):
+            missing.append(e)
+    return missing, total
+
+
+def _item_documents(
+    entries: data.Directives, year: int, cfg: config.Config, generated_accounts: frozenset[str]
+) -> CheckItem:
+    missing, total = undocumented(entries, year, cfg, generated_accounts)
     if not missing:
         return CheckItem(
             "documents", PASS, f"All {total} income/expense transaction(s) link a document."
         )
+    examples = [f"{e.date} {e.payee or ''} {e.narration}".strip() for e in missing[:3]]
     return CheckItem(
         "documents",
         WARN,
         f"{len(missing)} of {total} income/expense transaction(s) have no `document:` link "
         f"(generated entries — VAT settlements, FX revaluation, depreciation, rounding — "
         f"are exempt).",
-        {"count": len(missing), "of": total, "examples": missing[:3]},
+        {"count": len(missing), "of": total, "examples": examples},
     )
 
 
@@ -903,10 +920,7 @@ def check(ledger_path: Path, year: int, cfg: config.Config | None = None) -> Che
     found = audit.audit(ledger_path, cfg, loaded=(entries, ledger.violations(errors)))
     root = ledger_path.resolve().parent
     plan = compute_depreciation(ledger_path, year, cfg, entries)
-    generated_accounts = frozenset(
-        {cfg.fx_gain, cfg.fx_loss, cfg.rounding_income, cfg.depreciation_account}
-        | {a.expense_account for a in plan.assets}
-    )
+    generated = generated_accounts(cfg, plan)
     return Checklist(
         year=year,
         at=f"{year}-12-31",
@@ -916,7 +930,7 @@ def check(ledger_path: Path, year: int, cfg: config.Config | None = None) -> Che
             _item_flagged(entries, year),
             _item_staging(root),
             _item_inbox(root, entries),
-            _item_documents(entries, year, cfg, generated_accounts),
+            _item_documents(entries, year, cfg, generated),
             _item_assertions(entries, year, cfg),
             _item_fx(ledger_path, year, cfg),
             _item_prices(entries, year, cfg),

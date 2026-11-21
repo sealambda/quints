@@ -14,9 +14,16 @@ def hermetic_git(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def hermetic_ci(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A CI runner's checkout variables would move every diagnostic's path:
-    tests that want one set it themselves."""
-    for variable in ("GITHUB_WORKSPACE", "CI_PROJECT_DIR", "BUILD_SOURCESDIRECTORY"):
+    """A CI runner's variables would move every diagnostic's path, pick the
+    output format, or append to the real job summary: tests that want one set
+    it themselves."""
+    for variable in (
+        "GITHUB_WORKSPACE",
+        "CI_PROJECT_DIR",
+        "BUILD_SOURCESDIRECTORY",
+        "QUINTS_OUTPUT_FORMAT",
+        "GITHUB_STEP_SUMMARY",
+    ):
         monkeypatch.delenv(variable, raising=False)
 
 

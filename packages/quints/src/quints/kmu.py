@@ -941,11 +941,17 @@ def compute_erfolg(
 
 
 def compute_konten(
-    ledger_path: Path, date_from: str, date_to: str, cfg: config.Config | None = None
+    ledger_path: Path,
+    date_from: str,
+    date_to: str,
+    cfg: config.Config | None = None,
+    *,
+    loaded: ledger.Loaded | None = None,
 ) -> KontenReport:
     cfg = cfg or config.get()
     d0, d1 = Date.fromisoformat(date_from), Date.fromisoformat(date_to)
-    entries, problems = ledger.load(ledger_path)
+    entries, problems = loaded or ledger.load(ledger_path)
+    problems = list(problems)  # a shared load's list stays as it was
     price_map = bc_prices.build_price_map(entries)
     mapping = kmu_map(entries, cfg.entity_marker)
 

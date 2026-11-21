@@ -24,7 +24,7 @@ from typing import TypedDict
 import typst
 from babel.dates import format_date
 
-from . import ui
+from . import config, kmu, ledger, ui
 from .invoice.model import Brand, Issuer, load_issuer
 from .invoice.render import brand_context, fonts
 from .kmu import BilanzReport, ErfolgReport, RowLine, kmu_name, label
@@ -303,6 +303,43 @@ def build_context(
             "lines": e_lines,
         },
     }
+
+
+Statements = tuple[BilanzReport, ErfolgReport, tuple[BilanzReport, ErfolgReport] | None]
+
+
+def statements(
+    ledger_path: Path,
+    date_from: str,
+    date_to: str,
+    cfg: config.Config | None = None,
+    *,
+    prior: bool,
+    loaded: ledger.Loaded | None = None,
+) -> Statements:
+    """(Bilanz, Erfolgsrechnung, the prior year's pair or None) for one fiscal year.
+
+    The prior year's figures sit next to this year's (Art. 958d Abs. 2 OR).
+    ``prior`` is False for an extended first year; a year with empty books
+    before it has none either.
+    shortcut: the prior year is a calendar year, so after an extended first
+    year its column covers only that year's calendar part; add --prior-from if asked.
+    """
+    loaded = loaded or ledger.load(ledger_path)
+    bilanz = kmu.compute_bilanz(ledger_path, date_to, cfg, date_from=date_from, loaded=loaded)
+    erfolg = kmu.compute_erfolg(ledger_path, date_from, date_to, cfg, loaded=loaded)
+    if not prior:
+        return bilanz, erfolg, None
+    year = int(date_to[:4]) - 1
+    prior_bilanz = kmu.compute_bilanz(
+        ledger_path, f"{year}-12-31", cfg, date_from=f"{year}-01-01", loaded=loaded
+    )
+    prior_erfolg = kmu.compute_erfolg(
+        ledger_path, f"{year}-01-01", f"{year}-12-31", cfg, loaded=loaded
+    )
+    if prior_bilanz.total_assets or prior_erfolg.result:
+        return bilanz, erfolg, (prior_bilanz, prior_erfolg)
+    return bilanz, erfolg, None
 
 
 def render_pdf(
