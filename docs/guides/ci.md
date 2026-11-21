@@ -94,12 +94,15 @@ The `statements` job above calls a reusable workflow. It checks the books,
 writes every statutory file with `quints report bundle`, shows the
 Erfolgsrechnung in the job summary, and uploads the files as an artifact.
 Its inputs are `year` (default: the current year), or `from` and `to` for
-an extended first year, and `langs`, `file`, `quints` and `release`.
+an extended first year, and `langs`, `file`, `quints`, `python-version`
+and `release`.
 
-At the year-end close, publish the files as a GitHub Release:
+At the year-end close, publish the files as a GitHub Release. This job
+runs only when you start the workflow by hand (*Run workflow*):
 
 ```yaml
   close:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     permissions:
       actions: read # the release job downloads the artifact
       contents: write # and creates the release

@@ -44,9 +44,12 @@ on:
         description: What to install (as the check action's input); empty, the books' own pin.
         type: string
         default: ""
+      python-version:
+        description: The Python to run quints on. Empty, uv picks one.
+        type: string
+        default: ""
 
-permissions: {}
-
+# No workflow-level permissions: the release job inherits the caller's grant.
 jobs:
   statements:
     name: Statements
@@ -61,6 +64,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ inputs.python-version }}
       - name: Install quints
         env:
           QUINTS: ${{ inputs.quints }}
@@ -122,15 +127,17 @@ jobs:
           path: statements/
           if-no-files-found: error
 
-  release:
+  release: # zizmor: ignore[excessive-permissions]
     name: GitHub Release
     needs: statements
     if: ${{ inputs.release }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    permissions:
-      actions: read # download the artifact
-      contents: write # create the release
+    # No permissions: block on purpose. GitHub rejects a caller whose grant
+    # doesn't cover every permission a nested job declares, even when the job's
+    # `if:` skips it. Inheriting keeps a contents: read caller valid. Only the
+    # close caller grants what this needs: actions: read (download the artifact)
+    # and contents: write (create the release).
     steps:
       - name: Publish the statements
         env:

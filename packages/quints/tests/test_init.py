@@ -23,6 +23,7 @@ from quints.cli import app
 runner = CliRunner()
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
+REPO = Path(__file__).resolve().parents[3]
 
 
 def _example_answers() -> init.Answers:
@@ -602,6 +603,36 @@ def test_ci_defaults_to_github_pinned_to_this_quints(tmp_path: Path):
     assert f"sealambda/quints/actions/check@v{__version__}" in workflow
     assert f"sealambda/quints/.github/workflows/statements.yml@v{__version__}" in workflow
     assert ".gitlab-ci.yml" not in files
+
+
+def test_statements_workflow_fits_the_scaffolds_grant():
+    # GitHub refuses to start a run (startup_failure, every event, even with
+    # the job's `if:` false) when a called workflow declares a permission the
+    # caller job doesn't grant.
+    import yaml
+
+    files = {str(f.path): f.content for f in init.plan(init.Answers())}
+    grant = yaml.safe_load(files[".github/workflows/books.yml"])["jobs"]["statements"][
+        "permissions"
+    ]
+    called = yaml.safe_load((REPO / ".github/workflows/statements.yml").read_text())
+    declared = [called.get("permissions")] + [
+        job.get("permissions") for job in called["jobs"].values()
+    ]
+    for perms in filter(None, declared):
+        for scope, level in perms.items():
+            ok = level == "none" or grant.get(scope) in (level, "write")
+            assert ok, f"statements.yml declares {scope}: {level}, the scaffold grants {grant}"
+
+
+def test_ci_guide_pins_this_quints():
+    # The guide's snippets are copied into books repos: an old pin keeps an old bug.
+    from quints import __version__
+
+    pins = set(
+        re.findall(r"sealambda/quints/\S+@v([\d.]+)", (REPO / "docs/guides/ci.md").read_text())
+    )
+    assert pins == {__version__}, "bump the @vX.Y.Z pins in docs/guides/ci.md to this release"
 
 
 def test_ci_gitlab_reports_code_quality_and_none_writes_nothing():
