@@ -31,6 +31,13 @@ dependencies = [
 [project.scripts]
 quints = "quints.cli:main"
 
+[project.optional-dependencies]
+# `quints lsp`. Apache-2.0 and MIT: optional, so the core install stays as it was.
+lsp = [
+    "lsprotocol>=2025.0",
+    "pygls>=2",
+]
+
 [tool.deptry.per_rule_ignores]
 # The default price source: `prices sync` resolves it by module name at
 # runtime (importlib), so deptry sees no static import.

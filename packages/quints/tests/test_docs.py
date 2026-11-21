@@ -36,7 +36,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from quints import config, init
+from quints import config, diagnostics, init, ledger
 from quints.cli import app
 
 runner = CliRunner()
@@ -173,14 +173,15 @@ def test_hosted_schemas_are_in_sync() -> None:
 
     from quints.invoice import model as m
 
-    for name, mdl in (
-        ("invoice", m.Invoice),
-        ("issuer", m.Issuer),
-        ("customers", m.CustomerRegistry),
+    for name, document in (
+        ("invoice", m.Invoice.model_json_schema()),
+        ("issuer", m.Issuer.model_json_schema()),
+        ("customers", m.CustomerRegistry.model_json_schema()),
+        ("quints", config.json_schema()),
     ):
         path = REPO / "docs" / "schema" / f"{name}.schema.json"
         assert path.exists(), f"{path} missing — run `make docs`"
-        assert json.loads(path.read_text()) == mdl.model_json_schema(), (
+        assert json.loads(path.read_text()) == document, (
             f"docs/schema/{name}.schema.json is stale — run `make docs`"
         )
 
@@ -216,6 +217,13 @@ def test_every_diagnostic_code_has_its_entry() -> None:
     code the source sets must have one, and the page lists no stale code."""
     source = "\n".join(f.read_text() for f in (REPO / "packages/quints/src/quints").rglob("*.py"))
     codes = set(re.findall(r'\bcode="([a-z-]+)"', source)) - {"x-test"}
+    codes |= {"ledger", *ledger.LOADER_CODES.values()}  # a loader error's, by its class
     page = (REPO / "docs/reference/diagnostics.md").read_text()
     headings = set(re.findall(r"^## ([a-z-]+)$", page, flags=re.MULTILINE))
     assert codes and codes == headings
+    # `quints explain` reads the copy in the package: the same page, offline.
+    packaged = REPO / "packages/quints/src/quints/diagnostics.txt"
+    assert packaged.read_text() == page, (
+        "cp docs/reference/diagnostics.md packages/quints/src/quints/diagnostics.txt"
+    )
+    assert set(diagnostics.explanations()) == headings

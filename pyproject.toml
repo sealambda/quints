@@ -4,7 +4,7 @@ name = "quints-monorepo"
 version = "0"
 requires-python = ">=3.11"
 dependencies = [
-    "quints",
+    "quints[lsp]",
     "beangulp-mt940",
     "beangulp-stripe",
     "beangulp-wise[sca]",
@@ -128,7 +128,7 @@ type = "layers"
 containers = ["quints"]
 exhaustive = true
 layers = [
-    "cli : fava : plugins",
+    "cli : fava : lsp : plugins",
     "settlement : report_pdf : match : importing : init : closing : liability : audit : changes : digest : bundle",
     "mwst : kmu : vat : fx : prices : inbox : payables : receivables : invoice",
     "config : ledger : ui : diagnostics",

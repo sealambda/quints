@@ -1,0 +1,402 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "quints.toml",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "legal_form": {
+          "type": "string",
+          "enum": [
+            "gmbh",
+            "ag",
+            "einzelfirma"
+          ]
+        },
+        "vat_registered": {
+          "type": "boolean"
+        },
+        "vat_method": {
+          "type": "string",
+          "enum": [
+            "effective",
+            "saldo"
+          ]
+        },
+        "vat_registered_since": {
+          "type": "string",
+          "format": "date"
+        },
+        "vat_registered_until": {
+          "type": "string",
+          "format": "date"
+        },
+        "operating_currency": {
+          "type": "string"
+        }
+      }
+    },
+    "ledger": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "main": {
+          "type": "string"
+        },
+        "prices": {
+          "type": "string"
+        }
+      }
+    },
+    "accounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input_vat": {
+          "type": "string"
+        },
+        "output_vat": {
+          "type": "string"
+        },
+        "bezugsteuer": {
+          "type": "string"
+        },
+        "payable_vat": {
+          "type": "string"
+        },
+        "income_prefix": {
+          "type": "string"
+        },
+        "export_marker": {
+          "type": "string"
+        },
+        "export_goods_marker": {
+          "type": "string"
+        },
+        "exempt_marker": {
+          "type": "string"
+        },
+        "optioned_marker": {
+          "type": "string"
+        },
+        "reduced_marker": {
+          "type": "string"
+        },
+        "lodging_marker": {
+          "type": "string"
+        },
+        "entity_marker": {
+          "type": "string"
+        },
+        "fx_gain": {
+          "type": "string"
+        },
+        "fx_loss": {
+          "type": "string"
+        },
+        "receivable": {
+          "type": "string"
+        },
+        "payable": {
+          "type": "string"
+        },
+        "rounding_income": {
+          "type": "string"
+        },
+        "income_domestic": {
+          "type": "string"
+        },
+        "income_export": {
+          "type": "string"
+        },
+        "advances_domestic": {
+          "type": "string"
+        },
+        "advances_export": {
+          "type": "string"
+        },
+        "disbursements": {
+          "type": "string"
+        },
+        "saldo_difference": {
+          "type": "string"
+        },
+        "bezugsteuer_expense": {
+          "type": "string"
+        }
+      }
+    },
+    "invoice": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gap_check_from": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    },
+    "payables": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default_terms_days": {
+          "type": "integer"
+        }
+      }
+    },
+    "prices": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "currencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tickers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "type": "string"
+        }
+      }
+    },
+    "vat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "period": {
+          "type": "string",
+          "enum": [
+            "quarter",
+            "half-year",
+            "year"
+          ]
+        },
+        "saldo": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "rate": {
+                "type": [
+                  "number",
+                  "string"
+                ]
+              },
+              "marker": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "change": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "type": "string",
+                "format": "date"
+              },
+              "method": {
+                "type": "string"
+              },
+              "period": {
+                "type": "string",
+                "enum": [
+                  "quarter",
+                  "half-year",
+                  "year"
+                ]
+              },
+              "saldo": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "rate": {
+                      "type": [
+                        "number",
+                        "string"
+                      ]
+                    },
+                    "marker": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "close": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "depreciation_account": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "prorata": {
+          "type": "string"
+        },
+        "receivable_review_days": {
+          "type": "integer"
+        }
+      }
+    },
+    "import": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ubs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "iban": {
+              "type": "string"
+            },
+            "currency": {
+              "type": "string"
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            }
+          }
+        },
+        "yapeal": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "iban": {
+              "type": "string"
+            },
+            "currency": {
+              "type": "string"
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            }
+          }
+        },
+        "wise": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "accounts": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "fees_account": {
+              "type": "string"
+            },
+            "holder": {
+              "type": "string"
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            }
+          }
+        },
+        "stripe": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "accounts": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "fees_account": {
+              "type": "string"
+            },
+            "tax_account": {
+              "type": "string"
+            },
+            "account_id": {
+              "type": "string"
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

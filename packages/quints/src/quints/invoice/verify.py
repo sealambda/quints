@@ -274,6 +274,7 @@ def audit(
                     )
                 )
         elif name and ("invoice" in meta or "proforma" in meta):
+            filed = next((root / "documents").rglob(str(name)), None)
             out.append(
                 ledger.violation_at(
                     e,
@@ -281,6 +282,7 @@ def audit(
                     "file prints the `sha256:` line to add",
                     code="invoice-unhashed",
                     severity="warning",
+                    fix=f'  sha256: "{sha256(filed)}"' if filed else "",
                 )
             )
         number = receivables.invoice_id(e)

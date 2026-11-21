@@ -1,3 +1,4 @@
+#:schema https://sealambda.github.io/quints/schema/quints.schema.json
 # quints.toml — everything entity-specific lives here, next to main.bean.
 # Account names mirror accounts.bean; change them in both files together.
 

@@ -202,6 +202,8 @@ class Violation:
     ``code`` names the rule (docs/reference/diagnostics.md); an ``error``
     fails ``quints check``, a ``warning`` only with ``--strict``. ``file`` is
     relative to the repository root (:func:`quints.diagnostics.relative`).
+    ``fix`` is the line to insert below ``line`` that resolves the problem,
+    set only when no judgement is involved.
     """
 
     date: str
@@ -214,6 +216,7 @@ class Violation:
     severity: Severity = "error"
     file: str | None = None
     line: int | None = None
+    fix: str = ""
 
     @property
     def located(self) -> str:
@@ -240,6 +243,7 @@ def violation_at(
     severity: Severity = "error",
     expected: Decimal = Decimal("0"),
     posted: Decimal = Decimal("0"),
+    fix: str = "",
 ) -> Violation:
     """A violation located at ``entry``: its date, and a transaction's payee and narration."""
     txn = entry if isinstance(entry, data.Transaction) else None
@@ -255,7 +259,20 @@ def violation_at(
         severity,
         file,
         line,
+        fix,
     )
+
+
+# A loader error's class names what went wrong; any other class is `ledger`.
+LOADER_CODES = {
+    "LexerError": "ledger-syntax",
+    "ParserError": "ledger-syntax",
+    "ParserSyntaxError": "ledger-syntax",
+    "LoadError": "ledger-load",
+    "BalanceError": "ledger-balance",
+    "CompareError": "ledger-duplicate",
+    "KmuError": "kmu-missing",
+}
 
 
 def violations(errors: Sequence[object]) -> list[Violation]:
@@ -270,13 +287,20 @@ def violations(errors: Sequence[object]) -> list[Violation]:
         on = getattr(entry, "date", None)
         txn = entry if isinstance(entry, data.Transaction) else None
         file, line = location(getattr(err, "source", None))
+        code = LOADER_CODES.get(type(err).__name__, "ledger")
+        # noduplicates prints both entries whole, absolute paths included.
+        message = (
+            "the same entry is booked twice"
+            if code == "ledger-duplicate"
+            else getattr(err, "message", err)
+        )
         out.append(
             Violation(
                 str(on) if on is not None else "",
                 (txn.payee or "") if txn else "",
                 (txn.narration or "") if txn else "",
-                f"ledger error: {getattr(err, 'message', err)}",
-                code="ledger",
+                f"ledger error: {message}",
+                code=code,
                 file=file,
                 line=line,
             )

@@ -10,9 +10,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from collections.abc import Sequence
 from decimal import Decimal
 from enum import StrEnum
+from importlib import resources
 from pathlib import Path
 from typing import Protocol
 
@@ -41,6 +43,11 @@ def relative(path: str) -> str:
     file = Path(path).resolve()  # beancount keeps symlinks; git and runners may not
     root = repo_root(file.parent).resolve()
     return file.relative_to(root).as_posix() if file.is_relative_to(root) else path
+
+
+def absolute(file: str, start: Path) -> Path:
+    """Undo :func:`relative` for a file of the books in ``start``."""
+    return repo_root(start.resolve()).resolve() / file  # an absolute ``file`` stays itself
 
 
 # ── output formats ───────────────────────────────────────────────────────────
@@ -83,6 +90,24 @@ class Diagnostic(Protocol):
     def expected(self) -> Decimal: ...
     @property
     def posted(self) -> Decimal: ...
+    @property
+    def fix(self) -> str: ...
+
+
+def explanations() -> dict[str, str]:
+    """Each code's section of the diagnostics reference, from the copy in the package.
+
+    The docs page needs a network; a local model's machine may have none.
+    """
+    # .txt: a copy of docs/reference/diagnostics.md, whose relative links the
+    # Markdown link check would follow from here. test_docs keeps the two equal.
+    text = resources.files("quints").joinpath("diagnostics.txt").read_text(encoding="utf-8")
+    sections = (s.partition("\n") for s in re.split(r"^## ", text, flags=re.MULTILINE)[1:])
+    return {
+        head.strip(): body.strip()
+        for head, _, body in sections
+        if re.fullmatch(r"[a-z-]+", head.strip())
+    }
 
 
 def as_dict(d: Diagnostic) -> dict[str, object]:
@@ -98,6 +123,8 @@ def as_dict(d: Diagnostic) -> dict[str, object]:
         "message": d.message,
         "expected": str(d.expected),
         "posted": str(d.posted),
+        "help": f"{DOCS}#{d.code}",
+        "fix": {"file": d.file, "after_line": d.line, "insert": d.fix} if d.fix else None,
     }
 
 

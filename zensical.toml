@@ -26,6 +26,7 @@ nav = [
         { "Close the year" = "guides/year-end.md" },
         { "FX rates" = "guides/fx.md" },
         { "Check the books in CI" = "guides/ci.md" },
+        { "Check the books as you edit" = "guides/editing.md" },
     ] },
     { "Reference" = [
         { "quints.toml" = "reference/configuration.md" },

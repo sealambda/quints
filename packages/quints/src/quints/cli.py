@@ -680,6 +680,21 @@ def check(
     output_format: diagnostics.OutputFormat = _output_format(),
     output_file: Path | None = _output_file(),
     strict: bool = typer.Option(False, "--strict", help="Warnings fail the check too."),
+    fix: bool = typer.Option(
+        False, "--fix", help="Apply the fixes that need no judgement, then check again."
+    ),
+    review: bool = typer.Option(
+        False,
+        "--review",
+        help="Also warn about what is still to review: `!` flags, entries with "
+        "no document, bank balances not asserted for a quarter.",
+    ),
+    base_ref: str | None = typer.Option(
+        None,
+        "--base-ref",
+        metavar="REF",
+        help="Report only the problems the books at this revision don't have.",
+    ),
     file: Path = _file_option(),
 ):
     """Validate the ledger, its statements and its open VAT returns; summarize it.
@@ -688,7 +703,7 @@ def check(
     between the two statements, the VAT returns not settled yet, and issued
     invoices. Exits 1 on an error, or on a warning with --strict. Each problem
     points at its file and line, in the format a CI runner reads
-    (--output-format).
+    (--output-format). `quints explain CODE` says what a code means.
     """
     import dataclasses
     import json
@@ -696,20 +711,35 @@ def check(
     from beancount.parser import printer
 
     _require_ledger(file)
-    from . import audit
+    from . import audit, changes
 
     fmt = diagnostics.OutputFormat.json if as_json else output_format
-    entries, errors = ledger.load_entries(file)
+    cfg = config_mod.get()
+
+    def run(path: Path) -> tuple[ledger.Loaded, list[Any], list[ledger.Violation]]:
+        entries, errors = ledger.load_entries(path)
+        loaded = (entries, ledger.violations(errors))
+        found = audit.audit(path, cfg, loaded=loaded)
+        if review:
+            found += closing_mod.review(path, entries, cfg)
+        return loaded, errors, found
+
+    (entries, loaded), errors, found = run(file)
+    fixed = audit.apply_fixes(file, found) if fix else 0
+    if fixed:
+        (entries, loaded), errors, found = run(file)
+    if base_ref is not None:
+        with changes.at_ref(file, base_ref) as base_path:
+            found = audit.new_since(found, run(base_path)[2] if base_path.exists() else [])
     stats = ledger.stats(entries)
-    loaded = ledger.violations(errors)
-    found = audit.audit(file, config_mod.get(), loaded=(entries, loaded))
     errs = [d for d in found if d.severity == "error"]
     failed = bool(errs) or (strict and len(found) > len(errs))
     span = (
         f", {stats.first_transaction}..{stats.last_transaction}" if stats.first_transaction else ""
     )
     ok_line = (
-        f"OK — no errors. {stats.transactions} transaction(s) "
+        f"OK — no {f'new problems since {base_ref}' if base_ref else 'errors'}. "
+        f"{stats.transactions} transaction(s) "
         f"across {stats.directives} directive(s){span}."
     )
     if fmt == "json":
@@ -717,6 +747,7 @@ def check(
             "ok": not failed,
             "errors": [diagnostics.as_dict(d) for d in errs],
             "warnings": [diagnostics.as_dict(d) for d in found if d.severity == "warning"],
+            "fixed": fixed,
             "stats": dataclasses.asdict(stats),
         }
         _write_out(json.dumps(payload, indent=2, default=str) + "\n", output_file)
@@ -736,6 +767,8 @@ def check(
     for d, line in zip(found, lines, strict=True):
         if output_file is None:
             typer.secho(line, fg="red" if d.severity == "error" else "yellow", err=True)
+    if fixed:
+        typer.secho(f"Fixed {fixed} problem(s).", err=True)
     if failed:
         typer.secho(f"{diagnostics.counts(found)}.", fg="red", err=True)
         raise typer.Exit(1)
@@ -754,6 +787,41 @@ def check(
             f"[muted]{stats.open_accounts} open account(s) · "
             f"currencies: {', '.join(stats.currencies) or '—'}[/]"
         )
+
+
+@app.command(rich_help_panel=PANEL_START)
+def explain(
+    code: str | None = typer.Argument(None, help="A diagnostic's code, e.g. vat-mismatch."),
+):
+    """What a problem's code means and how to fix it; no code lists them all.
+
+    The diagnostics reference, read from the installed package: no network.
+    """
+    known = diagnostics.explanations()
+    if code is None:
+        for name, text in known.items():
+            typer.echo(f"{name}: {text.split()[0].strip('.,').lower()}")  # Error. / Warning,
+    elif code in known:
+        typer.echo(f"{code}\n\n{known[code]}")
+    else:
+        import difflib
+
+        close = difflib.get_close_matches(code, list(known), n=1)
+        _fail(f"unknown code {code!r}" + (f" — did you mean {close[0]}?" if close else ""))
+
+
+@app.command(rich_help_panel=PANEL_START)
+def lsp(file: Path = _file_option()):
+    """Serve the problems `quints check` finds to an editor (LSP, over stdio).
+
+    Diagnostics refresh when a file is saved. Needs the extra: quints[lsp].
+    """
+    _require_ledger(file)
+    try:
+        from . import lsp as lsp_mod
+    except ModuleNotFoundError:
+        _fail("`quints lsp` needs pygls: install quints[lsp]")
+    lsp_mod.serve(file)
 
 
 class _ReportFormat(StrEnum):
@@ -2357,24 +2425,25 @@ def schema(
         Path("invoicing/schema"), "--out", "-o", help="Directory for the generated JSON Schemas."
     ),
 ):
-    """Write JSON Schemas for the invoice, issuer, and customers files.
+    """Write JSON Schemas for the invoice, issuer and customers files, and quints.toml.
 
-    Point an editor at them (yaml-language-server modeline) for completion
-    and validation; any future UI can consume the same contract. The same
-    schemas are published on the docs site, so scaffolded YAMLs reference
-    them without running this command."""
+    Point an editor at them (yaml-language-server modeline, taplo `#:schema`)
+    for completion and validation; any future UI can consume the same
+    contract. The same schemas are published on the docs site, so scaffolded
+    files reference them without running this command."""
     import json as _json
 
     from .invoice import model as m
 
     out.mkdir(parents=True, exist_ok=True)
-    for name, mdl in [
-        ("invoice", m.Invoice),
-        ("issuer", m.Issuer),
-        ("customers", m.CustomerRegistry),
+    for name, document in [
+        ("invoice", m.Invoice.model_json_schema()),
+        ("issuer", m.Issuer.model_json_schema()),
+        ("customers", m.CustomerRegistry.model_json_schema()),
+        ("quints", config_mod.json_schema()),
     ]:
         path = out / f"{name}.schema.json"
-        path.write_text(_json.dumps(mdl.model_json_schema(), indent=2) + "\n")
+        path.write_text(_json.dumps(document, indent=2) + "\n")
         ui.console.print(f"[ok]Wrote[/] {path}")
     ui.console.print(f"[muted]Also hosted at {config_mod.DOCS_URL}/schema/[/]")
 

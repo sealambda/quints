@@ -81,6 +81,14 @@ The statement loop the playbook describes:
    it to `books/<year>.bean`.
 3. `quints check` before the books are considered consistent.
 
+Between two edits the agent asks a narrower question: what did this edit
+break? `quints check --review --strict --base-ref HEAD` reports only the
+problems the last commit doesn't have. The scaffolded
+`.claude/settings.json` runs it after every edit Claude Code makes, and the
+playbook tells any other agent to run it itself.
+[Check the books as you edit](../guides/editing.md) has the setup for each
+agent and editor.
+
 The scaffold is also a git repository with the pristine project as its
 initial commit — "what did the agent change" is always one `git diff` away,
 and a wrong edit is a revert, not an archaeology dig. Always.
@@ -104,6 +112,15 @@ it printed), `customer_reference`, and the ledger draft when the invoice is
 not booked yet.
 
 Stable keys, ISO dates, decimal strings — made to be parsed, not scraped.
+
+Each problem in `quints check --json` carries its `code`, `file` and `line`,
+a `help` link to its entry in [Diagnostics](diagnostics.md), and a `fix`
+when one needs no judgement: the line to insert and where. This prints the
+same entry with no network, for a model that runs offline:
+
+```bash
+quints explain vat-mismatch
+```
 
 ```bash
 quints schema

@@ -119,8 +119,21 @@ account with no valid `kmu:` code.
    still owed, aged by due date.
 4. **Always** `quints check` before you consider the books consistent. It
    checks the ledger, the statements and every VAT return not settled yet.
-   Each problem names its `file:line` and a code; the diagnostics reference
-   (https://sealambda.github.io/quints/reference/diagnostics/) says how to fix each code.
+   Each problem names its `file:line` and a code, and this says what a code
+   means and how to fix it, offline:
+
+```bash
+quints explain vat-mismatch
+```
+
+   `quints check --fix` applies the fixes that need no judgement.
+   `quints check --review` also lists what is still to review: `!` flags,
+   entries with no document, bank balances not asserted for a quarter.
+
+After each edit, check what the edit brought:
+`quints check --review --strict --base-ref HEAD` reports only the problems
+the last commit doesn't have. In Claude Code, `.claude/settings.json` runs it
+for you after every edit; any other agent runs it itself.
 
 ## The loop — money in (invoice → receivable → payment)
 

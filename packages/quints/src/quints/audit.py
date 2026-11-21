@@ -13,13 +13,14 @@ period-free or scoped by the data:
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 from beancount.core import convert as bc_convert
 from beancount.core import data
 from beancount.core import prices as bc_prices
 
-from . import config, kmu, ledger, mwst
+from . import config, diagnostics, kmu, ledger, mwst
 from .invoice import verify
 
 
@@ -94,3 +95,39 @@ def _dedupe(found: list[ledger.Violation]) -> list[ledger.Violation]:
             seen.add(key)
             out.append(v)
     return out
+
+
+def new_since(
+    found: list[ledger.Violation], base: list[ledger.Violation]
+) -> list[ledger.Violation]:
+    """``found`` without what ``base`` already had: the problems a change brought.
+
+    Matched by content, not by file or line, so an entry that moved is not new.
+
+    shortcut: a message that quotes an absolute path (a missing include)
+    differs between the two checkouts and counts as new.
+    """
+    had = Counter((v.code, v.date, v.payee, v.narration, v.message) for v in base)
+    out: list[ledger.Violation] = []
+    for v in found:
+        key = (v.code, v.date, v.payee, v.narration, v.message)
+        if had[key] > 0:
+            had[key] -= 1
+        else:
+            out.append(v)
+    return out
+
+
+def apply_fixes(ledger_path: Path, found: list[ledger.Violation]) -> int:
+    """Insert each ``fix`` below its line; returns how many were applied."""
+    by_file: dict[str, dict[int, str]] = {}
+    for v in found:
+        if v.fix and v.file and v.line:
+            by_file.setdefault(v.file, {})[v.line] = v.fix
+    for file, fixes in by_file.items():
+        path = diagnostics.absolute(file, ledger_path.parent)
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        for line in sorted(fixes, reverse=True):  # bottom-up: earlier lines keep their number
+            lines.insert(line, fixes[line] + "\n")
+        ledger.atomic_write(path, "".join(lines))
+    return sum(len(fixes) for fixes in by_file.values())

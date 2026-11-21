@@ -21,6 +21,16 @@ quints.toml:
 
 A typo never falls back to a default.
 
+An editor can say the same before you run anything. `quints init` writes
+this as the first line, and Taplo (Even Better TOML) then checks every key
+against the schema as you type. Add it to a `quints.toml` written earlier:
+
+```toml
+#:schema https://sealambda.github.io/quints/schema/quints.schema.json
+```
+
+See [Check the books as you edit](../guides/editing.md).
+
 ## `[entity]`
 
 ```toml
