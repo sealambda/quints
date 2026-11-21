@@ -1325,7 +1325,10 @@ account with no valid `kmu:` code.
    The bank draft that pays it clears the liability — matched to the bill,
    its counter leg becomes that clearing. `quints payables` shows what is
    still owed, aged by due date.
-4. **Always** `quints check` before you consider the books consistent.
+4. **Always** `quints check` before you consider the books consistent. It
+   checks the ledger, the statements and every VAT return not settled yet.
+   Each problem names its `file:line` and a code; the diagnostics reference
+   ({config.DOCS_URL}/reference/diagnostics/) says how to fix each code.
 
 ## The loop — money in (invoice → receivable → payment)
 
@@ -1374,7 +1377,8 @@ a number you invent — the maxima are the ESTV Merkblatt A/1995 Normalsätze.
 ## Machine-readable surfaces (prefer these over scraping text)
 
 Every reporting command takes `--json` — stable keys, ISO dates, decimal
-strings:
+strings. Each problem, under `errors`/`warnings` in `check` and under
+`violations` in the reports, carries `code`, `severity`, `file` and `line`:
 
 ```bash
 quints check --json

@@ -125,6 +125,19 @@ quints report statements --year 2026 --lang de   # both, as one PDF
 ![Generated Bilanz page of the statements PDF, grouped by KMU
 code](docs/assets/statements.png)
 
+### Check every change in CI
+
+```bash
+quints check --output-format github   # also gitlab, azure, sarif, json
+```
+
+`quints check` is the one gate: the ledger, the statutory statements and
+every VAT return not settled yet. Each problem is annotated at its file and
+line, in the runner's own format. A GitHub action
+(`sealambda/quints/actions/check`), a reusable statements workflow, and
+`quints diff` / `quints digest` for pull-request and weekly summaries are in
+[Check the books in CI](https://sealambda.github.io/quints/guides/ci/).
+
 ### Keep FX rates right
 
 <!-- no-test: prices sync needs network; docs/guides/fx.md covers revalue -->
