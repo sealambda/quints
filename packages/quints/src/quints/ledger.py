@@ -9,11 +9,13 @@ from dataclasses import dataclass, field
 from datetime import date as Date
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 from beancount import loader
 from beancount.core import convert, data, prices
 from beancount.core.amount import Amount
+
+from . import diagnostics
 
 
 class InvariantError(AssertionError):
@@ -190,9 +192,17 @@ def load_entries(ledger: Path):
     return entries, errors
 
 
+Severity = Literal["error", "warning"]
+
+
 @dataclass
 class Violation:
-    """A problem in the books a report cannot represent — listed, never silently dropped."""
+    """A problem in the books a report cannot represent — listed, never silently dropped.
+
+    ``code`` names the rule (docs/reference/diagnostics.md); an ``error``
+    fails ``quints check``, a ``warning`` only with ``--strict``. ``file`` is
+    relative to the repository root (:func:`quints.diagnostics.relative`).
+    """
 
     date: str
     payee: str
@@ -200,34 +210,80 @@ class Violation:
     message: str
     expected: Decimal = Decimal("0")
     posted: Decimal = Decimal("0")
+    code: str = ""
+    severity: Severity = "error"
+    file: str | None = None
+    line: int | None = None
+
+    @property
+    def located(self) -> str:
+        """``path:line: message``, or the message alone when it has no place."""
+        if self.file is None:
+            return self.message
+        return (
+            f"{self.file}:{self.line}: {self.message}"
+            if self.line
+            else f"{self.file}: {self.message}"
+        )
 
 
-def violations(errors: Sequence[object], root: Path) -> list[Violation]:
-    """Beancount loader errors as report violations, ``file:line`` relative to ``root``.
+def _location(source: object) -> tuple[str | None, int | None]:
+    """(file, line) from a directive's meta or an error's source; "<load>" is no file."""
+    if not isinstance(source, dict):
+        return None, None
+    filename, lineno = source.get("filename"), source.get("lineno")
+    if not filename or str(filename).startswith("<"):
+        return None, None
+    return diagnostics.relative(str(filename)), lineno if isinstance(lineno, int) else None
+
+
+def violation_at(
+    entry: data.Directive,
+    message: str,
+    *,
+    code: str,
+    severity: Severity = "error",
+    expected: Decimal = Decimal("0"),
+    posted: Decimal = Decimal("0"),
+) -> Violation:
+    """A violation located at ``entry``: its date, and a transaction's payee and narration."""
+    txn = entry if isinstance(entry, data.Transaction) else None
+    file, line = _location(entry.meta)
+    return Violation(
+        str(entry.date),
+        (txn.payee or "") if txn else "",
+        (txn.narration or "") if txn else "",
+        message,
+        expected,
+        posted,
+        code,
+        severity,
+        file,
+        line,
+    )
+
+
+def violations(errors: Sequence[object]) -> list[Violation]:
+    """Beancount loader errors as report violations, located at their ``file:line``.
 
     The loader drops what it cannot read (a missing include, a syntax error)
     and keeps the rest, so a report computed from it is short: it must say so.
     """
     out: list[Violation] = []
     for err in errors:
-        source = getattr(err, "source", None) or {}
-        filename, lineno = source.get("filename"), source.get("lineno")
-        where = ""
-        if filename and not str(filename).startswith("<"):  # "<load>": no file to point at
-            name = Path(str(filename))
-            where = str(name.relative_to(root) if name.is_relative_to(root) else name)
-            where += f":{lineno}" if lineno is not None else ""
         entry = getattr(err, "entry", None)
         on = getattr(entry, "date", None)
         txn = entry if isinstance(entry, data.Transaction) else None
+        file, line = _location(getattr(err, "source", None))
         out.append(
             Violation(
                 str(on) if on is not None else "",
                 (txn.payee or "") if txn else "",
                 (txn.narration or "") if txn else "",
-                f"ledger error ({where}): {getattr(err, 'message', err)}"
-                if where
-                else f"ledger error: {getattr(err, 'message', err)}",
+                f"ledger error: {getattr(err, 'message', err)}",
+                code="ledger",
+                file=file,
+                line=line,
             )
         )
     return out
@@ -236,9 +292,7 @@ def violations(errors: Sequence[object], root: Path) -> list[Violation]:
 def load(ledger: Path) -> tuple[data.Directives, list[Violation]]:
     """Load a ledger for a report: (entries, its loader errors as violations)."""
     entries, errors = load_entries(ledger)
-    # beancount names files by os.path.abspath — symlinks unresolved — so the
-    # root must be spelled the same way for relative_to to match.
-    return entries, violations(errors, Path(os.path.abspath(ledger)).parent)
+    return entries, violations(errors)
 
 
 class RateUnavailable(Exception):

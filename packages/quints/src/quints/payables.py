@@ -117,12 +117,12 @@ def due_date(
     except ValueError:
         if problems is not None:
             problems.append(
-                ledger.Violation(
-                    str(e.date),
-                    e.payee or "",
-                    e.narration or "",
+                ledger.violation_at(
+                    e,
                     f"unreadable due: {raw!r} — the bill is listed without a due date; "
                     "write due: YYYY-MM-DD",
+                    code="due-unreadable",
+                    severity="warning",
                 )
             )
         return None

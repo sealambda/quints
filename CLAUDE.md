@@ -30,7 +30,7 @@ skill).
    `liability` (orchestration)
 3. `mwst`, `kmu`, `vat`, `fx`, `prices`, `inbox`, `payables`, `receivables`,
    `invoice` (domain)
-4. `config`, `ledger`, `ui` (foundation)
+4. `config`, `ledger`, `ui`, `diagnostics` (foundation)
 
 A module may only import from layers below its own, and every new module must
 be added to a layer (the contract is exhaustive — `lint-imports` fails until

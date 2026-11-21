@@ -124,6 +124,11 @@ errors under its figures, and in `--json` under `violations`. The PDF lists
 them in a box at the top of the first page. The statements are incomplete
 until you fix them.
 
+Each problem names its place in the books. The table's location column
+shows the file and line, relative to the repository root. In `--json`, each
+violation carries `file`, `line`, a `code` naming the rule, and a `severity`:
+`error` or `warning`.
+
 Before the statements are final, run the year-end checklist:
 [Close the year](year-end.md).
 

@@ -218,12 +218,12 @@ def outstanding(
         due_date = _as_date(raw)
         if due_date is None and source is not None and problems is not None:
             problems.append(
-                ledger.Violation(
-                    str(source.date),
-                    source.payee or "",
-                    source.narration or "",
+                ledger.violation_at(
+                    source,
                     f"unreadable due: {raw!r} on ^{link} — listed without a due date; "
                     "write due: YYYY-MM-DD",
+                    code="due-unreadable",
+                    severity="warning",
                 )
             )
         liabilities.append(

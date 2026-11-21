@@ -157,11 +157,30 @@ def test_audit_flags_duplicates_order_and_gaps(tmp_path: Path) -> None:
             ("INV2027001", "2027-01-10"),  # a new year is a new series: no gap
         ]
     )
-    entries, _, _ = loader.load_string(text)
-    errors, warnings = verify.audit(entries, tmp_path, config.Config())
-    assert errors == [
-        "invoice number INV2026005 is booked 2 times (2026-03-01, 2026-03-02)",
-        "invoice INV2026002 (2026-01-15) is dated before INV2026001 (2026-02-01)",
+    led = tmp_path / "main.bean"
+    led.write_text(text)
+    entries, _, _ = loader.load_file(str(led))
+    found = verify.audit(entries, tmp_path, config.Config())
+    # Each is located at a booking: the second of a duplicate, the later of a pair.
+    assert [(v.code, v.severity, v.line, v.message) for v in found] == [
+        (
+            "invoice-duplicate",
+            "error",
+            13,
+            "invoice number INV2026005 is booked 2 times (2026-03-01, 2026-03-02)",
+        ),
+        (
+            "invoice-order",
+            "error",
+            7,
+            "invoice INV2026002 (2026-01-15) is dated before INV2026001 (2026-02-01)",
+        ),
+        (
+            "invoice-gap",
+            "warning",
+            10,
+            "2 invoice number(s) missing between INV2026002 and INV2026005",
+        ),
     ]
-    assert warnings == ["2 invoice number(s) missing between INV2026002 and INV2026005"]
+    assert {v.file for v in found} == {str(led)}  # outside the repository: as given
     assert verify.number_series("INV-2026-014", date(2026, 7, 2).year) == ("INV-2026-", 14)

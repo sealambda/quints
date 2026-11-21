@@ -131,7 +131,7 @@ layers = [
     "cli : fava : plugins",
     "settlement : report_pdf : match : importing : init : closing : liability",
     "mwst : kmu : vat : fx : prices : inbox : payables : receivables : invoice",
-    "config : ledger : ui",
+    "config : ledger : ui : diagnostics",
 ]
 
 [[tool.importlinter.contracts]]

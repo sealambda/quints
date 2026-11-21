@@ -130,11 +130,10 @@ def _turnover_by_year(
                 chf = ledger.to_chf(Amount(-number, p.units.currency), e.date, price_map)
             except ledger.RateUnavailable as exc:
                 problems.append(
-                    ledger.Violation(
-                        str(e.date),
-                        e.payee or "",
-                        e.narration or "",
+                    ledger.violation_at(
+                        e,
                         f"{exc} — {p.account} {p.units} is left out of the turnover",
+                        code="rate-missing",
                     )
                 )
                 continue

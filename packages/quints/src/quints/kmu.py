@@ -537,12 +537,10 @@ def _left_out(
     e: data.Transaction | None, what: str, exc: ledger.RateUnavailable
 ) -> ledger.Violation:
     """A figure with no rate to value it: listed, and left out of the totals."""
-    return ledger.Violation(
-        str(e.date) if e else "",
-        (e.payee or "") if e else "",
-        (e.narration or "") if e else "",
-        f"{exc} — {what} is left out; run `quints prices sync`",
-    )
+    message = f"{exc} — {what} is left out; run `quints prices sync`"
+    if e is None:  # a balance valued at the report date: no one entry to point at
+        return ledger.Violation("", "", "", message, code="rate-missing")
+    return ledger.violation_at(e, message, code="rate-missing")
 
 
 def _rows_from(
@@ -568,21 +566,25 @@ def _unmapped(
     per_code: dict[str, tuple[Decimal, set[str]]],
     structure: tuple[tuple[str, str, str], ...],
     statement: str,
+    entries: data.Directives,
 ) -> list[ledger.Violation]:
-    """Codes that land in no row of ``statement``: listed, never dropped quietly."""
+    """Codes that land in no row of ``statement``: listed, never dropped quietly.
+
+    Each is located at the ``open`` of the first account (sorted) carrying it.
+    """
     out: list[ledger.Violation] = []
+    opens: dict[str, data.Open] = {}
     for code, (amount, accounts) in sorted(per_code.items()):
         if _row_for(code, structure) is None and ledger.rappen(amount):
+            opens = opens or {e.account: e for e in entries if isinstance(e, data.Open)}
             out.append(
-                ledger.Violation(
-                    "",
-                    "",
-                    "",
+                ledger.violation_at(
+                    opens[min(accounts)],
                     f"kmu: {code} ({', '.join(sorted(accounts))}) maps to no row of the "
                     f"{statement} — {ledger.rappen(amount)} CHF is left out; use a KMU "
                     "Kontenrahmen code",
-                    Decimal("0"),
-                    ledger.rappen(amount),
+                    code="kmu-unmapped",
+                    posted=ledger.rappen(amount),
                 )
             )
     return out
@@ -731,7 +733,7 @@ def compute_bilanz(
     per_code, converted, market_minus_book = _value(
         pos, mapping, on, price_map, problems, cfg.advances
     )
-    problems += _unmapped(per_code, BILANZ_ROWS, "Bilanz")
+    problems += _unmapped(per_code, BILANZ_ROWS, "Bilanz", entries)
 
     assets_rows = _rows_from(
         per_code,
@@ -757,7 +759,7 @@ def compute_bilanz(
     erfolg_problems: list[ledger.Violation] = []
     erfolg = _erfolg_from(entries, price_map, mapping, fy_start, on, erfolg_problems)
     # The Erfolgsrechnung's codes in no row are a likely cause of a gap: name them.
-    problems += [v for v in erfolg_problems if v.message.startswith("kmu: ")]
+    problems += [v for v in erfolg_problems if v.code == "kmu-unmapped"]
     expected = erfolg.result + unrealized + ledger.rappen(pos.residual)
     problems += _cross_check(result, expected, erfolg, len(per_code), at)
 
@@ -805,6 +807,7 @@ def _cross_check(
             "a kmu: code, in no row, or without a rate is seen by one statement only",
             expected,
             result,
+            code="statements-mismatch",
         )
     ]
 
@@ -850,7 +853,7 @@ def _erfolg_from(
             code = mapping[p.account]
             amount, accounts = per_code.get(code, (Decimal("0"), set()))
             per_code[code] = (amount + chf, accounts | {p.account})
-    problems += _unmapped(per_code, ERFOLG_ROWS, "Erfolgsrechnung")
+    problems += _unmapped(per_code, ERFOLG_ROWS, "Erfolgsrechnung", entries)
 
     revenue = _rows_from(per_code, ERFOLG_ROWS, ("revenue", "inventory_changes"))
     expenses = _rows_from(

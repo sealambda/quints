@@ -53,16 +53,24 @@ class ViolationLike(Protocol):
     def expected(self) -> Decimal: ...
     @property
     def posted(self) -> Decimal: ...
+    @property
+    def file(self) -> str | None: ...
+    @property
+    def line(self) -> int | None: ...
 
 
 def violations_table(violations: Sequence[ViolationLike], title: str, lang: str = "en") -> Table:
     """The problems a report found in the books, under its figures.
 
     The expected/posted columns only appear when some violation carries an
-    amount — a loader error has none.
+    amount — a loader error has none — and the location column when some
+    violation has a place in a file.
     """
     de = lang == "de"
     t = Table(box=box.SIMPLE, title=title, title_justify="left", title_style="warn")
+    located = any(v.file for v in violations)
+    if located:
+        t.add_column("Ort" if de else "Location", style="muted", overflow="fold")
     t.add_column("Datum" if de else "Date", style="muted", no_wrap=True)
     t.add_column("Payee")
     t.add_column("Narration")
@@ -73,6 +81,9 @@ def violations_table(violations: Sequence[ViolationLike], title: str, lang: str 
         t.add_column("Gebucht" if de else "Posted", justify="right", no_wrap=True)
     for v in violations:
         cells = [v.date, v.payee, v.narration, f"[warn]{v.message}[/]"]
+        if located:
+            where = f"{v.file}:{v.line}" if v.file and v.line else v.file or ""
+            cells.insert(0, where)
         if amounts:
             cells += [money(v.expected), money(v.posted)]
         t.add_row(*cells)
