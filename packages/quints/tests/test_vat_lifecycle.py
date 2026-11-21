@@ -18,7 +18,7 @@ import pytest
 from beancount.core import prices as bc_prices
 from typer.testing import CliRunner
 
-from quints import closing, config, init, liability, mwst, settlement, vat
+from quints import config, init, liability, mwst, settlement, vat
 from quints.cli import app
 from quints.invoice import render, swico
 from quints.invoice.model import Invoice, Issuer, LineItem, Party, SupplyPeriod, compute
@@ -235,8 +235,8 @@ def test_no_return_outside_liability(tmp_path: Path) -> None:
 
 
 def test_close_check_expects_the_grid_of_each_year(tmp_path: Path) -> None:
-    assert closing.vat_periods(2025, _SWITCH)[-1] == "VAT-2025-Q4"
-    assert closing.vat_periods(2026, _SWITCH) == ["VAT-2026-H1", "VAT-2026-H2"]
+    assert mwst.vat_periods(2025, _SWITCH)[-1] == "VAT-2025-Q4"
+    assert mwst.vat_periods(2026, _SWITCH) == ["VAT-2026-H1", "VAT-2026-H2"]
 
 
 def test_convert_follows_the_method_of_the_invoice_date() -> None:

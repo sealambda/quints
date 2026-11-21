@@ -74,6 +74,8 @@ Two lists appear below the Ziffern when there is something to act on:
   a syntax error or a failing `balance` assertion. Beancount drops what it
   can't read, so the Ziffern are short until you fix it (`quints check`
   shows each error). Fix each one in the books, then run the report again.
+  `quints check` fails on the Prüfung list of every period not settled yet,
+  so CI catches it before you file.
 - **!** marks a notice from the VAT timeline: the first return after
   registering, the last one before a switch of method, the final one before
   deregistering. Each names the correction the law asks for, its article,

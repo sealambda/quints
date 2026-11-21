@@ -516,6 +516,35 @@ def kmu_map(entries: data.Entries, marker: str) -> dict[str, str]:
     return mapping
 
 
+def unmapped_accounts(entries: data.Directives, marker: str) -> list[ledger.Violation]:
+    """Entity accounts with a posting whose ``kmu:`` code lands in no row, at their ``open``.
+
+    Over all history, so no window hides one. The row is looked up in the
+    statement that holds the account: Income and Expenses in the
+    Erfolgsrechnung, the rest in the Bilanz.
+    """
+    posted = {p.account for e in entries if isinstance(e, data.Transaction) for p in e.postings}
+    out: list[ledger.Violation] = []
+    for e in entries:
+        if not isinstance(e, data.Open) or marker not in e.account or e.account not in posted:
+            continue
+        code = (e.meta or {}).get("kmu")
+        if not isinstance(code, str):
+            continue  # the kmu plugin reports a missing code
+        flows = e.account.split(":", 1)[0] in ("Income", "Expenses")
+        rows, statement = (ERFOLG_ROWS, "Erfolgsrechnung") if flows else (BILANZ_ROWS, "Bilanz")
+        if _row_for(code, rows) is None:
+            out.append(
+                ledger.violation_at(
+                    e,
+                    f"kmu: {code} ({e.account}) maps to no row of the {statement} — its "
+                    "amounts are left out; use a KMU Kontenrahmen code",
+                    code="kmu-unmapped",
+                )
+            )
+    return out
+
+
 def _posting_chf(
     p: data.Posting, on: Date, fallback: Date, price_map: bc_prices.PriceMap
 ) -> Decimal:
@@ -719,14 +748,20 @@ def _reserves_subtotal(equity: list[RowLine]) -> list[RowLine]:
 
 
 def compute_bilanz(
-    ledger_path: Path, at: str, cfg: config.Config | None = None, *, date_from: str | None = None
+    ledger_path: Path,
+    at: str,
+    cfg: config.Config | None = None,
+    *,
+    date_from: str | None = None,
+    loaded: ledger.Loaded | None = None,
 ) -> BilanzReport:
     cfg = cfg or config.get()
     on = Date.fromisoformat(at)
     fy_start = Date.fromisoformat(date_from) if date_from else Date(on.year, 1, 1)
     if fy_start > on:
         raise ValueError(f"fiscal year start {fy_start} is after the balance-sheet date {on}")
-    entries, problems = ledger.load(ledger_path)
+    entries, problems = loaded or ledger.load(ledger_path)
+    problems = list(problems)  # a shared load's list stays as it was
     price_map = bc_prices.build_price_map(entries)
     mapping = kmu_map(entries, cfg.entity_marker)
     pos = _positions(entries, mapping, on, fy_start, price_map, problems)
@@ -887,11 +922,17 @@ def _erfolg_from(
 
 
 def compute_erfolg(
-    ledger_path: Path, date_from: str, date_to: str, cfg: config.Config | None = None
+    ledger_path: Path,
+    date_from: str,
+    date_to: str,
+    cfg: config.Config | None = None,
+    *,
+    loaded: ledger.Loaded | None = None,
 ) -> ErfolgReport:
     cfg = cfg or config.get()
     d0, d1 = Date.fromisoformat(date_from), Date.fromisoformat(date_to)
-    entries, problems = ledger.load(ledger_path)
+    entries, problems = loaded or ledger.load(ledger_path)
+    problems = list(problems)  # a shared load's list stays as it was
     price_map = bc_prices.build_price_map(entries)
     mapping = kmu_map(entries, cfg.entity_marker)
     report = _erfolg_from(entries, price_map, mapping, d0, d1, problems)

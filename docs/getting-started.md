@@ -168,9 +168,17 @@ quints report bilanz --at 2026-12-31
 cd ..
 ```
 
-`quints check` is bean-check plus the KMU guard: every account of the entity
-must carry a four-digit `kmu:` code, or the ledger doesn't validate. Run it
-before you trust any number.
+`quints check` is the gate: run it before you trust any number. It checks
+what beancount checks, plus whatever would make a statement or a VAT return
+wrong:
+
+- every account of the entity carries a four-digit `kmu:` code, and the code
+  lands in a row of the Bilanz or the Erfolgsrechnung;
+- every amount of the entity in a foreign currency has a rate on its date;
+- the two statements agree, from 1 January to the latest transaction;
+- each VAT return not settled yet adds up. A settled period is left out,
+  because only a counter-entry in a later period corrects it;
+- issued invoices match their filed PDFs and their numbering.
 
 Each problem prints as `path:line: message [code]`, with the path relative to
 the repository root. An error exits 1. A warning exits 0, unless you pass

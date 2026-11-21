@@ -54,7 +54,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from . import config, fx, inbox, ledger, mwst, receivables, settlement, ui
+from . import audit, config, fx, inbox, ledger, mwst, receivables, settlement, ui
 
 # ESTV Merkblatt A/1995, Ziffer 1 "Normalsätze in Prozenten des Buchwertes":
 # category id → (maximum declining-balance rate in percent, the German
@@ -572,40 +572,23 @@ def _generated(
     return bool(flows) and all(account in generated_accounts for account in flows)
 
 
-def _item_ledger(errors: Sequence[object]) -> CheckItem:
-    if not errors:
-        return CheckItem("ledger", PASS, "Ledger loads; every KMU code is present and valid.")
-    messages = [str(getattr(e, "message", e)) for e in errors]
+def _item_ledger(found: Sequence[ledger.Violation]) -> CheckItem:
+    """What `quints check` reports: an error fails the item, a warning is to review."""
+    errors = [v for v in found if v.severity == "error"]
+    if not found:
+        return CheckItem(
+            "ledger", PASS, "Ledger loads; its statements and open VAT returns are consistent."
+        )
     return CheckItem(
         "ledger",
-        FAIL,
-        f"{len(errors)} loader error(s) — run `quints check`.",
-        {"errors": len(errors), "messages": messages[:5]},
+        FAIL if errors else WARN,
+        f"{len(errors)} error(s), {len(found) - len(errors)} warning(s) — run `quints check`.",
+        {
+            "errors": len(errors),
+            "warnings": len(found) - len(errors),
+            "messages": [v.located for v in (errors or found)[:5]],
+        },
     )
-
-
-_PERIODS_IN_YEAR = {"quarter": ("Q1", "Q2", "Q3", "Q4"), "half-year": ("H1", "H2"), "year": ("",)}
-
-
-def vat_periods(year: int, cfg: config.Config) -> list[str]:
-    """The ``VAT-<period>`` links a year's settlements must carry.
-
-    One per Abrechnungsperiode the entity was liable in: the grid is the
-    filing period in force that year (a change always starts on 1 January,
-    so a year has one), clipped to the registration.
-    """
-    links: list[str] = []
-    for phase in cfg.vat_phases:
-        for suffix in _PERIODS_IN_YEAR[phase.period]:
-            spec = f"{year}-{suffix}" if suffix else str(year)
-            start, end = (Date.fromisoformat(d) for d in mwst.period_range(spec))
-            if (
-                phase.covers(start)
-                or phase.covers(end)
-                or (phase.start is not None and start <= phase.start <= end)
-            ):
-                links.append(f"VAT-{mwst.period_label(spec)}")
-    return links
 
 
 def _item_vat(
@@ -614,19 +597,13 @@ def _item_vat(
     year: int,
     cfg: config.Config,
 ) -> CheckItem:
-    periods = vat_periods(year, cfg)
+    periods = mwst.vat_periods(year, cfg)
     if not cfg.vat_registered:
         return CheckItem("vat", PASS, "Not VAT-registered — nothing to settle.")
     if not periods:
         return CheckItem("vat", PASS, f"Not VAT-registered in {year} — no period to settle.")
 
-    settled: set[str] = set()
-    for e in entries:
-        if not isinstance(e, data.Transaction):
-            continue
-        links = [lk for lk in (e.links or ()) if lk.startswith("VAT-")]
-        if links and any(p.account == cfg.payable_vat for p in e.postings):
-            settled.update(links)
+    settled = mwst.settled_periods(entries, cfg)
     missing = [p for p in periods if p not in settled]
     liabilities, _unlinked, _total, _today = settlement.outstanding(
         ledger_path, cfg=cfg, entries=entries
@@ -923,6 +900,7 @@ def check(ledger_path: Path, year: int, cfg: config.Config | None = None) -> Che
     """The year-end readiness checklist. One ledger load, ten-odd verdicts."""
     cfg = cfg or config.get()
     entries, errors = ledger.load_entries(ledger_path)
+    found = audit.audit(ledger_path, cfg, loaded=(entries, ledger.violations(errors)))
     root = ledger_path.resolve().parent
     plan = compute_depreciation(ledger_path, year, cfg, entries)
     generated_accounts = frozenset(
@@ -933,7 +911,7 @@ def check(ledger_path: Path, year: int, cfg: config.Config | None = None) -> Che
         year=year,
         at=f"{year}-12-31",
         items=[
-            _item_ledger(errors),
+            _item_ledger(found),
             _item_vat(ledger_path, entries, year, cfg),
             _item_flagged(entries, year),
             _item_staging(root),
@@ -945,7 +923,7 @@ def check(ledger_path: Path, year: int, cfg: config.Config | None = None) -> Che
             _item_depreciation(plan),
             _item_receivables(entries, year, cfg),
         ],
-        violations=ledger.violations(errors),
+        violations=found,
     )
 
 
