@@ -172,6 +172,12 @@ cd ..
 must carry a four-digit `kmu:` code, or the ledger doesn't validate. Run it
 before you trust any number.
 
+Each problem prints as `path:line: message [code]`, with the path relative to
+the repository root. An error exits 1. A warning exits 0, unless you pass
+`--strict`. `--output-format` prints the same problems for a script (`json`)
+or a CI runner (`github`, `gitlab`, `azure`, `sarif`), and `--output-file`
+writes them to a file.
+
 A registered project files instead of tracking the threshold:
 
 ```bash
