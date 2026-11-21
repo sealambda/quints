@@ -223,6 +223,46 @@ def period_label(period: str) -> str:
     return year if kind is None else f"{year}-{kind}{n}"
 
 
+_PERIODS_IN_YEAR = {"quarter": ("Q1", "Q2", "Q3", "Q4"), "half-year": ("H1", "H2"), "year": ("",)}
+
+
+def vat_periods(year: int, cfg: config.Config) -> list[str]:
+    """The ``VAT-<period>`` links a year's settlements must carry.
+
+    One per Abrechnungsperiode the entity was liable in: the grid is the
+    filing period in force that year (a change always starts on 1 January,
+    so a year has one), clipped to the registration.
+    """
+    links: list[str] = []
+    for phase in cfg.vat_phases:
+        for suffix in _PERIODS_IN_YEAR[phase.period]:
+            spec = f"{year}-{suffix}" if suffix else str(year)
+            start, end = (Date.fromisoformat(d) for d in period_range(spec))
+            if (
+                phase.covers(start)
+                or phase.covers(end)
+                or (phase.start is not None and start <= phase.start <= end)
+            ):
+                links.append(f"VAT-{period_label(spec)}")
+    return links
+
+
+def settled_periods(entries: data.Directives, cfg: config.Config) -> set[str]:
+    """The ``VAT-<period>`` links of the settlement transactions: filed periods.
+
+    A settlement links its period and posts to the payable VAT account. A
+    filed period is corrected only by a counter-entry in a later one.
+    """
+    settled: set[str] = set()
+    for e in entries:
+        if not isinstance(e, data.Transaction):
+            continue
+        links = [lk for lk in (e.links or ()) if lk.startswith("VAT-")]
+        if links and any(p.account == cfg.payable_vat for p in e.postings):
+            settled.update(links)
+    return settled
+
+
 def quarter_range(quarter: str) -> tuple[str, str]:
     """Back-compatible alias for :func:`period_range`."""
     return period_range(quarter)
@@ -694,18 +734,23 @@ class _TxnState:
 
 
 def compute(
-    ledger_path: Path, date_from: str, date_to: str, cfg: config.Config | None = None
+    ledger_path: Path,
+    date_from: str,
+    date_to: str,
+    cfg: config.Config | None = None,
+    *,
+    loaded: ledger.Loaded | None = None,
 ) -> MwstReport:
     base = cfg or config.get()
     # Activity outside the registration is not part of any VAT period, so the
     # range is clamped to it; and the method, period and rates are the ones in
     # force for it (a return never spans a change — `for_period` refuses).
     cfg, d0, d1 = base.for_period(Date.fromisoformat(date_from), Date.fromisoformat(date_to))
-    entries, problems = ledger.load(ledger_path)
+    entries, problems = loaded or ledger.load(ledger_path)
     price_map = bc_prices.build_price_map(entries)
     codes = kmu.kmu_map(entries, cfg.entity_marker)
 
-    t, detail = _Totals(), _Detail(violations=problems)
+    t, detail = _Totals(), _Detail(violations=list(problems))  # a shared load's list stays
     # The day liability starts — the registration, not a later method change.
     registered_from = base.vat_phases[0].start if base.vat_phases else None
     for e in entries:

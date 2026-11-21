@@ -21,18 +21,18 @@ runner = CliRunner()
 OPENS = """\
 2026-01-01 open Assets:CH:GmbH:Receivable:Trade CHF
   kmu: "1100"
-2026-01-01 open Income:CH:GmbH:Consulting:External:Domestic CHF
+2026-01-01 open Income:CH:GmbH:Consulting:External:Export CHF
   kmu: "3400"
 
 2026-03-01 * "Acme AG" "Work" ^INV2026001
   Assets:CH:GmbH:Receivable:Trade                100.00 CHF
-  Income:CH:GmbH:Consulting:External:Domestic   -100.00 CHF
+  Income:CH:GmbH:Consulting:External:Export   -100.00 CHF
 """
 # Unbalanced (an error at line 10), and INV2026002 is missing (a warning there).
 BROKEN = """
 2026-04-01 * "Acme AG" "Work" ^INV2026003
   Assets:CH:GmbH:Receivable:Trade                100.00 CHF
-  Income:CH:GmbH:Consulting:External:Domestic    -90.00 CHF
+  Income:CH:GmbH:Consulting:External:Export    -90.00 CHF
 """
 ERROR = "ledger error: Transaction does not balance: (10.00 CHF)"
 WARNING = "1 invoice number(s) missing between INV2026001 and INV2026003"
@@ -58,8 +58,8 @@ def test_text(books: Path) -> None:
     assert err == (
         f"books/sub/main.bean:10: {ERROR} [ledger]\n"
         '   2026-04-01 * "Acme AG" "Work" ^INV2026003\n'
-        "     Assets:CH:GmbH:Receivable:Trade              100.00 CHF\n"
-        "     Income:CH:GmbH:Consulting:External:Domestic  -90.00 CHF\n"
+        "     Assets:CH:GmbH:Receivable:Trade            100.00 CHF\n"
+        "     Income:CH:GmbH:Consulting:External:Export  -90.00 CHF\n"
         "\n\n"
         f"books/sub/main.bean:10: warning: {WARNING} [invoice-gap]\n"
         "1 error(s), 1 warning(s).\n"

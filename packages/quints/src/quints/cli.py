@@ -676,10 +676,13 @@ def check(
     strict: bool = typer.Option(False, "--strict", help="Warnings fail the check too."),
     file: Path = _file_option(),
 ):
-    """Validate the ledger (bean-check equivalent) and summarize what's in it.
+    """Validate the ledger, its statements and its open VAT returns; summarize it.
 
-    Exits 1 on an error, or on a warning with --strict. Each problem points at
-    its file and line, in the format the CI runner reads (--output-format).
+    Beyond bean-check: codes in no statutory row, amounts with no rate, a gap
+    between the two statements, the VAT returns not settled yet, and issued
+    invoices. Exits 1 on an error, or on a warning with --strict. Each problem
+    points at its file and line, in the format a CI runner reads
+    (--output-format).
     """
     import dataclasses
     import json
@@ -687,14 +690,13 @@ def check(
     from beancount.parser import printer
 
     _require_ledger(file)
-    from .invoice import verify as v
+    from . import audit
 
     fmt = diagnostics.OutputFormat.json if as_json else output_format
     entries, errors = ledger.load_entries(file)
     stats = ledger.stats(entries)
     loaded = ledger.violations(errors)
-    # Issued invoices: each filed PDF against its booked hash, and the numbers.
-    found = [*loaded, *v.audit(entries, file.parent, config_mod.get())]
+    found = audit.audit(file, config_mod.get(), loaded=(entries, loaded))
     errs = [d for d in found if d.severity == "error"]
     failed = bool(errs) or (strict and len(found) > len(errs))
     span = (

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from quints import closing, config
+from quints import closing, config, mwst
 from quints.cli import app
 
 runner = CliRunner()
@@ -182,14 +182,14 @@ def test_registered_without_a_start_date_owes_every_quarter(tmp_path: Path) -> N
 def test_the_period_grid_follows_the_filing_period(tmp_path: Path) -> None:
     saldo = (config.SaldoRate(Decimal("0.062")),)
     half = config.Config(vat_method="saldo", saldo=saldo)
-    assert closing.vat_periods(2026, half) == ["VAT-2026-H1", "VAT-2026-H2"]
+    assert mwst.vat_periods(2026, half) == ["VAT-2026-H1", "VAT-2026-H2"]
     annual = config.Config(vat_period="year")
-    assert closing.vat_periods(2026, annual) == ["VAT-2026"]
+    assert mwst.vat_periods(2026, annual) == ["VAT-2026"]
     # Registered in May: the first half-year is a (short) period too.
     late = config.replace(half, vat_registered_since=Date(2026, 5, 4))
-    assert closing.vat_periods(2026, late) == ["VAT-2026-H1", "VAT-2026-H2"]
+    assert mwst.vat_periods(2026, late) == ["VAT-2026-H1", "VAT-2026-H2"]
     autumn = config.replace(half, vat_registered_since=Date(2026, 9, 1))
-    assert closing.vat_periods(2026, autumn) == ["VAT-2026-H2"]
+    assert mwst.vat_periods(2026, autumn) == ["VAT-2026-H2"]
 
 
 def test_a_switch_changes_the_grid_from_its_year(tmp_path: Path) -> None:
@@ -201,14 +201,14 @@ def test_a_switch_changes_the_grid_from_its_year(tmp_path: Path) -> None:
             ),
         ),
     )
-    assert closing.vat_periods(2025, cfg) == [f"VAT-2025-Q{q}" for q in range(1, 5)]
-    assert closing.vat_periods(2026, cfg) == ["VAT-2026-H1", "VAT-2026-H2"]
+    assert mwst.vat_periods(2025, cfg) == [f"VAT-2025-Q{q}" for q in range(1, 5)]
+    assert mwst.vat_periods(2026, cfg) == ["VAT-2026-H1", "VAT-2026-H2"]
 
 
 def test_deregistration_ends_the_grid(tmp_path: Path) -> None:
     cfg = config.Config(vat_registered_until=Date(2026, 6, 30))
-    assert closing.vat_periods(2026, cfg) == ["VAT-2026-Q1", "VAT-2026-Q2"]
-    assert closing.vat_periods(2027, cfg) == []
+    assert mwst.vat_periods(2026, cfg) == ["VAT-2026-Q1", "VAT-2026-Q2"]
+    assert mwst.vat_periods(2027, cfg) == []
 
 
 def test_flagged_transactions_fail(tmp_path: Path) -> None:

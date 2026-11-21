@@ -284,7 +284,11 @@ def violations(errors: Sequence[object]) -> list[Violation]:
     return out
 
 
-def load(ledger: Path) -> tuple[data.Directives, list[Violation]]:
+# A ledger loaded once and shared by several reports: (entries, loader violations).
+Loaded = tuple[data.Directives, list[Violation]]
+
+
+def load(ledger: Path) -> Loaded:
     """Load a ledger for a report: (entries, its loader errors as violations)."""
     entries, errors = load_entries(ledger)
     return entries, violations(errors)

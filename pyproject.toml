@@ -129,7 +129,7 @@ containers = ["quints"]
 exhaustive = true
 layers = [
     "cli : fava : plugins",
-    "settlement : report_pdf : match : importing : init : closing : liability",
+    "settlement : report_pdf : match : importing : init : closing : liability : audit",
     "mwst : kmu : vat : fx : prices : inbox : payables : receivables : invoice",
     "config : ledger : ui : diagnostics",
 ]
