@@ -147,9 +147,9 @@ mail from a stranger: recorded, no agent run, no reply.
 
 The header names the server that wrote it (its *authserv-id*), and only
 the topmost one carrying the id you configure counts — a sender can add
-their own headers, with any name, further down. To find yours, open a message the mailbox received, show its
-raw source (Gmail: *Show original*), and take the first token of the
-topmost `Authentication-Results` line:
+their own headers, with any name, further down. To find yours, open a
+message the mailbox received, show its raw source (Gmail: *Show original*),
+and take the first token of the topmost `Authentication-Results` line:
 
 ```text
 Authentication-Results: mx.google.com;
