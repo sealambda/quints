@@ -62,10 +62,25 @@ quints receivables
 quints payables
 ```
 
-The check must pass. The other two show what is still open. Show the user
-`git diff` and the list of what stayed in `staging/`. Commit only once the
-user has approved the bookings, then delete the emptied staging file.
+The check must pass. It checks the ledger, the statements and the VAT
+return of every period not settled yet; each problem names its
+`file:line` and a code, and the [diagnostics reference][diagnostics] says how
+to fix each code. The other two show what is still open.
+
+Show the user what the bookings do, and the list of what stayed in
+`staging/`:
+
+```sh
+quints diff --base-ref HEAD --output-format markdown
+```
+
+It lists each transaction added, whether it links a document, and how the
+result, total assets and the current VAT period move: a review in money,
+next to `git diff`. Commit only once the user has approved the bookings,
+then delete the emptied staging file.
 
 If every month leaves the same kind of residue in `staging/`, the
 importer's `rules` in `quints.toml` want a new entry: suggest it to the
 user.
+
+[diagnostics]: https://sealambda.github.io/quints/reference/diagnostics/

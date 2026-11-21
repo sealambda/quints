@@ -14,6 +14,13 @@ reviewed and committed on its own.
 the entity files today: the method and the period length. Under the
 Saldosteuersatz method the period is a half-year.
 
+To see every ended period that isn't settled yet, with its return's due
+date, the settled ones not paid yet, and the running period's Ziffern:
+
+```bash
+quints digest --output-format json
+```
+
 Not VAT-registered? There is nothing to file. Run
 `quints vat liability --at <period end>` instead: it says whether the
 turnover now requires registration. Tell the user what it found, and stop.
@@ -48,6 +55,11 @@ Work the two lists below the Ziffern before you settle:
 - **!** notices: the first return after registering, the last before a
   switch of method, the final one. Each names what to book.
 
+`quints check` fails on the same Prüfung list, for every period not settled
+yet. Settle only once it passes: a settled period's problems no longer fail
+`check`, because only a counter-entry in a later period corrects a filed
+return. Settling over a problem hides it from the gate for good.
+
 Compare the payable amount with the previous period. A large swing is
 worth a sentence to the user.
 
@@ -81,3 +93,4 @@ quints vat status
 ```
 
 shows each settled period until it is paid, with its due date.
+`quints digest` flags a due date closer than three weeks.

@@ -93,6 +93,26 @@ Insert the transaction in date order in `books/<year>.bean` and run:
 quints check
 ```
 
-It validates the balances and the document links. Show the user the
-entry, with the VAT decision and the reason for it. Commit the transaction
-and the document together, and only once the user has approved them.
+It is the gate. Beyond the balances and the document links, it checks
+that the account's KMU code lands in a statement row, that every foreign
+amount has a rate, and the VAT return of every period not settled yet: a
+VAT leg that doesn't match net × rate fails here. Each problem names its
+`file:line` and a code. `quints check --json` lists them under `errors`
+and `warnings` (the flag also keeps the output the same where
+`QUINTS_OUTPUT_FORMAT` is set), and the
+[diagnostics reference][diagnostics] says how to fix each code. Fix every error
+before you go on.
+
+Show the user the entry, with the VAT decision and the reason for it, and
+what it does to the figures:
+
+```sh
+quints diff --base-ref HEAD --output-format markdown
+```
+
+It lists the transactions added, whether each links a document, and how
+the result, total assets and the current VAT period move. Commit the
+transaction and the document together, and only once the user has
+approved them.
+
+[diagnostics]: https://sealambda.github.io/quints/reference/diagnostics/
