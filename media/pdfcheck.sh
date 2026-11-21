@@ -24,8 +24,8 @@ trap 'rm -rf "$work"' EXIT
   quints init books --samples --yes >/dev/null
   cd books
   # Both layouts: the Swiss QR-bill page and the EUR export with its EPC code.
-  quints invoice invoicing/acme-2026-07.yaml -o "$work/out/qr-bill.pdf" >/dev/null
-  quints invoice invoicing/globex-2026-08.yaml -o "$work/out/export.pdf" >/dev/null
+  quints invoice invoicing/invoices/acme-2026-07.yaml -o "$work/out/qr-bill.pdf" >/dev/null
+  quints invoice invoicing/invoices/globex-2026-08.yaml -o "$work/out/export.pdf" >/dev/null
   quints report statements --year 2026 -o "$work/out/statements.pdf" >/dev/null
 )
 # veraPDF exits non-zero when any file fails a profile.

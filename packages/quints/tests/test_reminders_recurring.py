@@ -31,14 +31,14 @@ def _json(*args: str) -> dict[str, object]:
 
 def test_next_invoice_then_remind_what_stays_open(project: Path) -> None:
     # The August invoice: July's file, the next free number, the new period.
-    source = "invoicing/acme-2026-07.yaml"
+    source = "invoicing/invoices/acme-2026-07.yaml"
     new = _json("invoice", "new", "--from", source, "--period", "2026-08", "--date", "2026-09-01")
     assert new == {
-        "file": "invoicing/acme-2026-08.yaml",
+        "file": "invoicing/invoices/acme-2026-08.yaml",
         "number": "INV2026016",  # 015 is the sample export invoice
         "issue_date": "2026-09-01",
     }
-    text = Path("invoicing/acme-2026-08.yaml").read_text()
+    text = Path("invoicing/invoices/acme-2026-08.yaml").read_text()
     assert "supply: 2026-08\n" in text and "customer_reference: PO-2026-118" in text
     assert "# The customer's own reference" in text  # comments survive the copy
 

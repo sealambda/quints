@@ -1475,7 +1475,7 @@ def receivables(
     ),
     days: int = typer.Option(10, "--days", help="With --remind: days until the new deadline."),
     invoices: Path = typer.Option(
-        Path("invoicing"), "--invoices", help="With --remind: where the invoice files are."
+        Path("invoicing"), "--invoices", help="With --remind: the folder holding the invoice files."
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     file: Path = _file_option(),
@@ -1534,7 +1534,7 @@ def _remind(
     registry_file = invoices / "customers.yaml"
     registry = m.load_customers(registry_file) if registry_file.exists() else None
     by_number: dict[str, m.Invoice] = {}
-    for path in sorted(invoices.glob("*.yaml")):
+    for path in sorted(invoices.rglob("*.yaml")):  # invoices/ and any folders below
         if path.name not in ("issuer.yaml", "customers.yaml"):
             inv = m.load_invoice(path, registry)
             by_number[inv.number] = inv

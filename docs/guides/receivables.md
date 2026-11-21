@@ -91,7 +91,7 @@ deadline (`--days`, 10 by default). The payment part asks for the open
 amount under the invoice's own reference, so the payment matches on import
 like any other. An invoice is overdue once the `due:` date of its booking
 has passed, or, without one, the payment terms of its invoice file. Open
-items without an invoice file in `invoicing/` are listed, not reminded.
+items without an invoice file under `invoicing/` are listed, not reminded.
 
 A reminder puts the customer in default.[^verzug] It carries no fee and no
 default interest; if you charge them, book and invoice them yourself. quints

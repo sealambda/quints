@@ -45,7 +45,8 @@ git remote private.
   `documents/<Account/Tree>/YYYY-MM-DD.payee.description.pdf`. Committed:
   the ledger links to these files (`fava.plugins.link_documents`).
 - `invoicing/` — issuer identity (`issuer.yaml`), customer registry
-  (`customers.yaml`), one YAML per issued invoice.
+  (`customers.yaml`), logo and fonts in `brand/`, one YAML per issued
+  invoice in `invoices/`.
 
 ## VAT status — read before booking
 
@@ -141,9 +142,9 @@ for you after every edit; any other agent runs it itself.
 
 ## The loop — money in (invoice → receivable → payment)
 
-1. Describe the invoice as a YAML file in `invoicing/` (each file carries a
+1. Describe the invoice as a YAML file in `invoicing/invoices/` (each carries a
    `$schema` modeline, so schema-aware editors validate it as you type).
-2. `quints invoice invoicing/<file>.yaml` renders the PDF into `documents/`
+2. `quints invoice invoicing/invoices/<file>.yaml` renders the PDF into `documents/`
    under the income account and cross-checks the total against the ledger.
    Not booked yet? It prints the receivable draft to paste into
    `books/2026.bean`.
@@ -215,10 +216,10 @@ booking real activity:
       logo) and the bank accounts are the standard documentation IBANs,
       valid but nobody's. Replace all of it with your own — invoices ask
       to be paid into whatever is in this file — and swap or delete
-      `invoicing/wordmark.svg`.
+      `invoicing/brand/wordmark.svg`.
 - [ ] `invoicing/customers.yaml` — replace the demo customers (acme, globex).
-- [ ] `invoicing/acme-2026-07.yaml` and `invoicing/globex-2026-08.yaml`
-      — delete the demo invoices.
+- [ ] `invoicing/invoices/acme-2026-07.yaml` and `globex-2026-08.yaml` beside
+      it — delete the demo invoices.
 - [ ] `books/2026.bean` — delete the block marked *sample activity*.
 - [ ] `prices.bean` — drop the demo EUR rates, then `quints prices sync`.
 - [ ] `quints.toml` — the placeholder IBAN under `[import.ubs]`.

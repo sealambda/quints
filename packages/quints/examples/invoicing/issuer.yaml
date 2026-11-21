@@ -49,5 +49,5 @@ bank:
 # Newsreader and Geist Mono with the Tyrian palette (`quints schema` lists
 # every token). The logo is the one asset opted into by path.
 brand:
-  logo: invoicing/wordmark.svg
+  logo: invoicing/brand/wordmark.svg
   logo_height: 9 # mm

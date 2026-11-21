@@ -24,7 +24,7 @@ later matches the payment to it.
 ## Render a QR-bill
 
 ```bash
-quints invoice invoicing/acme-2026-07.yaml
+quints invoice invoicing/invoices/acme-2026-07.yaml
 ```
 
 Writes a Swiss QR-bill PDF (domestic), or an export invoice with the SEPA
@@ -107,7 +107,9 @@ locale: de_CH
 
 Issuer identity — name, address, VAT ID, bank details per currency, logo —
 lives once in `invoicing/issuer.yaml`. Repeat customers can live in
-`invoicing/customers.yaml` and be referenced by key (`customer: acme`).
+`invoicing/customers.yaml` and be referenced by key (`customer: acme`). The
+invoice files go in `invoicing/invoices/`, the logo and any fonts in
+`invoicing/brand/`.
 
 `locale` sets the invoice's language and how its numbers and dates are
 written. Labels exist in German, French, Italian, English and Spanish
@@ -392,9 +394,9 @@ brand:
   font: Geist              # body copy
   font_display: Newsreader # the title
   font_mono: Geist Mono    # every figure, IBAN and reference
-  font_dir: invoicing/fonts # optional — ship your own families
+  font_dir: invoicing/brand/fonts # optional — ship your own families
   accent: "#6b1f4a"        # title, amount due, leading rules
-  logo: invoicing/wordmark.svg
+  logo: invoicing/brand/wordmark.svg
   logo_height: 9           # mm
   credit: true             # "Made with quints" line under the body
 ```
@@ -483,7 +485,7 @@ so a re-render reproduces what was sent.
 ## Foreign invoices
 
 ```bash
-quints invoice invoicing/globex-2026-08.yaml
+quints invoice invoicing/invoices/globex-2026-08.yaml
 ```
 
 An export invoice (`kind: export`) renders without a QR part. It shows the
@@ -505,9 +507,9 @@ receive an ordinary credit transfer) and a `bic`.
 code, and the reverse-charge note](../assets/invoice-export.png){ width="480" }
 
 A project scaffolded with `quints init --samples` includes both flavours:
-`invoicing/acme-<year>-07.yaml` (domestic QR-bill) and
-`invoicing/globex-<year>-08.yaml` (EUR export), each tied to a booking in the
-sample quarter so the cross-check reconciles.
+`invoicing/invoices/acme-<year>-07.yaml` (domestic QR-bill) and
+`invoicing/invoices/globex-<year>-08.yaml` (EUR export), each tied to a booking
+in the sample quarter so the cross-check reconciles.
 
 ## Get paid before you invoice: pro forma
 
@@ -544,10 +546,10 @@ change. For a wrong address caught early, a
 ## The next invoice of a recurring one
 
 ```bash
-quints invoice new --from invoicing/acme-2026-07.yaml --period 2026-08
+quints invoice new --from invoicing/invoices/acme-2026-07.yaml --period 2026-08
 ```
 
-Copies the invoice file to `invoicing/acme-2026-08.yaml` with the next free
+Copies the invoice file to `invoicing/invoices/acme-2026-08.yaml` with the next free
 number of its series, today's date (`--date` sets another) and the new
 supply period; everything else, comments included, stays as written. A
 series that carries the year (`INV2026014`) starts again at `001` in a new

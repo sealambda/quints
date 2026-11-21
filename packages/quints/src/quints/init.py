@@ -731,7 +731,7 @@ def _issuer_yaml(answers: Answers) -> str:
             "# Newsreader and Geist Mono with the Tyrian palette (`quints schema` lists",
             "# every token). The logo is the one asset opted into by path.",
             "brand:",
-            "  logo: invoicing/wordmark.svg",
+            "  logo: invoicing/brand/wordmark.svg",
             "  logo_height: 9 # mm",
             "",
         ]
@@ -1207,10 +1207,10 @@ def _agents_sample_section(answers: Answers) -> str:
         "      logo) and the bank accounts are the standard documentation IBANs,",
         "      valid but nobody's. Replace all of it with your own — invoices ask",
         "      to be paid into whatever is in this file — and swap or delete",
-        "      `invoicing/wordmark.svg`.",
+        "      `invoicing/brand/wordmark.svg`.",
         "- [ ] `invoicing/customers.yaml` — replace the demo customers (acme, globex).",
-        f"- [ ] `invoicing/acme-{year}-07.yaml` and `invoicing/globex-{year}-08.yaml`",
-        "      — delete the demo invoices.",
+        f"- [ ] `invoicing/invoices/acme-{year}-07.yaml` and `globex-{year}-08.yaml` beside",
+        "      it — delete the demo invoices.",
         f"- [ ] `books/{year}.bean` — delete the block marked *sample activity*.",
         "- [ ] `prices.bean` — drop the demo EUR rates, then `quints prices sync`.",
     ]
@@ -1283,7 +1283,8 @@ git remote private.
   `documents/<Account/Tree>/YYYY-MM-DD.payee.description.pdf`. Committed:
   the ledger links to these files (`fava.plugins.link_documents`).
 - `invoicing/` — issuer identity (`issuer.yaml`), customer registry
-  (`customers.yaml`), one YAML per issued invoice.
+  (`customers.yaml`), logo and fonts in `brand/`, one YAML per issued
+  invoice in `invoices/`.
 
 {_agents_vat_section(answers)}
 ## Extending the chart of accounts (the part that needs judgement)
@@ -1354,9 +1355,9 @@ for you after every edit; any other agent runs it itself.
 
 ## The loop — money in (invoice → receivable → payment)
 
-1. Describe the invoice as a YAML file in `invoicing/` (each file carries a
+1. Describe the invoice as a YAML file in `invoicing/invoices/` (each carries a
    `$schema` modeline, so schema-aware editors validate it as you type).
-2. `quints invoice invoicing/<file>.yaml` renders the PDF into `documents/`
+2. `quints invoice invoicing/invoices/<file>.yaml` renders the PDF into `documents/`
    under the income account and cross-checks the total against the ledger.
    Not booked yet? It prints the receivable draft to paste into
    `books/{year}.bean`.
@@ -1576,10 +1577,14 @@ def plan(answers: Answers) -> list[ScaffoldFile]:
         # quarter — so `quints invoice` is testable out of the box.
         invoicing = [
             ScaffoldFile(Path("invoicing/issuer.yaml"), _issuer_yaml(answers)),
-            ScaffoldFile(Path("invoicing/wordmark.svg"), _WORDMARK_SVG),
+            ScaffoldFile(Path("invoicing/brand/wordmark.svg"), _WORDMARK_SVG),
             ScaffoldFile(Path("invoicing/customers.yaml"), _customers_yaml(answers)),
-            ScaffoldFile(Path(f"invoicing/acme-{year}-07.yaml"), _invoice_acme_yaml(answers)),
-            ScaffoldFile(Path(f"invoicing/globex-{year}-08.yaml"), _invoice_globex_yaml(answers)),
+            ScaffoldFile(
+                Path(f"invoicing/invoices/acme-{year}-07.yaml"), _invoice_acme_yaml(answers)
+            ),
+            ScaffoldFile(
+                Path(f"invoicing/invoices/globex-{year}-08.yaml"), _invoice_globex_yaml(answers)
+            ),
         ]
     files = [
         ScaffoldFile(Path("quints.toml"), _quints_toml(answers)),

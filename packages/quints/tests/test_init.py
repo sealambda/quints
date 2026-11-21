@@ -281,13 +281,13 @@ def test_sample_invoices_render_and_reconcile(tmp_path: Path):
     # The scaffolded wordmark must resolve regardless of the test's cwd.
     assert issuer.brand.logo is not None and Path(issuer.brand.logo).exists()
 
-    domestic = im.load_invoice(tmp_path / "invoicing/acme-2026-07.yaml", registry)
+    domestic = im.load_invoice(tmp_path / "invoicing/invoices/acme-2026-07.yaml", registry)
     _path, totals, payload = ir.render(domestic, issuer, tmp_path / "acme.pdf")
     assert payload is not None and payload.splitlines()[0] == "SPC"  # QR part present
     cc = iv.cross_check(main, domestic, totals)
     assert cc.found and cc.ok and cc.date_ok
 
-    export = im.load_invoice(tmp_path / "invoicing/globex-2026-08.yaml", registry)
+    export = im.load_invoice(tmp_path / "invoicing/invoices/globex-2026-08.yaml", registry)
     _path, totals, payload = ir.render(export, issuer, tmp_path / "globex.pdf")
     assert payload is not None and payload.splitlines()[0] == "BCD"  # EPC QR, not a QR-bill
     cc = iv.cross_check(main, export, totals)
@@ -322,7 +322,7 @@ def test_sample_issuer_pays_by_scor_until_the_qr_iban_lines_are_enabled(tmp_path
 
     init.write(tmp_path, init.plan(init.Answers(entity_name="Smoke GmbH", include_samples=True)))
     registry = im.load_customers(tmp_path / "invoicing/customers.yaml")
-    inv_file = tmp_path / "invoicing/acme-2026-07.yaml"
+    inv_file = tmp_path / "invoicing/invoices/acme-2026-07.yaml"
     inv = im.load_invoice(inv_file, registry)
     issuer_yaml = tmp_path / "invoicing/issuer.yaml"
 
@@ -402,8 +402,8 @@ def test_cli_scaffold_to_invoice_end_to_end(tmp_path: Path, monkeypatch: pytest.
     for rel in (
         "invoicing/issuer.yaml",
         "invoicing/customers.yaml",
-        "invoicing/acme-2026-07.yaml",
-        "invoicing/globex-2026-08.yaml",
+        "invoicing/invoices/acme-2026-07.yaml",
+        "invoicing/invoices/globex-2026-08.yaml",
     ):
         assert (proj / rel).exists(), f"scaffold did not create {rel}:\n{res.output}"
 
@@ -415,7 +415,7 @@ def test_cli_scaffold_to_invoice_end_to_end(tmp_path: Path, monkeypatch: pytest.
         ("acme-2026-07", income / "Domestic/2026-07-02.acme.INV2026014.pdf"),
         ("globex-2026-08", income / "Export/2026-08-05.globex.INV2026015.pdf"),
     ):
-        res = runner.invoke(app, ["invoice", f"invoicing/{invoice_file}.yaml"])
+        res = runner.invoke(app, ["invoice", f"invoicing/invoices/{invoice_file}.yaml"])
         assert res.exit_code == 0, res.output
         assert "Ledger match" in res.output, res.output
         assert filed.exists(), res.output

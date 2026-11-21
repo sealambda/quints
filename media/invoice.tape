@@ -19,12 +19,12 @@ Enter
 Sleep 5s
 Show
 
-Type "quints invoice invoicing/acme-2026-07.yaml"
+Type "quints invoice invoicing/invoices/acme-2026-07.yaml"
 Sleep 800ms
 Enter
 Sleep 4s
 
-Type "quints invoice invoicing/globex-2026-08.yaml"
+Type "quints invoice invoicing/invoices/globex-2026-08.yaml"
 Sleep 800ms
 Enter
 Sleep 5s
