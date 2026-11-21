@@ -160,6 +160,18 @@ file them wrongly. See [File your VAT return](../guides/vat.md).
 [^sss-rates]: [SR 641.202.62](https://www.fedlex.admin.ch/eli/cc/2024/500/de), in force since 1 January 2025.
 [^switch]: Art. 37 Abs. 4 MWSTG, Art. 34 Abs. 2 MWSTG. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_37).
 
+## `[invoice]`
+
+```toml
+[invoice]
+gap_check_from = 2027-01-01    # check number gaps only from this issue date
+```
+
+Unset, every series is checked for gaps from its first invoice. Set it when
+you change numbering schemes, so the gaps of the series you left stop
+warning. See
+[Change the numbering scheme](../guides/invoicing.md#change-the-numbering-scheme).
+
 ## `[payables]`
 
 ```toml

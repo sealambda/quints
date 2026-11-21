@@ -184,3 +184,29 @@ def test_audit_flags_duplicates_order_and_gaps(tmp_path: Path) -> None:
     ]
     assert {v.file for v in found} == {str(led)}  # outside the repository: as given
     assert verify.number_series("INV-2026-014", date(2026, 7, 2).year) == ("INV-2026-", 14)
+
+
+def test_audit_checks_gaps_from_gap_check_from(tmp_path: Path) -> None:
+    """A month-coded scheme left behind keeps its gaps quiet; the new series
+    is checked."""
+    text = BOOKS + "".join(
+        _booking(n, d)
+        for n, d in [
+            ("ACAD202603", "2026-03-23"),
+            ("ACAD202606", "2026-06-18"),  # before the cut-off: not a gap
+            ("ACAD2027001", "2027-01-10"),
+            ("ACAD2027003", "2027-02-10"),  # after it: 002 is missing
+        ]
+    )
+    led = tmp_path / "main.bean"
+    led.write_text(text)
+    entries, _, _ = loader.load_file(str(led))
+    cfg = config.Config(invoice_gap_check_from=date(2027, 1, 1))
+    found = verify.audit(entries, tmp_path, cfg)
+    assert [(v.code, v.message) for v in found] == [
+        ("invoice-gap", "1 invoice number(s) missing between ACAD2027001 and ACAD2027003")
+    ]
+    assert [v.code for v in verify.audit(entries, tmp_path, config.Config())] == [
+        "invoice-gap",
+        "invoice-gap",
+    ]

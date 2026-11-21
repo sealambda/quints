@@ -254,6 +254,10 @@ class Config:
     # `bezugsteuer_expense`. Both are excluded from the return by identity.
     saldo_difference: str = "Income:CH:GmbH:VAT:SaldoDifference"
     bezugsteuer_expense: str = "Expenses:CH:GmbH:Tax:Bezugsteuer"
+    # [invoice]
+    # Gaps in a number series are checked only between invoices issued on or
+    # after this day: a numbering scheme left behind keeps its gaps quiet.
+    invoice_gap_check_from: Date | None = None
     # [payables]
     payables_default_terms_days: int = 30  # due date when a bill carries no `due:`
     # [prices]
@@ -482,6 +486,7 @@ _SCHEMA: dict[str, dict[str, str]] = {
     },
     "ledger": {"main": "str", "prices": "str"},
     "accounts": dict.fromkeys(_ACCOUNT_KEYS, "str"),
+    "invoice": {"gap_check_from": "date"},
     "payables": {"default_terms_days": "int"},
     "prices": {"source": "str", "currencies": "strs", "tickers": "map"},
     "report": {"language": "str"},
@@ -630,6 +635,7 @@ def _from_mapping(raw: dict[str, object]) -> Config:
         updates["ledger_prices"] = Path(str(ledger_["prices"]))
     for key in _ACCOUNT_KEYS:
         take(accounts, key, key)
+    take(section("invoice"), "gap_check_from", "invoice_gap_check_from")
     payables_ = section("payables")
     take(payables_, "default_terms_days", "payables_default_terms_days")
     prices_ = section("prices")

@@ -554,6 +554,28 @@ series that carries the year (`INV2026014`) starts again at `001` in a new
 year. It never overwrites a file. quints does not schedule anything: you, an
 agent or cron decide when to run it, then `quints invoice` on the new file.
 
+## Change the numbering scheme
+
+Start the new series on a set day, a new year being the cleanest, and tell
+`quints check` where its gap checks begin:
+
+```toml
+[invoice]
+gap_check_from = 2027-01-01
+```
+
+Leave the old numbers as they are: they are issued. Gaps are then checked
+only between invoices issued from that day on. Duplicates and dates out of
+order are still checked across all of them.
+
+What quints continues and checks is a prefix, the year and a counter:
+`INV2027001`, or one series per customer, `ACME2027001`. Swiss law
+prescribes no scheme, only a document behind each booking[^belege]. The EU
+asks for a sequential number in one or more series[^sequential], and that
+is what your EU customers' bookkeepers expect. A number that encodes the
+month (`ACME202608`) is not a counter: a second invoice that month needs a
+suffix, and every month without one reads as a gap.
+
 ## Structured invoice data: Factur-X / ZUGFeRD
 
 Every invoice and credit note PDF carries itself as data: an embedded
@@ -651,3 +673,5 @@ consolidated total converts everything at the latest rate in your price file
 [^window-ch]: Windows to SN 010130 as Mettler Couvert sells them: C5 65 mm from the bottom, 12 mm from the right ([Art. 8064](https://www.mettler-couvert.ch/C5-Couvert-Fenster-rechts-haftklebend-Ultraweiss-FSC/8064-100-x-45-Fe)) or 20 mm from the left ([Art. 8065](https://www.mettler-couvert.ch/C5-Couvert-Fenster-links-haftklebend-Ultraweiss-FSC/8065)); C5/6 20 mm from the bottom, 12 mm from the right ([Art. 7044](https://www.mettler-couvert.ch/C5-6-Couvert-Fenster-rechts-haftklebend-Recycling-mit-Blauem-Engel/7044)); C4 55 mm from the top, 20 mm from either side ([Art. 9064](https://www.mettler-couvert.ch/C4-Couvert-Fenster-rechts-haftklebend-Ultraweiss-FSC/9064), [Art. 9065](https://www.mettler-couvert.ch/C4-Couvert-Fenster-links-haftklebend-Ultraweiss-FSC/9065)). Swiss Post's ePost prints behind a 100 × 50 mm C5 window and gives 47–81 mm as always visible: [SmartSend Formatierungsvorgaben](https://www.epost.ch/hubfs/25_SmartSend/SmartSend_Formatierungsvorgaben%20PDF/SmartSend%20%E2%80%93%20Formatierungsvorgaben%20(DE).pdf).
 [^window-din]: DIN 680:2008-02 *Fensterbriefhüllen – Formate und Fensterstellung*: 20 mm from the left; 15 mm from the bottom on DL and C6/5, 60 mm from the bottom on C5, 57 mm from the top on C4 (Form B; a Form A window sits 17 mm higher and needs `address_top: 45`). The standard is not freely available; the figures are the ones tabulated in [Wikipedia, *Briefumschlag*](https://de.wikipedia.org/wiki/Briefumschlag).
 [^s1]: Swico, [*Syntaxdefinition der Rechnungsinformationen (S1) bei der QR-Rechnung*, Version 1.2, 23.11.2018](https://www.swico.ch/media/filer_public/20/76/2076a19a-a017-438a-bc9a-73b1a5980d00/v2_qr-bill-s1-syntax-de.pdf). SIX has taken over the definition and reproduces it in Anhang D of the [Swiss Implementation Guidelines QR-bill 2.4](https://www.six-group.com/dam/download/banking-services/standardization/qr-bill/ig-qr-bill-v2.4-de.pdf).
+[^belege]: Art. 957a Abs. 2 Ziff. 2 OR: "der Belegnachweis für die einzelnen Buchungsvorgänge". What a Swiss invoice must state is listed in Art. 26 Abs. 2 MWSTG, and a number is not among it. [fedlex](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_957_a).
+[^sequential]: Art. 226 point (2) of the VAT Directive 2006/112/EC: "a sequential number, based on one or more series, which uniquely identifies the invoice". [EUR-Lex](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02006L0112-20250414).

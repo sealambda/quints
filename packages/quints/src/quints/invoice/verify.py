@@ -238,7 +238,8 @@ def audit(
     booked twice, a number dated before the one preceding it. Warnings: a
     hashed PDF that is not filed, a booking that names its PDF without a
     hash, and gaps in a series — Swiss law does not
-    ask for gapless numbers, an auditor asks about them.
+    ask for gapless numbers, an auditor asks about them. Gaps are checked
+    only between invoices issued on or after `invoice_gap_check_from`.
 
     shortcut: PDFs are looked up by name under `<root>/documents/`, where
     `quints invoice` files them; read `option "documents"` if anyone files
@@ -300,6 +301,7 @@ def audit(
         first = bookings[0]
         if key := number_series(number, first.date.year):
             series.setdefault(key[0], []).append((key[1], first.date, number, first))
+    since = cfg.invoice_gap_check_from
     for members in series.values():
         members.sort(key=lambda m: m[:3])
         for (n0, d0, num0, _), (n1, d1, num1, e1) in itertools.pairwise(members):
@@ -311,7 +313,7 @@ def audit(
                         code="invoice-order",
                     )
                 )
-            if n1 - n0 > 1:
+            if n1 - n0 > 1 and (since is None or d0 >= since):
                 out.append(
                     ledger.violation_at(
                         e1,

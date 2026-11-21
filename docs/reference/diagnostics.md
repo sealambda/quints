@@ -165,7 +165,9 @@ Warning. A booking names its invoice PDF without a `sha256:`. Run
 ## invoice-gap
 
 Warning. Numbers are missing between two invoices of a series. Swiss law
-doesn't ask for gapless numbers, but an auditor asks about the gap.
+doesn't ask for gapless numbers, but an auditor asks about the gap. If the
+gaps belong to a numbering scheme you have left, set `gap_check_from` in
+[`[invoice]`](configuration.md#invoice) to the day the new series starts.
 
 ## What quints doesn't do here
 

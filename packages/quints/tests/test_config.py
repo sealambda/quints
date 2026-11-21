@@ -26,6 +26,9 @@ payable = "Liabilities:XX:AG:Creditors"
 income_prefix = "Income:XX:AG"
 entity_marker = ":XX:AG:"
 
+[invoice]
+gap_check_from = 2026-01-01
+
 [payables]
 default_terms_days = 20
 
@@ -103,6 +106,7 @@ def test_load_toml(tmp_path: Path) -> None:
     cfg = config.load(path)
     assert cfg.entity_name == "Musterfirma AG"
     assert cfg.vat_registered_since == Date(2025, 6, 1)
+    assert cfg.invoice_gap_check_from == Date(2026, 1, 1)
     assert cfg.ledger_main == Path("books.bean")
     assert cfg.input_vat == "Assets:XX:AG:VAT:In"
     assert cfg.report_language == "de"
