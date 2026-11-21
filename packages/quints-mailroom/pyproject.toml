@@ -3,7 +3,7 @@ name = "quints-mailroom"
 version = "0.1.0"
 description = "Email gateway for AI-driven plain-text bookkeeping: watches a mailbox (Maildir or IMAP), drops attachments into the books repo's inbox/, runs a coding agent (Claude Agent SDK or any command) that drafts bookings into staging/, and replies by email"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "AGPL-3.0-only" }
 keywords = [
     "beancount", "accounting", "plain-text-accounting",
@@ -13,7 +13,6 @@ dependencies = [
     "authres>=1.2",
     "claude-agent-sdk>=0.1",
     "imap-tools>=1.7",
-    "tomli>=2; python_version < '3.11'",
     "typer>=0.12",
 ]
 

@@ -9,15 +9,10 @@ keeps working from anywhere.
 
 from __future__ import annotations
 
-import sys
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover
-    import tomli as tomllib
 
 # Env-var *names*, not secrets (S105 false positive).
 IMAP_PASSWORD_ENV = "QUINTS_MAILROOM_IMAP_PASSWORD"  # noqa: S105

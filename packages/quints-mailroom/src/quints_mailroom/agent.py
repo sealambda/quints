@@ -169,7 +169,7 @@ class ClaudeAgentRunner:
         timeout = self._cfg.timeout_seconds
         try:
             return asyncio.run(asyncio.wait_for(self._query(prompt, cwd), timeout))
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise AgentError(f"agent session timed out after {timeout:g}s") from exc
 
     def options(self, cwd: Path) -> ClaudeAgentOptions:
