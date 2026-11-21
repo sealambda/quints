@@ -549,8 +549,8 @@ change. For a wrong address caught early, a
 quints invoice new --from invoicing/invoices/acme-2026-07.yaml --period 2026-08
 ```
 
-Copies the invoice file to `invoicing/invoices/acme-2026-08.yaml` with the next free
-number of its series, today's date (`--date` sets another) and the new
+Copies the invoice file to `invoicing/invoices/acme-2026-08.yaml` with the next
+free number of its series, today's date (`--date` sets another) and the new
 supply period; everything else, comments included, stays as written. A
 series that carries the year (`INV2026014`) starts again at `001` in a new
 year. It never overwrites a file. quints does not schedule anything: you, an
