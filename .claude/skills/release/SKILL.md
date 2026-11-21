@@ -32,6 +32,12 @@ publishes everything; unchanged packages are no-ops.
   `"version"` in `packages/quints/src/quints/agent_plugin/.claude-plugin/plugin.json`
   (Claude Code only updates an installed plugin when it changes; a test
   pins the two together).
+- Regenerate the example project, so the CI workflow it carries pins the
+  new tag: `uv run quints init packages/quints/examples --answers
+  packages/quints/examples/answers.toml --force --no-git`. The examples
+  test ignores that pin, so nothing fails if you forget; the example is just
+  stale. The CI guide (`docs/guides/ci.md`) shows a version in its
+  examples too: keep it the release's.
 - `uv lock` (records the new workspace versions), then `make check`.
 - If CLI output, the scaffold, or the PDFs changed since the last release,
   refresh the visuals: `make media` locally (needs vhs + poppler) or the
@@ -60,7 +66,8 @@ no-op), Sigstore-signs the artifacts, and creates a GitHub release with
 - `gh run list --repo sealambda/quints` → `gh run watch <id> --exit-status`.
 - Fill the notes: `gh release edit vX.Y.Z --repo sealambda/quints --notes …`
   — one `##` section per bumped package stating what changed, plus a line
-  noting which packages are unchanged.
+  noting which packages are unchanged. A change to a `--json` shape gets its
+  own list: what an agent or a script reading it must adapt to.
 - Smoke the published artifact (uvx caches aggressively — force a refresh):
   `uvx --refresh-package quints quints@X.Y.Z --version`, then scaffold a
   scratch project and run one or two commands against it.
