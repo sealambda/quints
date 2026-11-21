@@ -2068,7 +2068,7 @@ wheels = [
 
 [[package]]
 name = "quints"
-version = "0.23.0"
+version = "0.24.0"
 source = { editable = "packages/quints" }
 dependencies = [
     { name = "babel" },
