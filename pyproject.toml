@@ -34,6 +34,9 @@ docs = [
 ]
 
 [tool.uv]
+# Lock for patched 3.11+ only: soupsieve's fixed releases need >= 3.11.5, and the
+# older fork kept the vulnerable 2.10 in uv.lock (GHSA-mmhr-3c5m-f64f).
+environments = ["python_full_version >= '3.11.5'"]
 package = false
 
 [tool.uv.workspace]
