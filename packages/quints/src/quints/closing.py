@@ -484,6 +484,8 @@ class Checklist:
     year: int
     at: str
     items: list[CheckItem] = field(default_factory=list)
+    # The ledger item's problems, located: what a CI runner annotates.
+    violations: list[ledger.Violation] = field(default_factory=list)
 
     @property
     def failed(self) -> int:
@@ -943,6 +945,7 @@ def check(ledger_path: Path, year: int, cfg: config.Config | None = None) -> Che
             _item_depreciation(plan),
             _item_receivables(entries, year, cfg),
         ],
+        violations=ledger.violations(errors),
     )
 
 

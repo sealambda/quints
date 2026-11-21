@@ -31,7 +31,10 @@ The steps:
 
 1. **Refresh the rates.** `quints prices sync` needs the network, so it
    isn't in the block above ([FX rates](fx.md)).
-2. **Check.** `quints close check` lists what is still open.
+2. **Check.** `quints close check` lists what is still open. In CI,
+   `--strict` fails the job while an item fails, and `--output-format`
+   (`github`, `gitlab`, `azure`, `sarif`) annotates each ledger error at its
+   file and line.
 3. **Book what the check asks for.** The other commands print the entries.
 4. **Check again**, until nothing fails.
 5. **Hand the PDF to your Treuhänder** ([Statutory reports](reports.md)).

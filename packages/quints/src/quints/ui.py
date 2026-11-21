@@ -17,6 +17,8 @@ from rich.console import Console
 from rich.table import Table
 from rich.theme import Theme
 
+from . import diagnostics
+
 THEME = Theme(
     {
         "ziffer": "dim cyan",
@@ -82,8 +84,7 @@ def violations_table(violations: Sequence[ViolationLike], title: str, lang: str 
     for v in violations:
         cells = [v.date, v.payee, v.narration, f"[warn]{v.message}[/]"]
         if located:
-            where = f"{v.file}:{v.line}" if v.file and v.line else v.file or ""
-            cells.insert(0, where)
+            cells.insert(0, diagnostics.where(v))
         if amounts:
             cells += [money(v.expected), money(v.posted)]
         t.add_row(*cells)

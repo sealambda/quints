@@ -32,6 +32,11 @@ from . import (
     config as config_mod,
 )
 from . import (
+    diagnostics,
+    ledger,
+    ui,
+)
+from . import (
     fx as fx_mod,
 )
 from . import (
@@ -45,10 +50,6 @@ from . import (
 )
 from . import (
     kmu as kmu_mod,
-)
-from . import (
-    ledger,
-    ui,
 )
 from . import (
     liability as liability_mod,
@@ -616,57 +617,121 @@ def _report_init(
         )
 
 
+def _output_format() -> diagnostics.OutputFormat:
+    return typer.Option(
+        diagnostics.OutputFormat.text,
+        "--output-format",
+        envvar="QUINTS_OUTPUT_FORMAT",
+        case_sensitive=False,
+        help="text, json, or a CI runner's own: github, gitlab, azure, sarif.",
+    )
+
+
+def _output_file() -> Path | None:
+    return typer.Option(
+        None, "--output-file", help="Write the report here instead of stdout (CI artifacts)."
+    )
+
+
+def _write_out(text: str, output_file: Path | None) -> None:
+    if output_file is None:
+        typer.echo(text, nl=False)
+    else:
+        ledger.atomic_write(output_file, text)
+
+
+def _runner_report(
+    fmt: diagnostics.OutputFormat,
+    found: list[ledger.Violation],
+    file: Path,
+    title: str,
+    summary: str,
+    output_file: Path | None,
+) -> None:
+    """The diagnostics as a CI runner reads them: github, gitlab, azure or sarif."""
+    from . import __version__
+
+    if fmt == "github":
+        text = diagnostics.github(found, summary)
+        if found and (step := os.environ.get("GITHUB_STEP_SUMMARY")):
+            with Path(step).open("a", encoding="utf-8") as f:
+                f.write(diagnostics.github_summary(found, title))
+    elif fmt == "gitlab":
+        text = diagnostics.gitlab(found, diagnostics.relative(os.path.abspath(file)))
+    elif fmt == "azure":
+        text = diagnostics.azure(found)
+    else:
+        text = diagnostics.sarif(found, __version__)
+    _write_out(text, output_file)
+
+
 @app.command(rich_help_panel=PANEL_START)
 def check(
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Also show a per-directive-type breakdown."
     ),
-    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    as_json: bool = typer.Option(False, "--json", help="Alias for --output-format json."),
+    output_format: diagnostics.OutputFormat = _output_format(),
+    output_file: Path | None = _output_file(),
+    strict: bool = typer.Option(False, "--strict", help="Warnings fail the check too."),
     file: Path = _file_option(),
 ):
-    """Validate the ledger (bean-check equivalent) and summarize what's in it."""
+    """Validate the ledger (bean-check equivalent) and summarize what's in it.
+
+    Exits 1 on an error, or on a warning with --strict. Each problem points at
+    its file and line, in the format the CI runner reads (--output-format).
+    """
     import dataclasses
+    import json
+
+    from beancount.parser import printer
 
     _require_ledger(file)
     from .invoice import verify as v
 
+    fmt = diagnostics.OutputFormat.json if as_json else output_format
     entries, errors = ledger.load_entries(file)
     stats = ledger.stats(entries)
+    loaded = ledger.violations(errors)
     # Issued invoices: each filed PDF against its booked hash, and the numbers.
-    found = v.audit(entries, file.parent, config_mod.get())
-    invoice_errors = [d for d in found if d.severity == "error"]
-    warnings = [d for d in found if d.severity == "warning"]
-    failed = bool(errors or invoice_errors)
-    if as_json:
-        _json_out(
-            {
-                "ok": not failed,
-                "errors": [
-                    dataclasses.asdict(d) for d in [*ledger.violations(errors), *invoice_errors]
-                ],
-                "warnings": [dataclasses.asdict(d) for d in warnings],
-                "stats": dataclasses.asdict(stats),
-            }
-        )
-        raise typer.Exit(1 if failed else 0)
-    for d in warnings:
-        typer.secho(f"warning: {d.message}", fg="yellow", err=True)
-    if failed:
-        from beancount.parser import printer
-
-        printer.print_errors(errors)
-        for d in invoice_errors:
-            typer.secho(d.message, fg="red", err=True)
-        typer.secho(f"{len(errors) + len(invoice_errors)} error(s).", fg="red", err=True)
-        raise typer.Exit(1)
+    found = [*loaded, *v.audit(entries, file.parent, config_mod.get())]
+    errs = [d for d in found if d.severity == "error"]
+    failed = bool(errs) or (strict and len(found) > len(errs))
     span = (
         f", {stats.first_transaction}..{stats.last_transaction}" if stats.first_transaction else ""
     )
-    typer.secho(
+    ok_line = (
         f"OK — no errors. {stats.transactions} transaction(s) "
-        f"across {stats.directives} directive(s){span}.",
-        fg="green",
+        f"across {stats.directives} directive(s){span}."
     )
+    if fmt == "json":
+        payload = {
+            "ok": not failed,
+            "errors": [diagnostics.as_dict(d) for d in errs],
+            "warnings": [diagnostics.as_dict(d) for d in found if d.severity == "warning"],
+            "stats": dataclasses.asdict(stats),
+        }
+        _write_out(json.dumps(payload, indent=2, default=str) + "\n", output_file)
+        raise typer.Exit(int(failed))
+    summary = f"quints check failed: {diagnostics.counts(found)}." if failed else ok_line
+    if fmt != "text":
+        _runner_report(fmt, found, file, "quints check", summary, output_file)
+        raise typer.Exit(int(failed))
+    # A loader error keeps beancount's view of the entry under it.
+    context = {
+        (d.file, d.line, d.message): printer.format_error(e).split("\n", 1)[1]
+        for d, e in zip(loaded, errors, strict=True)
+    }
+    lines = [diagnostics.text_line(d) + context.get((d.file, d.line, d.message), "") for d in found]
+    if output_file is not None:
+        ledger.atomic_write(output_file, "".join(f"{line}\n" for line in lines))
+    for d, line in zip(found, lines, strict=True):
+        if output_file is None:
+            typer.secho(line, fg="red" if d.severity == "error" else "yellow", err=True)
+    if failed:
+        typer.secho(f"{diagnostics.counts(found)}.", fg="red", err=True)
+        raise typer.Exit(1)
+    typer.secho(ok_line, fg="green")
     if verbose:
         from rich import box
         from rich.table import Table
@@ -1902,29 +1967,45 @@ def close_check(
     strict: bool = typer.Option(
         False, "--strict", help="Exit 1 while an item fails (the CI / agent gate)."
     ),
-    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    as_json: bool = typer.Option(False, "--json", help="Alias for --output-format json."),
+    output_format: diagnostics.OutputFormat = _output_format(),
+    output_file: Path | None = _output_file(),
     file: Path = _file_option(),
 ):
     """Is the fiscal year ready to close? One line per item, pass/warn/fail.
 
     Reports by default and exits 0 — the list is a to-do list, and a year
     mid-close is the normal case. `--strict` turns a failing item into exit 1.
+    A CI runner's format (--output-format) annotates the ledger item's
+    problems at their file and line, after the checklist.
     """
     import dataclasses
 
     _require_ledger(file)
     checklist = closing_mod.check(file, year)
-    if as_json:
-        _json_out(
-            {
-                "year": checklist.year,
-                "at": checklist.at,
-                "ok": checklist.ok,
-                "failed": checklist.failed,
-                "warned": checklist.warned,
-                "items": [dataclasses.asdict(i) for i in checklist.items],
-            }
+    fmt = diagnostics.OutputFormat.json if as_json else output_format
+    if fmt not in ("text", "json"):
+        if output_file is not None or fmt in ("github", "azure"):
+            closing_mod.render_check(checklist)  # beside workflow commands, or the artifact
+        summary = (
+            f"quints close check {year}: {checklist.failed} item(s) failing, "
+            f"{checklist.warned} to review."
         )
+        found = checklist.violations
+        _runner_report(fmt, found, file, f"quints close check {year}", summary, output_file)
+    elif fmt == "json":
+        import json
+
+        payload = {
+            "year": checklist.year,
+            "at": checklist.at,
+            "ok": checklist.ok,
+            "failed": checklist.failed,
+            "warned": checklist.warned,
+            "items": [dataclasses.asdict(i) for i in checklist.items],
+            "violations": [diagnostics.as_dict(d) for d in checklist.violations],
+        }
+        _write_out(json.dumps(payload, indent=2, default=str) + "\n", output_file)
     else:
         closing_mod.render_check(checklist)
     if strict and not checklist.ok:

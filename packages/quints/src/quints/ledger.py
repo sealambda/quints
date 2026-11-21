@@ -218,13 +218,8 @@ class Violation:
     @property
     def located(self) -> str:
         """``path:line: message``, or the message alone when it has no place."""
-        if self.file is None:
-            return self.message
-        return (
-            f"{self.file}:{self.line}: {self.message}"
-            if self.line
-            else f"{self.file}: {self.message}"
-        )
+        place = diagnostics.where(self)
+        return f"{place}: {self.message}" if place else self.message
 
 
 def _location(source: object) -> tuple[str | None, int | None]:
