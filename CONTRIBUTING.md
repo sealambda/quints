@@ -47,6 +47,7 @@ calls one command that you can run on a fresh clone:
 | Tests (Python 3.11 to 3.14) | `uv sync --all-packages && make test`                      |
 | PDF/A and PDF/UA validation | `make pdfcheck` (needs Docker)                             |
 | Build distributions         | `uv build --all-packages`                                  |
+| Check action on scaffolded books | `uv build --all-packages`, then `quints init` from the built wheel and `quints check --output-format github` (the `action` job) |
 | nix flake check             | `nix flake check`                                          |
 | markdownlint and lychee     | `nix develop -c make docs-lint`                            |
 | Docs: build the site        | `uv run --only-group docs zensical build --clean --strict` |

@@ -1,0 +1,42 @@
+# The books' CI, written by `quints init`. `quints check` runs on every pull
+# request and push; the statements are built monthly and on demand. Both are
+# pinned to the quints release that wrote this file: bump the two tags together
+# (or pin both to that release's commit SHA, if your policy asks for SHAs).
+# Books inside a larger repository: move this file to its root's
+# .github/workflows/, and give the check `working-directory: <the books' path>`.
+name: books
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 1 * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: quints check
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: sealambda/quints/actions/check@v0.22.1 # zizmor: ignore[unpinned-uses]
+
+  statements:
+    name: Statements
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    permissions:
+      contents: read
+    uses: sealambda/quints/.github/workflows/statements.yml@v0.22.1 # zizmor: ignore[unpinned-uses]

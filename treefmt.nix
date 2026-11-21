@@ -19,6 +19,15 @@
   # zizmor with its strictest persona.
   settings.formatter.zizmor.options = [ "--persona=pedantic" ];
 
+  # The check action, and the CI that `quints init` scaffolds (in examples/).
+  settings.formatter.zizmor.includes = [
+    "actions/*/action.yml"
+    "packages/quints/examples/.github/workflows/*.yml"
+  ];
+  settings.formatter.actionlint.includes = [
+    "packages/quints/examples/.github/workflows/*.yml"
+  ];
+
   settings.global.excludes = [
     "*.lock"
     ".basedpyright/*"

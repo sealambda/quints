@@ -60,6 +60,52 @@ jobs:
           QUINTS_WEEKLY: "1"
         run: uv run pytest packages/quints/tests/test_properties.py -q
 
+  # The check action on books `quints init` scaffolds, with this branch's
+  # wheels: it passes on them and fails once they are broken. The pytest
+  # golden tests pin the annotation strings.
+  action:
+    name: Check action on scaffolded books
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      # The building blocks resolve to this branch's wheels too.
+      UV_FIND_LINKS: ${{ github.workspace }}/dist
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv build --all-packages
+      - name: Scaffold books into a subdirectory
+        id: books
+        run: |
+          set -euo pipefail
+          wheel="$(ls "$PWD"/dist/quints-*.whl)"
+          uvx --from "$wheel" quints init books/acme --no-git \
+            --answers packages/quints/examples/answers.toml
+          echo "wheel=$wheel" >> "$GITHUB_OUTPUT"
+      - uses: ./actions/check # zizmor: ignore[self-repository] -- actionlint 1.7 cannot parse $/
+        with:
+          quints: ${{ steps.books.outputs.wheel }}
+          working-directory: books/acme
+      - name: Break the books
+        run: |
+          printf '\n%s\n  %s\n  %s\n' '2026-12-01 * "Broken" "does not balance"' \
+            'Assets:CH:GmbH:Current:UBS:CHF  1.00 CHF' 'Equity:CH:GmbH:Capital:Share  -2.00 CHF' \
+            >> books/acme/books/2026.bean
+      - id: broken
+        uses: ./actions/check # zizmor: ignore[self-repository] -- actionlint 1.7 cannot parse $/
+        continue-on-error: true
+        with:
+          quints: ${{ steps.books.outputs.wheel }}
+          working-directory: books/acme
+      - name: The broken books failed the check
+        env:
+          OUTCOME: ${{ steps.broken.outcome }}
+        run: test "$OUTCOME" = failure
+
   # The invoices claim PDF/A-3a + PDF/UA-1; veraPDF checks they are.
   pdf:
     name: PDF/A and PDF/UA validation
