@@ -489,6 +489,9 @@ def test_plugin_manifests_point_at_the_packaged_skills():
     # version follows quints: Claude Code only updates a plugin on a new version.
     repo = Path(init.__file__).resolve().parents[4]
     marketplace = json.loads((repo / ".claude-plugin/marketplace.json").read_text())
+    # Books enable the plugin as `quints@<this name>`, so a rename breaks them.
+    # Not the owner's name: an org's own marketplace would claim that one.
+    assert marketplace["name"] == "quints"
     (entry,) = marketplace["plugins"]
     assert (repo / entry["source"]).resolve() == PLUGIN.resolve()
     manifest = json.loads((PLUGIN / ".claude-plugin/plugin.json").read_text())
