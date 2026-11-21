@@ -9,6 +9,7 @@ from dataclasses import replace
 from datetime import UTC
 from datetime import date as Date
 from decimal import Decimal, InvalidOperation
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
@@ -748,6 +749,83 @@ def check(
             f"[muted]{stats.open_accounts} open account(s) · "
             f"currencies: {', '.join(stats.currencies) or '—'}[/]"
         )
+
+
+class _ReportFormat(StrEnum):
+    text = "text"
+    markdown = "markdown"
+    json = "json"
+
+
+def _report_format() -> _ReportFormat:
+    # No QUINTS_OUTPUT_FORMAT here: a job that sets it to github runs these too.
+    return typer.Option(
+        _ReportFormat.text, "--output-format", case_sensitive=False, help="text, markdown or json."
+    )
+
+
+@app.command("diff", rich_help_panel=PANEL_REPORTS)
+def diff_cmd(
+    base: Path | None = typer.Option(None, "--base", help="The base ledger's main file."),
+    base_ref: str | None = typer.Option(
+        None, "--base-ref", metavar="REF", help="The ledger as it is at this git revision."
+    ),
+    at: str | None = typer.Option(
+        None, "--at", metavar="YYYY-MM-DD", help="Date of the figures (default: today)."
+    ),
+    output_format: _ReportFormat = _report_format(),
+    file: Path = _file_option(),
+):
+    """What a change does to the books: transactions added or removed, and how
+    the result, EBIT, total assets and the current VAT period move.
+
+    `--output-format markdown` is a ready-made pull-request comment. A base
+    that is missing counts as empty books: the change may be the fix.
+    """
+    import dataclasses
+
+    from . import changes
+
+    if (base is None) == (base_ref is None):
+        _fail("give one of --base PATH or --base-ref REF")
+    _require_ledger(file)
+    on = _parse_date(at) if at else Date.today()
+
+    def report(base_path: Path) -> None:
+        d = changes.compute(file, base_path, on)
+        if output_format == "json":
+            _json_out(dataclasses.asdict(d))
+        else:
+            typer.echo(changes.render(d, markdown=output_format == "markdown"), nl=False)
+
+    if base_ref is not None:
+        with changes.at_ref(file, base_ref) as base_path:
+            report(base_path)
+    elif base is not None:
+        report(base)
+
+
+@app.command(rich_help_panel=PANEL_REPORTS)
+def digest(
+    today: str | None = typer.Option(
+        None, "--today", metavar="YYYY-MM-DD", help="The day to report as of (default: today)."
+    ),
+    output_format: _ReportFormat = _report_format(),
+    file: Path = _file_option(),
+):
+    """The state of the books on one page: VAT to settle or pay, open invoices,
+    the inbox, and undocumented or unfiled documents. Advisory: always exits 0.
+    """
+    import dataclasses
+
+    from . import digest as digest_mod
+
+    _require_ledger(file)
+    d = digest_mod.compute(file, _parse_date(today) if today else Date.today())
+    if output_format == "json":
+        _json_out(dataclasses.asdict(d))
+    else:
+        typer.echo(digest_mod.render(d, markdown=output_format == "markdown"), nl=False)
 
 
 # ── VAT ───────────────────────────────────────────────────────────────────────
@@ -1926,21 +2004,9 @@ def statements(
     _parse_date(date_from)
     _parse_date(balance_date)
     lang = lang or config_mod.get().report_language
-    bilanz_report = kmu_mod.compute_bilanz(file, balance_date, date_from=date_from)
-    erfolg_report = kmu_mod.compute_erfolg(file, date_from, balance_date)
-    # The prior year's figures sit next to this year's (Art. 958d Abs. 2 OR).
-    # An extended first year (`--from`) and a year with empty books before it
-    # have none.
-    # shortcut: the prior year is a calendar year, so after an extended first
-    # year its column covers only that year's calendar part; add --prior-from if asked.
-    prior = None
-    if from_ is None:
-        prior_bilanz = kmu_mod.compute_bilanz(
-            file, f"{year - 1}-12-31", date_from=f"{year - 1}-01-01"
-        )
-        prior_erfolg = kmu_mod.compute_erfolg(file, f"{year - 1}-01-01", f"{year - 1}-12-31")
-        if prior_bilanz.total_assets or prior_erfolg.result:
-            prior = (prior_bilanz, prior_erfolg)
+    bilanz_report, erfolg_report, prior = report_pdf.statements(
+        file, date_from, balance_date, prior=from_ is None
+    )
     out = out or Path(f"statements-{year}-{lang}.pdf")
     path = report_pdf.render_pdf(bilanz_report, erfolg_report, lang, out, prior=prior)
     typer.secho(f"Wrote {path}", fg="green")
@@ -1954,6 +2020,41 @@ def statements(
     if bilanz_report.violations:
         typer.secho("The statements list these problems in the books at the top:", fg="yellow")
         _problems(bilanz_report.violations)
+
+
+@report_app.command()
+def bundle(
+    year: int | None = typer.Option(None, "--year", help="A calendar fiscal year."),
+    from_: str | None = typer.Option(None, "--from", metavar="YYYY-MM-DD"),
+    to: str | None = typer.Option(None, "--to", metavar="YYYY-MM-DD"),
+    lang: str | None = typer.Option(
+        None, "--lang", "-l", help="Languages, e.g. en,de (default from quints.toml)."
+    ),
+    out: Path = typer.Option(..., "--out", "-o", help="Directory to write the files into."),
+    as_json: bool = typer.Option(False, "--json", help="Print the manifest as JSON."),
+    file: Path = _file_option(),
+):
+    """Every statutory file for a fiscal year, in one call.
+
+    The statements PDF and the Bilanz, Erfolgsrechnung and Konten text per
+    language, the Bilanz and Erfolgsrechnung JSON, and the MWST JSON of every
+    VAT period in the range. Not a gate: run `quints check` first.
+    """
+    import dataclasses
+
+    from . import bundle as bundle_mod
+
+    date_from, date_to = _period(from_, to, year)
+    _require_ledger(file)
+    langs = [x.strip() for x in (lang or config_mod.get().report_language).split(",")]
+    manifest = bundle_mod.write(
+        file, date_from, date_to, langs, out, calendar_year=year is not None
+    )
+    if as_json:
+        _json_out(dataclasses.asdict(manifest))
+        return
+    for name in manifest.files:
+        typer.echo(str(out / name))
 
 
 close_app = typer.Typer(

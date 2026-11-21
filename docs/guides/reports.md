@@ -132,6 +132,41 @@ violation carries `file`, `line`, a `code` naming the rule, and a `severity`:
 Before the statements are final, run the year-end checklist:
 [Close the year](year-end.md).
 
+## Every file of the year at once
+
+```bash
+quints report bundle --year 2026 --out statements-2026
+```
+
+Writes everything the year needs into one directory: the statements PDF and
+the Bilanz, Erfolgsrechnung and Konten text per language (`--lang en,de`),
+the Bilanz and Erfolgsrechnung JSON, and the VAT return JSON of every period
+in the year. An extended first year takes `--from` and `--to` instead of
+`--year`. `--json` prints the list of files. The bundle is not a check: run
+`quints check` first, because the files list problems the same way the
+reports do.
+
+## The state of the books, and what a change does to them
+
+```bash
+quints digest --today 2026-12-31
+quints diff --base main.bean --at 2026-12-31
+```
+
+`quints digest` is one page: the VAT periods still to settle or pay and when
+each return is due, the running period's Ziffern, open invoices by age, the
+inbox, this year's income and expense bookings with no document, and files
+under the documents folder that no booking names. It never fails, so it
+suits a weekly job.
+
+`quints diff` compares the books with a base: the transactions added or
+removed, each with its place in the books and whether it links a document,
+and how the result, EBIT, total assets and the current VAT period's
+Ziffern 500 and 400 move. `--base` names the base's main file. In CI,
+`--base-ref` reads the base from a git revision instead, without a
+worktree. A base that is missing counts as empty books. Both commands take
+`--output-format markdown`: a ready-made issue or pull-request comment.
+
 ## What quints doesn't do here
 
 - **The Anhang (notes).** Every company with full bookkeeping needs one:

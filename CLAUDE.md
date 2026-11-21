@@ -27,7 +27,7 @@ skill).
 
 1. `cli`, `fava`, `plugins` (entrypoints)
 2. `settlement`, `report_pdf`, `match`, `importing`, `init`, `closing`,
-   `liability`, `audit` (orchestration)
+   `liability`, `audit`, `changes`, `digest`, `bundle` (orchestration)
 3. `mwst`, `kmu`, `vat`, `fx`, `prices`, `inbox`, `payables`, `receivables`,
    `invoice` (domain)
 4. `config`, `ledger`, `ui`, `diagnostics` (foundation)

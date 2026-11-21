@@ -263,6 +263,22 @@ def settled_periods(entries: data.Directives, cfg: config.Config) -> set[str]:
     return settled
 
 
+def unsettled_periods(entries: data.Directives, cfg: config.Config, through: Date) -> list[str]:
+    """The ``VAT-<period>`` links from registration to the period holding ``through``,
+    minus the settled ones."""
+    phases = cfg.vat_phases
+    dates = [e.date for e in entries if isinstance(e, data.Transaction)]
+    first = phases[0].start if phases else None
+    first = first or min(dates, default=through)
+    settled = settled_periods(entries, cfg)
+    return [
+        link
+        for year in range(first.year, through.year + 1)
+        for link in vat_periods(year, cfg)
+        if link not in settled and Date.fromisoformat(period_range(link[4:])[0]) <= through
+    ]
+
+
 def quarter_range(quarter: str) -> tuple[str, str]:
     """Back-compatible alias for :func:`period_range`."""
     return period_range(quarter)
