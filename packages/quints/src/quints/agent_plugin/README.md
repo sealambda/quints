@@ -22,8 +22,8 @@ quints keeps books for a company, so the agent never has the last word:
 - quints computes every VAT figure and FX rate. The agent never invents
   one.
 - `quints check` is the gate: the ledger, the statutory statements and every
-  VAT return not settled yet. Each problem names its file, line and a code
-  the [diagnostics reference][diagnostics] explains.
+  VAT return not settled yet. Each problem names its file, line and a
+  code, and `quints explain <code>` says how to fix it, with no network.
 - Every change is a git diff a person reviews before it is committed, and
   `quints diff` shows what it does to the figures.
 - quints never files or pays anything. The return goes into the ESTV
@@ -79,5 +79,3 @@ Open your agent there and ask:
 
 The example's company, customers and bank accounts are invented. Never
 file anything from them.
-
-[diagnostics]: https://sealambda.github.io/quints/reference/diagnostics/
