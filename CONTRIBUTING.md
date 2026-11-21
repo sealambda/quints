@@ -237,9 +237,10 @@ write a page that only works for a company that never changed.
 ## Releases
 
 Six distributions go to PyPI: `quints` and the five `beangulp-*` /
-`beanprice-*` building blocks (`quints-mailroom` is not published yet). A tag that does not bump a building block
-skips its version, which PyPI already has. To cut a release, bump `version` in
-`packages/quints/pyproject.toml`, then push a matching tag:
+`beanprice-*` building blocks (`quints-mailroom` is not published yet). A tag
+that does not bump a building block skips its version, which PyPI already
+has. To cut a release, bump `version` in `packages/quints/pyproject.toml`,
+then push a matching tag:
 
 ```bash
 git tag v0.1.0 && git push origin v0.1.0

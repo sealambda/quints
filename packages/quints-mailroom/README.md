@@ -17,7 +17,7 @@ ingestion channel.
 
 ## How it works
 
-```
+```text
 mailbox ──fetch──▶ allowlist gate ──▶ inbox/<attachment>
                                         │
                                         ▼

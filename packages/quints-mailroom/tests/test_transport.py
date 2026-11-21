@@ -55,7 +55,7 @@ def test_imap_carries_authentication_results_top_first(monkeypatch: pytest.Monke
 
     assert box.limits == [7]
     assert len(msg.auth_results) == 2
-    assert msg.auth_results[0].startswith("mx.google.com")
+    assert msg.auth_results[0].partition(";")[0] == "mx.google.com"
     assert sender_authenticated(msg.sender, msg.auth_results, "mx.google.com")
     assert not sender_authenticated(msg.sender, msg.auth_results, "relay.example")
 
