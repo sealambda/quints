@@ -366,11 +366,10 @@ def _weight_chf(p: data.Posting, on: Date, price_map: bc_prices.PriceMap) -> Dec
 
 
 def _missing_rate(e: data.Transaction, p: data.Posting, exc: ledger.RateUnavailable) -> Violation:
-    return Violation(
-        str(e.date),
-        e.payee or "",
-        e.narration or "",
+    return ledger.violation_at(
+        e,
         f"{exc} — {p.account} {p.units} is left out of the return; run `quints prices sync`",
+        code="rate-missing",
     )
 
 
@@ -388,14 +387,13 @@ def _vat_leg_chf(
         detail.violations.append(_missing_rate(e, p, exc))
         return None
     detail.violations.append(
-        Violation(
-            str(e.date),
-            e.payee or "",
-            e.narration or "",
+        ledger.violation_at(
+            e,
             f"{p.account} booked in {p.units.currency if p.units else '?'} — counted at "
             f"its CHF value; book VAT legs in CHF (`quints vat convert`)",
-            Decimal("0"),
-            chf,
+            code="vat-leg-currency",
+            severity="warning",
+            posted=chf,
         )
     )
     return chf
@@ -844,11 +842,8 @@ def _transaction(
     _check(e, state, t, detail)
     for token in sorted(unknown):
         detail.violations.append(
-            Violation(
-                str(e.date),
-                e.payee or "",
-                e.narration or "",
-                f'unknown mwst: token "{token}" — see the VAT guide',
+            ledger.violation_at(
+                e, f'unknown mwst: token "{token}" — see the VAT guide', code="vat-token-unknown"
             )
         )
 
@@ -901,13 +896,11 @@ def _input_vat(
         # The SSS already compensates the input tax (Art. 37 MWSTG): purchases
         # are booked gross and the form has no 400-479 block at all.
         detail.violations.append(
-            Violation(
-                str(e.date),
-                e.payee or "",
-                e.narration or "",
+            ledger.violation_at(
+                e,
                 "input VAT is not deductible under the Saldosteuersatz method — book gross",
-                Decimal("0"),
-                n,
+                code="vat-saldo-input",
+                posted=n,
             )
         )
         t.input_left_out += n
@@ -920,16 +913,14 @@ def _input_vat(
         return
     elif n < 0 and not tagged and not _is_credit_note(e, p, codes):
         detail.violations.append(
-            Violation(
-                str(e.date),
-                e.payee or "",
-                e.narration or "",
+            ledger.violation_at(
+                e,
                 "InputVAT credited without a credit note — tag it "
                 'mwst: "vorsteuerkorrektur" (415) or "vorsteuerkuerzung" (420); '
                 "input VAT booked before VAT liability is reversed on the day "
                 "liability starts (vat_registered_since)",
-                Decimal("0"),
-                n,
+                code="vat-input-credit",
+                posted=n,
             )
         )
         t.input_left_out += n
@@ -957,14 +948,12 @@ def _untagged_side_income(
     Ziffer 200 must count every Entgelt. Listed, left out as before."""
     currency = p.units.currency if p.units is not None else "CHF"
     detail.violations.append(
-        Violation(
-            str(e.date),
-            e.payee or "",
-            e.narration or "",
+        ledger.violation_at(
+            e,
             f"income on {code} outside 3000–3899 without a mwst: tag — tag it exempt, "
             "taxable, donation, subvention or not_entgelt so Ziffer 200 is complete",
-            Decimal("0"),
-            ledger.rappen(ledger.to_chf(Amount(-n, currency), e.date, price_map)),
+            code="vat-turnover-untagged",
+            posted=ledger.rappen(ledger.to_chf(Amount(-n, currency), e.date, price_map)),
         )
     )
 
@@ -1082,14 +1071,12 @@ def _saldo_gross(e: data.Transaction, state: _TxnState, t: _Totals, detail: _Det
         return
     if not state.has_turnover:
         detail.violations.append(
-            Violation(
-                str(e.date),
-                e.payee or "",
-                e.narration or "",
+            ledger.violation_at(
+                e,
                 "output VAT without turnover — the SSS form taxes the gross Entgelt, "
                 "so it must be booked to an income account",
-                Decimal("0"),
-                state.posted_tax,
+                code="vat-output-no-turnover",
+                posted=state.posted_tax,
             )
         )
         return
@@ -1126,13 +1113,12 @@ def _check(e: data.Transaction, state: _TxnState, t: _Totals, detail: _Detail) -
     if not matches:
         rate = _rate_on(state.current, state.rate_class) * 100
         detail.violations.append(
-            Violation(
-                str(e.date),
-                e.payee or "",
-                e.narration or "",
+            ledger.violation_at(
+                e,
                 f"output VAT does not match net × {rate:.1f} %",
-                ledger.rappen(state.expected_tax),
-                state.posted_tax,
+                code="vat-mismatch",
+                expected=ledger.rappen(state.expected_tax),
+                posted=state.posted_tax,
             )
         )
 
@@ -1211,6 +1197,7 @@ def _settle_299(
                 "Ziffer 299 ≠ the turnover rows' total — turnover landed nowhere",
                 z299,
                 z299 - residual,
+                code="vat-turnover-total",
             )
         )
 

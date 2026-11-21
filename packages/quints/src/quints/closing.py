@@ -261,7 +261,7 @@ def compute_depreciation(
         and _meta_str(e.meta, "depreciation") is not None
     ]
     plan = DepreciationPlan(year=year, at=str(year_end))
-    plan.warnings += [p.message for p in problems]
+    plan.warnings += [p.located for p in problems]
     if not assets:
         return plan
 

@@ -141,6 +141,8 @@ def reconcile(
             "^link) — not in the open list",
             Decimal("0"),
             net,
+            code="receivable-untracked",
+            severity="warning",
         )
         for ccy, (net, last) in sorted(untracked.items())
         if abs(net) > _TOL

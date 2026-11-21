@@ -112,7 +112,7 @@ import-linter. A module may only import from layers below its own:
    `liability` — orchestration
 3. `mwst`, `kmu`, `vat`, `fx`, `prices`, `inbox`, `payables`, `receivables`,
    `invoice` — domain
-4. `config`, `ledger`, `ui` — foundation
+4. `config`, `ledger`, `ui`, `diagnostics` — foundation
 
 The contract is exhaustive: a new module must be placed in a layer or the gate
 fails. Command logic stays presentation-free — a `compute` returns dataclasses,

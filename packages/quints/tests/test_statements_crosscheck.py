@@ -275,9 +275,15 @@ def test_bilanz_names_the_erfolg_code_in_no_row(tmp_path: Path) -> None:
         '2026-04-01 * "x" "odd"\n  Expenses:CH:GmbH:Odd  50.00 CHF\n'
         "  Assets:CH:GmbH:Current:UBS:CHF  -50.00 CHF\n"
     )
-    b, _ = _both(_write(tmp_path, body, opens))
-    assert any("8300" in v.message for v in b.violations)
-    assert any("Erfolgsrechnung result" in v.message for v in b.violations)
+    led = _write(tmp_path, body, opens)
+    b, _ = _both(led)
+    # The code is located at the open that carries it (line 17); the gap it
+    # leaves between the two results has no one place.
+    assert [(v.code, v.file, v.line) for v in b.violations] == [
+        ("kmu-unmapped", str(led), 17),
+        ("statements-mismatch", None, None),
+    ]
+    assert "8300" in b.violations[0].message
 
 
 RESERVES_OPEN = _OPEN + "".join(

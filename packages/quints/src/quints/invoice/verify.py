@@ -231,8 +231,8 @@ def number_series(number: str, year: int) -> tuple[str, int] | None:
 
 def audit(
     entries: Sequence[data.Directive], root: Path, cfg: config.Config
-) -> tuple[list[str], list[str]]:
-    """What the books say about issued invoices, as (errors, warnings).
+) -> list[ledger.Violation]:
+    """What the books say about issued invoices, each located at its booking.
 
     Errors: a filed PDF that no longer matches its booked hash, a number
     booked twice, a number dated before the one preceding it. Warnings: a
@@ -243,9 +243,8 @@ def audit(
     shortcut: PDFs are looked up by name under `<root>/documents/`, where
     `quints invoice` files them; read `option "documents"` if anyone files
     them elsewhere."""
-    errors: list[str] = []
-    warnings: list[str] = []
-    issued: dict[str, list[Date]] = {}
+    out: list[ledger.Violation] = []
+    issued: dict[str, list[data.Transaction]] = {}
     income = {cfg.income_domestic, cfg.income_export}
     for e in entries:
         if not isinstance(e, data.Transaction):
@@ -255,36 +254,70 @@ def audit(
         if digest and name:
             filed = next((root / "documents").rglob(str(name)), None)
             if filed is None:
-                warnings.append(f"{name} is booked with a hash ({e.date}) but not filed")
+                out.append(
+                    ledger.violation_at(
+                        e,
+                        f"{name} is booked with a hash ({e.date}) but not filed",
+                        code="invoice-unfiled",
+                        severity="warning",
+                    )
+                )
             elif sha256(filed) != digest:
-                errors.append(
-                    f"{filed.relative_to(root)} is not the PDF booked on {e.date}: its "
-                    "SHA-256 differs from sha256 — restore it from git, or "
-                    "reissue it (quints invoice --reissue) and book the new hash"
+                out.append(
+                    ledger.violation_at(
+                        e,
+                        f"{filed.relative_to(root)} is not the PDF booked on {e.date}: its "
+                        "SHA-256 differs from sha256 — restore it from git, or "
+                        "reissue it (quints invoice --reissue) and book the new hash",
+                        code="invoice-hash",
+                    )
                 )
         elif name and ("invoice" in meta or "proforma" in meta):
-            warnings.append(
-                f"{name} is booked without a hash ({e.date}) — `quints invoice` on its "
-                "file prints the `sha256:` line to add"
+            out.append(
+                ledger.violation_at(
+                    e,
+                    f"{name} is booked without a hash ({e.date}) — `quints invoice` on its "
+                    "file prints the `sha256:` line to add",
+                    code="invoice-unhashed",
+                    severity="warning",
+                )
             )
         number = receivables.invoice_id(e)
         if number and any(p.account in income for p in e.postings):
-            issued.setdefault(number, []).append(e.date)
+            issued.setdefault(number, []).append(e)
 
-    series: dict[str, list[tuple[int, Date, str]]] = {}
-    for number, dates in issued.items():
-        if len(dates) > 1:
-            booked = ", ".join(str(d) for d in dates)
-            errors.append(f"invoice number {number} is booked {len(dates)} times ({booked})")
-        if key := number_series(number, dates[0].year):
-            series.setdefault(key[0], []).append((key[1], dates[0], number))
-    for members in series.values():
-        members.sort()
-        for (n0, d0, num0), (n1, d1, num1) in itertools.pairwise(members):
-            if d1 < d0:
-                errors.append(f"invoice {num1} ({d1}) is dated before {num0} ({d0})")
-            if n1 - n0 > 1:
-                warnings.append(
-                    f"{n1 - n0 - 1} invoice number(s) missing between {num0} and {num1}"
+    series: dict[str, list[tuple[int, Date, str, data.Transaction]]] = {}
+    for number, bookings in issued.items():
+        if len(bookings) > 1:
+            booked = ", ".join(str(b.date) for b in bookings)
+            out.append(
+                ledger.violation_at(
+                    bookings[1],
+                    f"invoice number {number} is booked {len(bookings)} times ({booked})",
+                    code="invoice-duplicate",
                 )
-    return errors, warnings
+            )
+        first = bookings[0]
+        if key := number_series(number, first.date.year):
+            series.setdefault(key[0], []).append((key[1], first.date, number, first))
+    for members in series.values():
+        members.sort(key=lambda m: m[:3])
+        for (n0, d0, num0, _), (n1, d1, num1, e1) in itertools.pairwise(members):
+            if d1 < d0:
+                out.append(
+                    ledger.violation_at(
+                        e1,
+                        f"invoice {num1} ({d1}) is dated before {num0} ({d0})",
+                        code="invoice-order",
+                    )
+                )
+            if n1 - n0 > 1:
+                out.append(
+                    ledger.violation_at(
+                        e1,
+                        f"{n1 - n0 - 1} invoice number(s) missing between {num0} and {num1}",
+                        code="invoice-gap",
+                        severity="warning",
+                    )
+                )
+    return out

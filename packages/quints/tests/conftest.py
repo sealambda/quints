@@ -12,6 +12,14 @@ def hermetic_git(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 
+@pytest.fixture(autouse=True)
+def hermetic_ci(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A CI runner's checkout variables would move every diagnostic's path:
+    tests that want one set it themselves."""
+    for variable in ("GITHUB_WORKSPACE", "CI_PROJECT_DIR", "BUILD_SOURCESDIRECTORY"):
+        monkeypatch.delenv(variable, raising=False)
+
+
 # Property tests: few examples per run so `make check` stays fast; the weekly
 # CI run sets QUINTS_WEEKLY=1 and digs deeper.
 settings.register_profile("fast", max_examples=20, deadline=None)

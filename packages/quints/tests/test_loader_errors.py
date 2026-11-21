@@ -51,16 +51,27 @@ def _broken(tmp_path: Path) -> Path:
 
 
 def _mentions_both(items: list[dict[str, object]] | list[str]) -> bool:
-    text = json.dumps(items)
-    return "acounts.bean" in text and "main.bean:" in text and len(items) >= 2
+    """The missing include, and the syntax error located at main.bean line 17."""
+    located = any(
+        "main.bean:17: " in item
+        if isinstance(item, str)
+        else str(item["file"]).endswith("/main.bean") and item["line"] == 17
+        for item in items
+    )
+    return "acounts.bean" in json.dumps(items) and located
 
 
 def test_load_turns_errors_into_violations(tmp_path: Path) -> None:
-    entries, problems = ledger.load(_broken(tmp_path))
+    led = _broken(tmp_path)
+    entries, problems = ledger.load(led)
     assert entries  # what parsed still loads
-    messages = [v.message for v in problems]
-    assert any("acounts.bean" in m for m in messages)
-    assert any("main.bean:" in m and "acounts.bean" not in m for m in messages)
+    # The include error comes from no line of any file; the syntax error from one.
+    assert [(v.code, v.file, v.line) for v in problems] == [
+        ("ledger", str(led), 17),
+        ("ledger", None, None),
+    ]
+    assert "acounts.bean" in problems[1].message
+    assert all("main.bean" not in v.message for v in problems)  # located, not in the text
 
 
 def test_vat_report_lists_loader_errors(tmp_path: Path) -> None:

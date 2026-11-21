@@ -633,36 +633,30 @@ def check(
     entries, errors = ledger.load_entries(file)
     stats = ledger.stats(entries)
     # Issued invoices: each filed PDF against its booked hash, and the numbers.
-    invoice_errors, warnings = v.audit(entries, file.parent, config_mod.get())
+    found = v.audit(entries, file.parent, config_mod.get())
+    invoice_errors = [d for d in found if d.severity == "error"]
+    warnings = [d for d in found if d.severity == "warning"]
     failed = bool(errors or invoice_errors)
     if as_json:
         _json_out(
             {
                 "ok": not failed,
                 "errors": [
-                    *(
-                        {
-                            "file": (e.source or {}).get("filename"),
-                            "line": (e.source or {}).get("lineno"),
-                            "message": e.message,
-                        }
-                        for e in errors
-                    ),
-                    *({"file": None, "line": None, "message": msg} for msg in invoice_errors),
+                    dataclasses.asdict(d) for d in [*ledger.violations(errors), *invoice_errors]
                 ],
-                "warnings": warnings,
+                "warnings": [dataclasses.asdict(d) for d in warnings],
                 "stats": dataclasses.asdict(stats),
             }
         )
         raise typer.Exit(1 if failed else 0)
-    for msg in warnings:
-        typer.secho(f"warning: {msg}", fg="yellow", err=True)
+    for d in warnings:
+        typer.secho(f"warning: {d.message}", fg="yellow", err=True)
     if failed:
         from beancount.parser import printer
 
         printer.print_errors(errors)
-        for msg in invoice_errors:
-            typer.secho(msg, fg="red", err=True)
+        for d in invoice_errors:
+            typer.secho(d.message, fg="red", err=True)
         typer.secho(f"{len(errors) + len(invoice_errors)} error(s).", fg="red", err=True)
         raise typer.Exit(1)
     span = (
@@ -2083,7 +2077,7 @@ def _price_jobs(
     if source is not None or not cfg.ledger_main.exists():
         return None, warnings, unusable
     entries, loaded = ledger.load(cfg.ledger_main)
-    warnings += [v.message for v in loaded]
+    warnings += [v.located for v in loaded]
 
     def bad_meta(ccy: str, message: str) -> None:
         unusable.append(f"{ccy}: unusable price metadata, not synced — {message}")

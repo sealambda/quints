@@ -262,7 +262,7 @@ def build_context(
     # Both statements load the same books: list each problem once.
     problems: list[dict[str, str]] = []
     for v in bilanz.violations + erfolg.violations:
-        item = {"date": v.date, "message": v.message}
+        item = {"date": v.date, "message": v.located}
         if item not in problems:
             problems.append(item)
     b_lines, e_lines = bilanz_lines(bilanz, lang), erfolg_lines(erfolg, lang)
