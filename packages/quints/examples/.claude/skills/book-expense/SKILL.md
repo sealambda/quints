@@ -99,9 +99,23 @@ amount has a rate, and the VAT return of every period not settled yet: a
 VAT leg that doesn't match net × rate fails here. Each problem names its
 `file:line` and a code. `quints check --json` lists them under `errors`
 and `warnings` (the flag also keeps the output the same where
-`QUINTS_OUTPUT_FORMAT` is set), and the
-[diagnostics reference][diagnostics] says how to fix each code. Fix every error
-before you go on.
+`QUINTS_OUTPUT_FORMAT` is set), and this says what a code means and how
+to fix it, with no network:
+
+```bash
+quints explain vat-mismatch
+```
+
+Fix every error before you go on. On books that already have open
+problems, this reports only the ones your booking brought, and also what
+it leaves to review (a `!` flag, an entry with no document):
+
+```sh
+quints check --review --strict --base-ref HEAD
+```
+
+Books scaffolded by `quints init` run it in Claude Code after every edit
+(`.claude/settings.json`).
 
 Show the user the entry, with the VAT decision and the reason for it, and
 what it does to the figures:
@@ -114,5 +128,3 @@ It lists the transactions added, whether each links a document, and how
 the result, total assets and the current VAT period move. Commit the
 transaction and the document together, and only once the user has
 approved them.
-
-[diagnostics]: https://sealambda.github.io/quints/reference/diagnostics/

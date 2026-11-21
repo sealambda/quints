@@ -57,15 +57,17 @@ Move the statement's closing `balance` assertions from the staging file
 into `books/<year>.bean`, then:
 
 ```bash
-quints check
+quints check --review
 quints receivables
 quints payables
 ```
 
 The check must pass. It checks the ledger, the statements and the VAT
 return of every period not settled yet; each problem names its
-`file:line` and a code, and the [diagnostics reference][diagnostics] says how
-to fix each code. The other two show what is still open.
+`file:line` and a code, and `quints explain <code>` says how to fix it,
+with no network. `--review` adds what is still to review: a `!` flag left
+in the books, an entry with no document, a bank account whose balance
+wasn't asserted for a quarter. The other two show what is still open.
 
 Show the user what the bookings do, and the list of what stayed in
 `staging/`:
@@ -82,5 +84,3 @@ then delete the emptied staging file.
 If every month leaves the same kind of residue in `staging/`, the
 importer's `rules` in `quints.toml` want a new entry: suggest it to the
 user.
-
-[diagnostics]: https://sealambda.github.io/quints/reference/diagnostics/

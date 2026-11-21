@@ -33,7 +33,9 @@ commit it on its own: it holds published rates, not bookings.
 ## 2. Complete the period
 
 Reconcile every statement up to the period end first (the `reconcile`
-skill). `staging/` must hold no draft dated in the period.
+skill). `staging/` must hold no draft dated in the period, and
+`quints check --review` must list nothing dated in it: no `!` flag, no
+entry without its document, no bank balance left unasserted.
 
 Then sweep the period's purchases. Every foreign-currency expense must
 carry either an InputVAT leg, a Bezugsteuer pair, or a `;` comment saying
