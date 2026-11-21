@@ -1,0 +1,150 @@
+# Reusable: the statutory statements of a books repository, built by quints.
+#
+#   jobs:
+#     statements:
+#       permissions:
+#         contents: read # write, and actions: read, with release: true
+#       uses: sealambda/quints/.github/workflows/statements.yml@vX.Y.Z
+#       with:
+#         year: "2026"
+#
+# Checks the books first, renders every statutory file with `quints report
+# bundle`, puts the Erfolgsrechnung in the job summary, uploads the files as
+# an artifact, and with `release: true` publishes them as a GitHub Release.
+name: statements
+
+on:
+  workflow_call:
+    inputs:
+      year:
+        description: Calendar fiscal year (default, with no from/to either, the current year).
+        type: string
+        default: ""
+      from:
+        description: First day of an extended fiscal year, with to.
+        type: string
+        default: ""
+      to:
+        description: Last day of an extended fiscal year, with from.
+        type: string
+        default: ""
+      langs:
+        description: Languages of the statements, comma-separated.
+        type: string
+        default: en,de
+      release:
+        description: Also publish a GitHub Release with the files.
+        type: boolean
+        default: false
+      file:
+        description: The ledger's main file.
+        type: string
+        default: main.bean
+      quints:
+        description: What to install (as the check action's input); empty, the books' own pin.
+        type: string
+        default: ""
+
+permissions: {}
+
+jobs:
+  statements:
+    name: Statements
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      label: ${{ steps.period.outputs.label }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Install quints
+        env:
+          QUINTS: ${{ inputs.quints }}
+        run: |
+          set -euo pipefail
+          if [ -n "$QUINTS" ]; then
+            uv tool install "$QUINTS"
+          elif [ -f pyproject.toml ] && grep -q '"quints' pyproject.toml; then
+            uv sync --frozen
+            echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          else
+            echo "::error title=statements::pyproject.toml declares no quints: set the quints input"
+            exit 1
+          fi
+      - name: Resolve the period
+        id: period
+        env:
+          YEAR: ${{ inputs.year }}
+          FROM: ${{ inputs.from }}
+          TO: ${{ inputs.to }}
+        run: |
+          set -euo pipefail
+          if [ -n "$FROM$TO" ]; then
+            echo "args=--from $FROM --to $TO" >> "$GITHUB_OUTPUT"
+            echo "label=${FROM}_${TO}" >> "$GITHUB_OUTPUT"
+          else
+            year="${YEAR:-$(date -u +%Y)}"
+            echo "args=--year $year" >> "$GITHUB_OUTPUT"
+            echo "label=$year" >> "$GITHUB_OUTPUT"
+          fi
+      - name: quints check
+        env:
+          LEDGER: ${{ inputs.file }}
+        run: quints check --output-format github --file "$LEDGER"
+      - name: quints report bundle
+        env:
+          LEDGER: ${{ inputs.file }}
+          LANGS: ${{ inputs.langs }}
+          PERIOD: ${{ steps.period.outputs.args }}
+        run: |
+          set -euo pipefail
+          read -ra period <<< "$PERIOD"
+          quints report bundle "${period[@]}" --lang "$LANGS" --out statements --file "$LEDGER"
+      - name: Erfolgsrechnung in the job summary
+        env:
+          LABEL: ${{ steps.period.outputs.label }}
+          LANGS: ${{ inputs.langs }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Erfolgsrechnung $LABEL"
+            echo '```'
+            cat "statements/erfolg-$LABEL.${LANGS%%,*}.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: statements-${{ steps.period.outputs.label }}
+          path: statements/
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    needs: statements
+    if: ${{ inputs.release }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read # download the artifact
+      contents: write # create the release
+    steps:
+      - name: Publish the statements
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          LABEL: ${{ needs.statements.outputs.label }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh run download "$RUN_ID" --name "statements-$LABEL" --dir statements
+          tag="statements-$LABEL"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" statements/* --clobber
+          else
+            gh release create "$tag" statements/* --title "Statements $LABEL" \
+              --notes "Statutory statements $LABEL, built by quints."
+          fi

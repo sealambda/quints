@@ -125,6 +125,12 @@ Swap `--legal-form` freely: the VAT flags work the same for all three forms.
   it for real books.
 - **`--importers ubs,yapeal,wise,stripe`** pre-configures statement
   importers.
+- **`--ci github`** (the default) writes `.github/workflows/books.yml`: it
+  runs `quints check` on every pull request and push, and builds the
+  statements monthly. `--ci gitlab` writes `.gitlab-ci.yml` with a Code
+  Quality report instead, and `--ci none` writes neither. Both pin quints:
+  the GitHub workflow to the release that scaffolded it, the GitLab one to
+  your `uv.lock`, so commit `uv.lock` after `uv sync`.
 - **`--yes`** skips the questions and fills in demo answers. Use it to try
   quints, never for real books.
 
@@ -142,6 +148,7 @@ jane-books/
 ├── pyproject.toml     # so uv sync makes bean-check and fava work
 ├── AGENTS.md          # playbook for an AI coding agent
 ├── CLAUDE.md          # @AGENTS.md — auto-loads the playbook in Claude Code
+├── .github/workflows/ # quints check on every change (--ci github)
 ├── inbox/             # drop source documents here
 ├── staging/           # importer drafts land here (gitignored)
 └── documents/         # filed documents, mirroring the account tree

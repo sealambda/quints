@@ -381,6 +381,9 @@ def init(
     samples: bool = typer.Option(
         False, "--samples", help="Include a demo quarter of transactions."
     ),
+    ci: str | None = typer.Option(
+        None, "--ci", help="CI to set up: github (default), gitlab or none."
+    ),
     answers_file: Path | None = typer.Option(
         None, "--answers", help="TOML answer-file for non-interactive scaffolding."
     ),
@@ -433,6 +436,8 @@ def init(
         )
     if samples:
         answers = replace(answers, include_samples=True)
+    if ci is not None:
+        answers = replace(answers, ci=ci.strip().lower())
 
     try:
         files = init_mod.plan(answers)

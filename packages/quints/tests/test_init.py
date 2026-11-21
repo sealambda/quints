@@ -215,7 +215,9 @@ def test_examples_project_is_in_sync():
         if not f.content:  # directory-marker .gitkeep files
             continue
         committed = EXAMPLES / f.path
-        assert committed.read_text() == f.content, (
+        # The CI file pins the quints that wrote it: a release moves only that.
+        pinned = re.compile(r"@v\d+\.\d+\.\d+\b")
+        assert pinned.sub("@vX", committed.read_text()) == pinned.sub("@vX", f.content), (
             f"{f.path} is stale — regenerate examples/ from answers.toml"
         )
 
@@ -590,3 +592,35 @@ def test_cli_init_missing_answers_file_is_one_error_line(tmp_path: Path):
     assert res.exit_code == 1
     assert res.stderr.startswith("ERROR: answer-file not found:")
     assert "Traceback" not in res.stderr
+
+
+def test_ci_defaults_to_github_pinned_to_this_quints(tmp_path: Path):
+    from quints import __version__
+
+    files = {str(f.path): f.content for f in init.plan(init.Answers())}
+    workflow = files[".github/workflows/books.yml"]
+    assert f"sealambda/quints/actions/check@v{__version__}" in workflow
+    assert f"sealambda/quints/.github/workflows/statements.yml@v{__version__}" in workflow
+    assert ".gitlab-ci.yml" not in files
+
+
+def test_ci_gitlab_reports_code_quality_and_none_writes_nothing():
+    gitlab = {str(f.path): f.content for f in init.plan(init.Answers(ci="gitlab"))}
+    ci = gitlab[".gitlab-ci.yml"]
+    assert "--output-format gitlab --output-file gl-code-quality.json" in ci
+    assert "codequality: gl-code-quality.json" in ci and "report bundle" in ci
+    assert ".github/workflows/books.yml" not in gitlab
+    none = {str(f.path) for f in init.plan(init.Answers(ci="none"))}
+    assert not any("gitlab" in p or ".github" in p for p in none)
+    with pytest.raises(init.InitError, match="unknown ci"):
+        init.plan(init.Answers(ci="jenkins"))
+
+
+def test_ci_answer_from_file_and_flag(tmp_path: Path):
+    assert init.answers_from_mapping({"ci": "GitLab"}).ci == "gitlab"
+    assert init.answers_from_mapping({}).ci == "github"
+    proj = tmp_path / "books"
+    res = runner.invoke(app, ["init", str(proj), "--yes", "--no-git", "--ci", "none", "--json"])
+    assert res.exit_code == 0, res.output
+    assert json.loads(res.output)["answers"]["ci"] == "none"
+    assert not (proj / ".github").exists() and not (proj / ".gitlab-ci.yml").exists()

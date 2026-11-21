@@ -43,7 +43,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-from . import config, kmu, ledger
+from . import __version__, config, kmu, ledger
 
 # Accounts the backbone adds beyond the configurable set in `config.Config`,
 # written in the GmbH namespace; `_sub` re-homes them for other legal forms.
@@ -72,6 +72,7 @@ _DEPRECIATION_META = (
 )
 
 _KNOWN_IMPORTERS = ("ubs", "yapeal", "wise", "stripe")
+_CI = ("github", "gitlab", "none")
 
 
 @dataclass(frozen=True)
@@ -92,6 +93,7 @@ class Answers:
     report_language: str = "en"
     importers: tuple[str, ...] = ()  # subset of _KNOWN_IMPORTERS
     include_samples: bool = False
+    ci: str = "github"  # one of _CI: where the books' checks run
 
 
 @dataclass(frozen=True)
@@ -171,6 +173,15 @@ QUESTIONS: tuple[Question, ...] = (
         "quints.toml later.",
     ),
     Question(
+        "ci",
+        "--ci",
+        "CI to set up (github/gitlab/none)",
+        choices=_CI,
+        source="Where the books repository is hosted: github runs `quints check` on "
+        "every change and builds the statements monthly; gitlab does the same with "
+        "a Code Quality report; none writes no CI file.",
+    ),
+    Question(
         "include_samples",
         "--samples",
         "Book a demo quarter",
@@ -204,6 +215,7 @@ def answers_from_mapping(raw: dict[str, Any]) -> Answers:
         report_language=raw.get("report_language", d.report_language),
         importers=importers,
         include_samples=raw.get("include_samples", d.include_samples),
+        ci=str(raw.get("ci", d.ci)).lower(),
     )
 
 
@@ -1382,6 +1394,92 @@ Whether VAT applies at all is `quints vat liability`'s call, not a guess.
 {_agents_sample_section(answers)}"""
 
 
+def _ci_files(answers: Answers) -> list[ScaffoldFile]:
+    """The CI that runs `quints check`, pinned to the quints that wrote it."""
+    pin = f"v{__version__}"
+    if answers.ci == "github":
+        return [ScaffoldFile(Path(".github/workflows/books.yml"), _GITHUB_CI.format(pin=pin))]
+    if answers.ci == "gitlab":
+        return [ScaffoldFile(Path(".gitlab-ci.yml"), _GITLAB_CI)]
+    return []
+
+
+_GITHUB_CI = """\
+# The books' CI, written by `quints init`. `quints check` runs on every pull
+# request and push; the statements are built monthly and on demand. Both are
+# pinned to the quints release that wrote this file: bump the two tags together
+# (or pin both to that release's commit SHA, if your policy asks for SHAs).
+# Books inside a larger repository: move this file to its root's
+# .github/workflows/, and give the check `working-directory: <the books' path>`.
+name: books
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 1 * *"
+  workflow_dispatch:
+
+permissions: {{}}
+
+concurrency:
+  group: ${{{{ github.workflow }}}}-${{{{ github.ref }}}}
+  cancel-in-progress: ${{{{ github.event_name == 'pull_request' }}}}
+
+jobs:
+  check:
+    name: quints check
+    if: ${{{{ github.event_name == 'pull_request' || github.event_name == 'push' }}}}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: sealambda/quints/actions/check@{pin} # zizmor: ignore[unpinned-uses]
+
+  statements:
+    name: Statements
+    if: ${{{{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}}}
+    permissions:
+      contents: read
+    uses: sealambda/quints/.github/workflows/statements.yml@{pin} # zizmor: ignore[unpinned-uses]
+"""
+
+_GITLAB_CI = """\
+# The books' CI, written by `quints init`. `quints check` runs on every merge
+# request and default-branch push and reports to Code Quality; the statements
+# are built on a schedule or on demand. quints comes from uv.lock (`uv lock`).
+image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+
+check:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"
+  script:
+    - uv sync --frozen
+    - uv run --frozen quints check --output-format gitlab --output-file gl-code-quality.json
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality.json
+
+statements:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" || $CI_PIPELINE_SOURCE == "web"
+  script:
+    - uv sync --frozen
+    - uv run --frozen quints check
+    - uv run --frozen quints report bundle --year "$(date -u +%Y)" --lang en,de --out statements
+  artifacts:
+    paths:
+      - statements/
+"""
+
+
 def _claude_md() -> str:
     # Claude Code auto-loads CLAUDE.md; the @-include pulls AGENTS.md into
     # context so the instructions work without the agent going looking.
@@ -1434,6 +1532,7 @@ def plan(answers: Answers) -> list[ScaffoldFile]:
         ScaffoldFile(Path("AGENTS.md"), _agents_md(answers)),
         ScaffoldFile(Path("CLAUDE.md"), _claude_md()),
         ScaffoldFile(Path(".gitignore"), _gitignore()),
+        *_ci_files(answers),
         ScaffoldFile(Path("inbox/.gitkeep"), ""),
         ScaffoldFile(Path("staging/.gitkeep"), ""),
         ScaffoldFile(Path("documents/.gitkeep"), ""),
@@ -1476,6 +1575,8 @@ def _validate(answers: Answers) -> None:
                 f"{spec} is not a Saldosteuersatz — the ESTV grants one of "
                 f"{permitted} (Verordnung der ESTV, SR 641.202.62)"
             )
+    if answers.ci not in _CI:
+        raise InitError(f"unknown ci {answers.ci!r} — supported: {', '.join(_CI)}")
     unknown = [i for i in answers.importers if i not in _KNOWN_IMPORTERS]
     if unknown:
         raise InitError(

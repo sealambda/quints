@@ -1,0 +1,65 @@
+# Use as `uses: sealambda/quints/actions/check@vX.Y.Z`, pinned by tag or SHA.
+name: quints check
+description: >-
+  Validate plain-text books with quints: the ledger, its statutory statements
+  and its open VAT returns. Each problem is annotated at its file and line.
+author: Sealambda
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  quints:
+    description: >-
+      What to install: a requirement (quints==0.23.0), a path, a wheel or a git
+      URL. Empty: the books' own pin, from the pyproject.toml and uv.lock in the
+      working directory (`uv sync --frozen`).
+    required: false
+    default: ""
+  file:
+    description: The ledger's main file, relative to the working directory.
+    required: false
+    default: main.bean
+  working-directory:
+    description: Where the books are, relative to the repository root.
+    required: false
+    default: "."
+  args:
+    description: More `quints check` flags, e.g. --strict.
+    required: false
+    default: ""
+  python-version:
+    description: The Python to run quints on. Empty, uv picks one.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: quints check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        QUINTS: ${{ inputs.quints }}
+        LEDGER: ${{ inputs.file }}
+        ARGS: ${{ inputs.args }}
+      run: |
+        set -euo pipefail
+        if [ -n "$QUINTS" ]; then
+          quints=(uvx --from "$QUINTS" quints)
+        elif [ -f pyproject.toml ] && grep -q '"quints' pyproject.toml; then
+          if [ ! -f uv.lock ]; then
+            echo "::error title=quints check::no uv.lock beside pyproject.toml: commit it (uv lock), or set the quints input"
+            exit 1
+          fi
+          uv sync --frozen
+          quints=(uv run --frozen quints)
+        else
+          echo "::error title=quints check::pyproject.toml declares no quints: set the quints input, e.g. quints==0.23.0"
+          exit 1
+        fi
+        read -ra extra <<< "$ARGS"
+        "${quints[@]}" check --output-format github --file "$LEDGER" "${extra[@]}"
