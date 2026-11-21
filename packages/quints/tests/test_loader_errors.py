@@ -67,8 +67,8 @@ def test_load_turns_errors_into_violations(tmp_path: Path) -> None:
     assert entries  # what parsed still loads
     # The include error comes from no line of any file; the syntax error from one.
     assert [(v.code, v.file, v.line) for v in problems] == [
-        ("ledger", str(led), 17),
-        ("ledger", None, None),
+        ("ledger-syntax", str(led), 17),
+        ("ledger-load", None, None),
     ]
     assert "acounts.bean" in problems[1].message
     assert all("main.bean" not in v.message for v in problems)  # located, not in the text

@@ -40,14 +40,68 @@ under their figures, and in `--json` under `violations`, each with its
 period is corrected by a counter-entry in a later one, so its old problems
 don't fail `check`. `quints vat report` for that period still lists them.
 
+Four more things `check` does:
+
+```bash
+quints explain vat-mismatch
+quints check --review
+quints check --fix
+```
+
+- `quints explain <code>` prints a code's entry from this page, from the
+  installed package: it needs no network. Without a code it lists them all.
+- `--review` adds three warnings about what is still to do:
+  [`flag-pending`](#flag-pending), [`document-missing`](#document-missing)
+  and [`balance-stale`](#balance-stale). Books mid-year always have some, so
+  they are not part of the plain check.
+- `--fix` applies the fixes that need no judgement, then checks again. Today
+  that is one: [`invoice-unhashed`](#invoice-unhashed). In `--json`, a
+  problem that has a fix carries it under `fix`.
+- `--base-ref <REF>` reports only the problems the books at that git revision
+  don't have: what your change brought. See
+  [Check the books as you edit](../guides/editing.md).
+
 ## ledger
 
-Error. Beancount could not load part of the books: a syntax error, an
-`include` that matches no file, a transaction that doesn't balance, a
-posting to an account that was never opened, a failing `balance` assertion,
-or an entity account without a `kmu:` code. What beancount can't read is
-left out of every figure. Fix the entry at the line given. The text output
-shows the entry under the message.
+Error. Beancount rejected an entry, and none of the `ledger-…` codes below
+names why: a transaction that doesn't balance, a posting to an account that
+was never opened, a currency the account doesn't allow. What beancount
+rejects is left out of every figure. Fix the entry at the line given. The
+text output shows the entry under the message.
+
+## ledger-syntax
+
+Error. A line is not beancount: a mistyped date, an amount without a
+currency, a missing quote. Beancount skips the whole entry, so it is left
+out of every figure. Fix the line given.
+
+## ledger-load
+
+Error. A file could not be read: an `include` that matches no file, a
+plugin that doesn't import. Every entry of that file is missing from every
+figure. Fix the path in `main.bean`.
+
+## ledger-balance
+
+Error. A `balance` assertion fails: the account doesn't hold what the bank
+statement says on that date. An entry is missing, booked twice, or has the
+wrong amount. The message gives both figures. Fix the entries before the
+assertion's date, not the assertion.
+
+## ledger-duplicate
+
+Error. The same entry is booked twice: same date, payee, narration and
+postings. A statement was imported twice, or a draft pasted twice. Delete
+one. Two real payments that look alike need something that tells them
+apart: the bank's reference in the narration, or a `^link`. Only books that
+load `plugin "beancount.plugins.noduplicates"` get this check: `quints init`
+adds the line, older books add it to `main.bean`.
+
+## kmu-missing
+
+Error. An account of the entity is opened without a `kmu:` code, or with one
+that isn't four digits. The statements group accounts by that code. Add it
+to the `open` directive, e.g. `kmu: "6570"`.
 
 ## rate-missing
 
@@ -160,7 +214,9 @@ Warning. A booking carries the hash of an invoice PDF that is not under
 ## invoice-unhashed
 
 Warning. A booking names its invoice PDF without a `sha256:`. Run
-`quints invoice` on the invoice file: it prints the line to add.
+`quints check --fix`: it books the hash of the PDF filed under `documents/`.
+If the PDF isn't filed yet, `quints invoice` on the invoice file renders it
+and prints the line to add.
 
 ## invoice-gap
 
@@ -169,7 +225,33 @@ doesn't ask for gapless numbers, but an auditor asks about the gap. If the
 gaps belong to a numbering scheme you have left, set `gap_check_from` in
 [`[invoice]`](configuration.md#invoice) to the day the new series starts.
 
+## flag-pending
+
+Warning, with `--review` only. A transaction is still flagged `!`: an
+importer draft or an allocation nobody confirmed. Complete it, then flag it
+`*`. `quints close check` fails the year while one is left.
+
+## document-missing
+
+Warning, with `--review` only. An income or expense transaction of the
+current year links no document: no `document:` on the transaction or on a
+posting. File the receipt or the invoice under `documents/` and link it. The
+entries quints prints itself (VAT settlements, FX revaluation, depreciation,
+rounding) need none. Earlier years are `quints close check`'s to list.
+
+## balance-stale
+
+Warning, with `--review` only. A bank account has postings more than 92 days
+after its last `balance` assertion, so a quarter of statements is booked
+with nothing checked against the bank. Add an assertion from the latest
+statement: `2026-10-01 balance <account> <amount> CHF`. It holds at the
+start of its date. The diagnostic points at the account's `open` directive.
+
 ## What quints doesn't do here
+
+- **No fix that needs judgement.** `--fix` never changes an amount, an
+  account or a tag. A wrong VAT leg (`vat-mismatch`) has two honest fixes,
+  the VAT or the net, and quints can't tell which: you decide.
 
 - **No inline suppression.** A problem in an open period can't be marked as
   accepted: fix it, or settle the period if the return is filed. A settled

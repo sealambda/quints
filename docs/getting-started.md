@@ -148,6 +148,7 @@ jane-books/
 ├── pyproject.toml     # so uv sync makes bean-check and fava work
 ├── AGENTS.md          # playbook for an AI coding agent
 ├── CLAUDE.md          # @AGENTS.md — auto-loads the playbook in Claude Code
+├── .claude/           # Claude Code checks the books after each edit it makes
 ├── .github/workflows/ # quints check on every change (--ci github)
 ├── inbox/             # drop source documents here
 ├── staging/           # importer drafts land here (gitignored)

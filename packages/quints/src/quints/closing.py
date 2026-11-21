@@ -941,6 +941,69 @@ def check(ledger_path: Path, year: int, cfg: config.Config | None = None) -> Che
     )
 
 
+STALE_DAYS = 92  # a quarter of statements without one balance checked
+
+
+def review(
+    ledger_path: Path, entries: data.Directives, cfg: config.Config
+) -> list[ledger.Violation]:
+    """The checklist's per-entry items as located warnings: `quints check --review`.
+
+    Not part of the gate: books mid-year always have some, and an agent or an
+    editor wants them at the entry it just wrote.
+
+    A `!` flag anywhere; a missing document in the latest transaction's year
+    (earlier years are `close check`'s); a bank account whose postings run
+    more than :data:`STALE_DAYS` past its last balance assertion.
+    """
+    txns = [e for e in entries if isinstance(e, data.Transaction)]
+    if not txns:
+        return []
+    last = txns[-1].date  # the loader sorts by date
+    out = [
+        ledger.violation_at(
+            e,
+            "flagged `!`: still to review — complete it, then flag it `*`",
+            code="flag-pending",
+            severity="warning",
+        )
+        for e in txns
+        if e.flag == "!"
+    ]
+    plan = compute_depreciation(ledger_path, last.year, cfg, entries)
+    missing, _ = undocumented(entries, last.year, cfg, generated_accounts(cfg, plan))
+    out += [
+        ledger.violation_at(
+            e,
+            "no `document:` links a receipt or an invoice — file it under documents/ and link it",
+            code="document-missing",
+            severity="warning",
+        )
+        for e in missing
+        if e.flag != "!"  # a draft is reported once, as a draft
+    ]
+    opens = {e.account: e for e in entries if isinstance(e, data.Open)}
+    asserted: dict[str, Date] = {}
+    for e in entries:
+        if isinstance(e, data.Balance):
+            asserted[e.account] = e.date  # sorted by date: the last one wins
+    posted = {p.account: e.date for e in txns for p in e.postings}
+    for account in _bank_accounts(entries, cfg, last):
+        since = asserted.get(account, opens[account].date)
+        if account in posted and (posted[account] - since).days > STALE_DAYS:
+            out.append(
+                ledger.violation_at(
+                    opens[account],
+                    f"{account} has postings more than {STALE_DAYS} days after its last "
+                    f"balance assertion ({asserted.get(account, 'none yet')}) — assert the "
+                    "bank statement's balance",
+                    code="balance-stale",
+                    severity="warning",
+                )
+            )
+    return out
+
+
 # ── render ───────────────────────────────────────────────────────────────────
 
 _MARK = {PASS: ("[ok]✓[/]", "ok"), WARN: ("[warn]![/]", "warn"), FAIL: ("[owe]✗[/]", "owe")}

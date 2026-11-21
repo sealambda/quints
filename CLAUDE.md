@@ -25,7 +25,7 @@ skill).
 
 `quints` is layered, declared in the root `pyproject.toml`:
 
-1. `cli`, `fava`, `plugins` (entrypoints)
+1. `cli`, `fava`, `lsp`, `plugins` (entrypoints)
 2. `settlement`, `report_pdf`, `match`, `importing`, `init`, `closing`,
    `liability`, `audit`, `changes`, `digest`, `bundle` (orchestration)
 3. `mwst`, `kmu`, `vat`, `fx`, `prices`, `inbox`, `payables`, `receivables`,

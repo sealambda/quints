@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && uv run quints check --review --strict --base-ref HEAD 1>&2 || exit 2",
+            "timeout": 60,
+            "statusMessage": "quints check"
+          }
+        ]
+      }
+    ]
+  }
+}

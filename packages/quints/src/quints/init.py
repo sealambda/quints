@@ -35,6 +35,7 @@ tied to the demo quarter's bookings, so ``quints invoice`` reconciles clean.
 
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 from dataclasses import dataclass, field
@@ -429,6 +430,8 @@ def _main_bean(answers: Answers) -> str:
             "",
             f'plugin "quints.plugins.kmu" "{cfg.entity_marker}"',
             'plugin "fava.plugins.link_documents"',
+            "; The same entry booked twice is an error (a statement imported twice).",
+            'plugin "beancount.plugins.noduplicates"',
             "",
             f'{_open_date(answers)} custom "fava-extension" "quints.fava"',
             "",
@@ -869,6 +872,7 @@ def _quints_toml(answers: Answers) -> str:
     cfg = _cfg(answers)
     since = answers.vat_registered_since
     lines: list[str] = [
+        f"#:schema {config.DOCS_URL}/schema/quints.schema.json",
         "# quints.toml — everything entity-specific lives here, next to main.bean.",
         "# Account names mirror accounts.bean; change them in both files together.",
         "",
@@ -1327,8 +1331,21 @@ account with no valid `kmu:` code.
    still owed, aged by due date.
 4. **Always** `quints check` before you consider the books consistent. It
    checks the ledger, the statements and every VAT return not settled yet.
-   Each problem names its `file:line` and a code; the diagnostics reference
-   ({config.DOCS_URL}/reference/diagnostics/) says how to fix each code.
+   Each problem names its `file:line` and a code, and this says what a code
+   means and how to fix it, offline:
+
+```bash
+quints explain vat-mismatch
+```
+
+   `quints check --fix` applies the fixes that need no judgement.
+   `quints check --review` also lists what is still to review: `!` flags,
+   entries with no document, bank balances not asserted for a quarter.
+
+After each edit, check what the edit brought:
+`quints check --review --strict --base-ref HEAD` reports only the problems
+the last commit doesn't have. In Claude Code, `.claude/settings.json` runs it
+for you after every edit; any other agent runs it itself.
 
 ## The loop — money in (invoice → receivable → payment)
 
@@ -1484,6 +1501,19 @@ statements:
 """
 
 
+def _claude_settings() -> str:
+    """Claude Code runs the check after each edit it makes. Exit 2 hands the
+    problems the edit brought back to the model; the rest of the books' state
+    is `quints check`'s and CI's to report."""
+    command = (
+        'cd "$CLAUDE_PROJECT_DIR" && '
+        "uv run quints check --review --strict --base-ref HEAD 1>&2 || exit 2"
+    )
+    hook = {"type": "command", "command": command, "timeout": 60, "statusMessage": "quints check"}
+    settings = {"hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": [hook]}]}}
+    return json.dumps(settings, indent=2) + "\n"
+
+
 def _claude_md() -> str:
     # Claude Code auto-loads CLAUDE.md; the @-include pulls AGENTS.md into
     # context so the instructions work without the agent going looking.
@@ -1535,6 +1565,7 @@ def plan(answers: Answers) -> list[ScaffoldFile]:
         *invoicing,
         ScaffoldFile(Path("AGENTS.md"), _agents_md(answers)),
         ScaffoldFile(Path("CLAUDE.md"), _claude_md()),
+        ScaffoldFile(Path(".claude/settings.json"), _claude_settings()),
         ScaffoldFile(Path(".gitignore"), _gitignore()),
         *_ci_files(answers),
         ScaffoldFile(Path("inbox/.gitkeep"), ""),

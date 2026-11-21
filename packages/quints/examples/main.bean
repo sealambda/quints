@@ -10,6 +10,8 @@
 
 plugin "quints.plugins.kmu" ":CH:GmbH:"
 plugin "fava.plugins.link_documents"
+; The same entry booked twice is an error (a statement imported twice).
+plugin "beancount.plugins.noduplicates"
 
 2026-01-01 custom "fava-extension" "quints.fava"
 

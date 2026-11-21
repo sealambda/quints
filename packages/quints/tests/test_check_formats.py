@@ -115,6 +115,8 @@ def test_json(books: Path) -> None:
         "message": ERROR,
         "expected": "0",
         "posted": "0",
+        "help": f"{diagnostics.DOCS}#ledger",
+        "fix": None,
     }
     assert (warning["code"], warning["severity"], warning["line"]) == ("invoice-gap", "warning", 10)
 

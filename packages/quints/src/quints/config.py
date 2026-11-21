@@ -525,6 +525,55 @@ _KINDS = {
 }
 
 
+_JSON_KINDS: dict[str, dict[str, object]] = {
+    "str": {"type": "string"},
+    "bool": {"type": "boolean"},
+    "int": {"type": "integer"},
+    "date": {"type": "string", "format": "date"},
+    "number": {"type": ["number", "string"]},
+    "map": {"type": "object", "additionalProperties": {"type": "string"}},
+    "strs": {"type": "array", "items": {"type": "string"}},
+    "rules": {
+        "type": "array",
+        "items": {"type": "array", "items": {"type": "string"}, "minItems": 3, "maxItems": 3},
+    },
+}
+# Keys with one meaning wherever they appear, and a closed set of values.
+_JSON_ENUMS: dict[str, list[str]] = {
+    "legal_form": list(LEGAL_FORMS),
+    "vat_method": list(VAT_METHODS),
+    "period": list(PERIOD_KINDS),
+}
+
+
+def json_schema() -> dict[str, object]:
+    """quints.toml as a JSON Schema: what a TOML language server checks as you type.
+
+    Built from the table :func:`check_keys` reads, so the two cannot disagree.
+    """
+
+    def table(where: str) -> dict[str, object]:  # the table nests three deep: it ends
+        properties: dict[str, object] = {}
+        for key, kind in _SCHEMA[where].items():
+            if kind == "table":
+                properties[key] = table(f"{where}.{key}")
+            elif kind == "entries":
+                properties[key] = {"type": "array", "items": table(f"[[vat.{key}]]")}
+            else:
+                enum = {"enum": _JSON_ENUMS[key]} if key in _JSON_ENUMS else {}
+                properties[key] = _JSON_KINDS[kind] | enum
+        return {"type": "object", "additionalProperties": False, "properties": properties}
+
+    sections = [k for k in _SCHEMA if "." not in k and not k.startswith("[")]
+    return {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "quints.toml",
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {name: table(name) for name in sections},
+    }
+
+
 def _fits(kind: str, value: object) -> bool:
     if kind == "bool":
         return isinstance(value, bool)
