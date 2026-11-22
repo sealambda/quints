@@ -103,6 +103,7 @@ Run these from your project directory; with `--samples` they work out of the box
 ```bash
 quints vat liability            # must you register? turnover vs the CHF 100'000 threshold
 quints vat report -p 2026-Q3    # the return, Ziffer by Ziffer — effective or Saldosteuersatz
+quints vat export -p 2026-Q3    # the return as eCH-0217 XML, to upload in the ESTV portal
 quints vat settle -p 2026-Q3    # the settlement entry to paste once the return is filed
 quints vat status               # VAT filed but not yet paid, with due dates
 ```

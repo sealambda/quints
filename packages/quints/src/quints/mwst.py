@@ -78,9 +78,14 @@ A VAT leg booked in a foreign currency is counted at its CHF value and
 flagged (the return is in CHF). An amount quints cannot value — no rate on or
 before its date — is left out and listed, never counted as CHF 0.
 
-Every transaction with turnover is checked: the output VAT it posts must equal
-net × rate within :func:`_tolerance`. Mismatches are listed as
-:class:`Violation` (text and ``--json``) rather than silently mis-filed.
+The return declares **turnover**, and the tax is turnover × rate, summed
+unrounded and rounded once (eCH-0217 Kap. 6.2: "Die Steuer muss vom Umsatz
+berechnet werden … ohne Runden in den Zwischenschritten") — the ESTV portal
+recomputes it that way and rejects a return whose 500/510 disagrees. So the
+OutputVAT the books posted is not what is declared: every transaction with
+turnover is checked against net × rate within :func:`_tolerance` (a mismatch
+is a :class:`Violation`, text and ``--json``), and the Rappen left between
+the account and the declared tax are cleared by the settlement.
 
 Computation (`compute`) is separated from presentation (`render`) so a future
 web/TUI front-end can consume the :class:`MwstReport` dataclass directly.
@@ -318,9 +323,10 @@ class RateRow:
     rate_class: str  # "standard"/"reduced"/"lodging", or "saldo"
     rate: Decimal
     net: Decimal  # the form's "Leistungen" column — gross incl. MWST under SSS
-    tax: Decimal
+    tax: Decimal  # net × rate, as the form multiplies it
     current: bool  # the ab-01.01.2024 vintage
     label: str = ""  # the granted Saldosteuersatz this row is for, e.g. "6.2"
+    activity: str = ""  # its Tätigkeitscode (eCH-0217 activityID), SSS from 2025
 
 
 # Shared with every report since loader errors became violations too.
@@ -389,6 +395,8 @@ class MwstReport:
     # Under SSS this is the statutory VAT invoiced, not the SSS owed.
     output_vat: Decimal = Decimal("0")
     rate_rows: list[RateRow] = field(default_factory=list)
+    # Bezugsteuer per statutory rate (383/382) — outside Ziffer 299.
+    bezug_rows: list[RateRow] = field(default_factory=list)
     violations: list[Violation] = field(default_factory=list)
     vat_lines: list[VatLine] = field(default_factory=list)
     bezugsteuer_lines: list[VatLine] = field(default_factory=list)
@@ -635,29 +643,24 @@ def _vintage_ziffer(rate_class: str, current: bool) -> str:
     return new if current else old
 
 
-def _rate_rows(
-    nets: dict[tuple[str, bool], Decimal],
-    taxes: dict[tuple[str, bool], Decimal],
-    d0: Date,
-    d1: Date,
-) -> list[RateRow]:
+def _rate_rows(nets: dict[tuple[str, bool], Decimal], d0: Date, d1: Date) -> list[RateRow]:
     """The section-II rate lines: those in force in the period, plus any used."""
     rows: list[RateRow] = []
     for current in (True, False):
         in_force = (d1 >= RATE_CHANGE) if current else (d0 < RATE_CHANGE)
         for rate_class in RATE_ZIFFERN:
-            key = (rate_class, current)
-            net, tax = nets.get(key, Decimal("0")), taxes.get(key, Decimal("0"))
-            if not in_force and not net and not tax:
+            net = ledger.rappen(nets.get((rate_class, current), Decimal("0")))
+            if not in_force and not net:
                 continue
+            rate = _rate_on(current, rate_class)
             rows.append(
                 RateRow(
-                    ziffer=_vintage_ziffer(rate_class, current),
-                    rate_class=rate_class,
-                    rate=_rate_on(current, rate_class),
-                    net=ledger.rappen(net),
-                    tax=ledger.rappen(tax),
-                    current=current,
+                    _vintage_ziffer(rate_class, current),
+                    rate_class,
+                    rate,
+                    net,
+                    ledger.rappen(net * rate),
+                    current,
                 )
             )
     return rows
@@ -705,9 +708,8 @@ class _Totals:
     flows: dict[str, Decimal] = field(default_factory=dict)  # 900 / 910
     inputs: dict[str, Decimal] = field(default_factory=dict)  # 400…420
     nets: dict[tuple[str, bool], Decimal] = field(default_factory=dict)
-    taxes: dict[tuple[str, bool], Decimal] = field(default_factory=dict)
-    bezug_tax: dict[bool, Decimal] = field(default_factory=dict)
-    bezug_net: dict[bool, Decimal] = field(default_factory=dict)
+    # Bezugsteuer posted, per (rate class, vintage) like `nets`.
+    bezug_tax: dict[tuple[str, bool], Decimal] = field(default_factory=dict)
     # Saldosteuersatz: (granted rate's name, vintage) → Entgelt incl. MWST.
     sss_nets: dict[tuple[str, bool], Decimal] = field(default_factory=dict)
     gross: Decimal = Decimal("0")  # Ziffer 200
@@ -737,8 +739,6 @@ class _TxnState:
     current: bool
     vat_bearing: bool = False  # see vat_bearing()
     expected_tax: Decimal = Decimal("0")
-    # net × rate per (rate class, vintage) — a mixed-rate sale's split
-    expected_by_row: dict[tuple[str, bool], Decimal] = field(default_factory=dict)
     posted_tax: Decimal = Decimal("0")
     rate_class: str = "standard"
     weight: Decimal = Decimal("-1")  # of the dominant taxable leg
@@ -898,9 +898,10 @@ def _transaction(
             if acct == cfg.input_vat:
                 t.input_left_out += n
 
-    if cfg.vat_method == "saldo":
+    saldo = cfg.vat_method == "saldo"
+    if saldo:
         _saldo_gross(e, state, t, detail)
-    _check(e, state, t, detail)
+    _check(e, state, t, detail, implied=not saldo)
     for token in sorted(unknown):
         detail.violations.append(
             ledger.violation_at(
@@ -920,12 +921,10 @@ def _bezugsteuer(
     detail: _Detail,
 ) -> None:
     """Reverse charge on a foreign supply (Art. 45 ff. MWSTG) — Ziffer 383/382."""
-    rate_class = _rate_class(p.account, tokens, cfg)
     # The vintage decides the rate, as for turnover: an `old_rate` supply
     # booked in 2024+ files under 382 at the old rate.
-    net = ledger.rappen(tax / _rate_on(current, rate_class))
-    t.bezug_tax[current] = t.bezug_tax.get(current, Decimal("0")) + tax
-    t.bezug_net[current] = t.bezug_net.get(current, Decimal("0")) + net
+    key = (_rate_class(p.account, tokens, cfg), current)
+    t.bezug_tax[key] = t.bezug_tax.get(key, Decimal("0")) + tax
     original, currency, rate = _original(p, tax)
     detail.bezugsteuer_lines.append(
         VatLine(
@@ -1100,9 +1099,7 @@ def _turnover(
     rate_class = _rate_class(acct, tokens, cfg)
     key = (rate_class, state.current)
     t.nets[key] = t.nets.get(key, Decimal("0")) + chf
-    expected = chf * _rate_on(state.current, rate_class)
-    state.expected_tax += expected
-    state.expected_by_row[key] = state.expected_by_row.get(key, Decimal("0")) + expected
+    state.expected_tax += chf * _rate_on(state.current, rate_class)
     granted = _saldo_for(acct, tokens, cfg) if cfg.vat_method == "saldo" else None
     if granted is not None:
         sss_key = (granted.name, state.current)
@@ -1149,39 +1146,38 @@ def _saldo_gross(e: data.Transaction, state: _TxnState, t: _Totals, detail: _Det
         t.gross += state.posted_tax
 
 
-def _check(e: data.Transaction, state: _TxnState, t: _Totals, detail: _Detail) -> None:
-    """File the transaction's output VAT, and flag it if net × rate disagrees."""
+def _check(
+    e: data.Transaction, state: _TxnState, t: _Totals, detail: _Detail, *, implied: bool
+) -> None:
+    """Count the transaction's output VAT, and flag it if net × rate disagrees.
+
+    ``implied``: VAT with no income leg at all (a fixed-asset sale, a manual
+    correction) declares the Entgelt it implies at the standard rate — the
+    form has no tax without turnover. The SSS reports it instead
+    (:func:`_saldo_gross`).
+    """
     if not state.posted_tax and not state.expected_tax:
         return
     t.output_vat += state.posted_tax
-    key = (state.rate_class, state.current)
-    matches = abs(state.posted_tax - state.expected_tax) <= _tolerance(state.expected_tax)
-    rest = state.posted_tax
-    if state.has_turnover and matches:
-        # A mixed-rate sale: each rate row gets the tax its net owes; the
-        # Rappen rounding stays with the dominant row.
-        for other, expected in state.expected_by_row.items():
-            if other != key:
-                share = ledger.rappen(expected)
-                t.taxes[other] = t.taxes.get(other, Decimal("0")) + share
-                rest -= share
-    t.taxes[key] = t.taxes.get(key, Decimal("0")) + rest
-    if not state.has_turnover:
-        # VAT with no income leg at all (a fixed-asset sale, a manual
-        # correction): declare it at the standard rate, but there is nothing to
-        # check it against — stay quiet rather than cry wolf.
-        return
-    if not matches:
-        rate = _rate_on(state.current, state.rate_class) * 100
-        detail.violations.append(
-            ledger.violation_at(
-                e,
-                f"output VAT does not match net × {rate:.1f} %",
-                code="vat-mismatch",
-                expected=ledger.rappen(state.expected_tax),
-                posted=state.posted_tax,
+    if state.has_turnover:
+        if abs(state.posted_tax - state.expected_tax) > _tolerance(state.expected_tax):
+            rate = _rate_on(state.current, state.rate_class) * 100
+            detail.violations.append(
+                ledger.violation_at(
+                    e,
+                    f"output VAT does not match net × {rate:.1f} %",
+                    code="vat-mismatch",
+                    expected=ledger.rappen(state.expected_tax),
+                    posted=state.posted_tax,
+                )
             )
-        )
+    elif implied:
+        net = ledger.rappen(state.posted_tax / _rate_on(state.current, "standard"))
+        key = ("standard", state.current)
+        t.nets[key] = t.nets.get(key, Decimal("0")) + net
+        t.gross += net
+        ziffer = _vintage_ziffer("standard", state.current)
+        detail.domestic.append(RevenueLine(str(e.date), e.payee or "", net, "CHF", net, ziffer))
 
 
 def _original(p: data.Posting, chf: Decimal) -> tuple[Decimal, str, Decimal]:
@@ -1218,6 +1214,7 @@ def _saldo_rows(t: _Totals, d0: Date, d1: Date, cfg: config.Config) -> list[Rate
                     tax=ledger.rappen(base * granted.rate),
                     current=current,
                     label=granted.name,
+                    activity=granted.activity,
                 )
             )
     return rows
@@ -1233,9 +1230,7 @@ def _check_inputs(t: _Totals) -> None:
     )
 
 
-def _settle_299(
-    rows: list[RateRow], z299: Decimal, saldo: bool, detail: _Detail, date_to: str
-) -> None:
+def _settle_299(rows: list[RateRow], z299: Decimal, detail: _Detail, date_to: str) -> None:
     """Make the rate rows add up to Ziffer 299, or report what's missing.
 
     Rounding moves z200, each of the six deductions and each row net by at
@@ -1246,8 +1241,7 @@ def _settle_299(
     if rows and residual and abs(residual) <= Decimal("0.005") * (7 + len(rows)):
         largest = max(rows, key=lambda r: abs(r.net))
         largest.net += residual
-        if saldo:  # the form multiplies the base as entered
-            largest.tax = ledger.rappen(largest.net * largest.rate)
+        largest.tax = ledger.rappen(largest.net * largest.rate)  # the form multiplies
         return
     if residual:
         detail.violations.append(
@@ -1282,11 +1276,19 @@ def _assemble(
     def z(key: str) -> Decimal:
         return ledger.rappen(t.turnover.get(key, Decimal("0")))
 
-    rows = _saldo_rows(t, d0, d1, cfg) if saldo else _rate_rows(t.nets, t.taxes, d0, d1)
+    rows = _saldo_rows(t, d0, d1, cfg) if saldo else _rate_rows(t.nets, d0, d1)
+    # The net is what the form asks for, derived once per rate from the tax
+    # posted; its tax then equals that posting to the Rappen.
+    bezug: list[RateRow] = []
+    for (rate_class, current), posted in sorted(t.bezug_tax.items(), reverse=True):
+        rate = _rate_on(current, rate_class)
+        net = ledger.rappen(posted / rate)
+        ziffer = BEZUGSTEUER_ZIFFERN[0 if current else 1]
+        bezug.append(RateRow(ziffer, rate_class, rate, net, ledger.rappen(net * rate), current))
 
     def row(ziffer: str, index: int) -> Decimal:
         total = Decimal("0")
-        for r in rows:
+        for r in (*rows, *bezug):
             if r.ziffer == ziffer:
                 total += r.net if index == 0 else r.tax
         return total
@@ -1294,10 +1296,10 @@ def _assemble(
     z200 = ledger.rappen(t.gross)
     z289 = sum((z(k) for k in ("220", "221", "225", "230", "235", "280")), Decimal("0"))
     z299 = z200 - z289
-    _settle_299(rows, z299, saldo, detail, date_to)
-    z383_tax = ledger.rappen(t.bezug_tax.get(True, Decimal("0")))
-    z382_tax = ledger.rappen(t.bezug_tax.get(False, Decimal("0")))
-    z399 = sum((r.tax for r in rows), Decimal("0")) + z383_tax + z382_tax
+    _settle_299(rows, z299, detail, date_to)
+    # Summed unrounded, rounded once (eCH-0217 Kap. 6.2.1): the portal
+    # recomputes 500/510 this way, so a sum of rounded rows could be a Rappen off.
+    z399 = ledger.rappen(sum((r.net * r.rate for r in (*rows, *bezug)), Decimal("0")))
     z400, z405, z410, z415, z420 = (
         ledger.rappen(t.inputs.get(k, Decimal("0"))) for k in ("400", "405", "410", "415", "420")
     )
@@ -1328,10 +1330,10 @@ def _assemble(
         z342_tax=row("342", 1),
         z343_net=row("343", 0),
         z343_tax=row("343", 1),
-        z382_net=ledger.rappen(t.bezug_net.get(False, Decimal("0"))),
-        z382_tax=z382_tax,
-        z383_net=ledger.rappen(t.bezug_net.get(True, Decimal("0"))),
-        z383_tax=z383_tax,
+        z382_net=row("382", 0),
+        z382_tax=row("382", 1),
+        z383_net=row("383", 0),
+        z383_tax=row("383", 1),
         z399=z399,
         z400=z400,
         z405=z405,
@@ -1351,6 +1353,7 @@ def _assemble(
         form=FORMS.get(cfg.vat_method, ""),
         output_vat=ledger.rappen(t.output_vat),
         rate_rows=rows,
+        bezug_rows=bezug,
         violations=detail.violations,
         vat_lines=detail.vat_lines,
         bezugsteuer_lines=detail.bezugsteuer_lines,

@@ -115,10 +115,12 @@ period = "half-year"    # quarter | half-year | year
 # rate, and `mwst: "sss=1.3"` pins a single booking.
 [[vat.saldo]]
 rate = 6.2
+activity = "12345"      # the portal's code for it; `quints vat export` needs it
 
 [[vat.saldo]]
 rate = 1.3
 marker = ":Handel"
+activity = "12346"
 ```
 
 `period` drives the period grid that `quints close check` expects. The

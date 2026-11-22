@@ -82,6 +82,11 @@ table, so a typo can't quietly change a return.
   exception is a transaction that charges OutputVAT with no 3000–3899 leg
   beside it, such as a side-business sale on 7000. VAT was charged, so it
   was a taxable supply,[^entgelt] and its net is counted with its tax.
+- **OutputVAT with no income leg at all**, such as the sale of a fixed asset
+  that credits the asset account, declares the Entgelt it implies: the VAT
+  divided by the standard rate goes into 200 and 303. The form has no tax
+  without turnover. Under the Saldosteuersatz it is listed under *Prüfung*
+  instead.
 - **Income on 7000–8999 without a tag** (betrieblicher Nebenerfolg,
   betriebsfremder or ausserordentlicher Ertrag) and without OutputVAT is
   listed under *Prüfung* with its amount, and stays out of the figures. Its
@@ -156,22 +161,29 @@ reduces 383/382 the same way.
   balance on `PayableVAT`, and `quints vat status` shows it as a negative
   amount until it is refunded or offset.
 
-## The consistency check
+## The tax is turnover × rate
 
-Every transaction with turnover is checked: the output VAT it posts must
-equal net × rate, within a few Rappen. The report lists any mismatch rather
-than filing it wrongly, and so does `--json` under `violations`. Typical
+The return declares turnover. Each row's tax is its turnover × its rate, and
+399 is the sum of those products, rounded to the Rappen once at the
+end.[^ech-calc] The ESTV portal computes it the same way and rejects an
+uploaded return whose 500/510 differs.
+
+So the OutputVAT your invoices posted is checked, not declared. On every
+transaction with turnover it must equal net × rate, within a few Rappen. The
+report lists any mismatch, and so does `--json` under `violations`. Typical
 causes are the old rate applied by habit, a missing VAT leg, or VAT on an
-exempt supply.
+exempt supply. A sale with legs at different rates (100.00 at 8.1 % and
+1000.00 at 2.6 %, posting 34.10) is checked as a whole, and each net lands
+on its own rate row.
 
-A sale with legs at different rates (100.00 at 8.1 % and 1000.00 at 2.6 %,
-posting 34.10) is checked as a whole. When it matches, each rate row gets
-the tax its net owes (8.10 on 303, 26.00 on 313).
+Invoices round their VAT one by one, so a period's OutputVAT can sit a few
+Rappen from the tax declared. `quints vat settle` books that difference to
+`rounding_income`, and OutputVAT still closes at zero.
 
-Every Ziffer is rounded to the Rappen once, and the form's sums (289, 299,
-399, 479, 500) are taken over the rounded figures, as the ESTV portal adds
-them. A Rappen of rounding left between 299 and the rate rows goes to the
-largest row.
+Every Ziffer is rounded to the Rappen once. 289, 299 and 479 are sums of
+rounded figures. 399 is the sum of the unrounded products, so it can differ
+by a Rappen from the tax column added up by hand. A Rappen of rounding left
+between 299 and the rate rows goes to the largest row.
 
 ## Foreign currency
 
@@ -198,6 +210,9 @@ every Ziffer, so the report still renders and names what is missing.
 - **Several rates:** a supply goes to the rate whose `marker` its income
   account carries, else to the first rate without one. `mwst: "sss=1.3"`
   pins a single booking.
+- **Activities:** for periods from 2025 on, the return lists turnover per
+  activity.[^ech-activity] `activity` on a `[[vat.saldo]]` entry holds the
+  portal's code for it, and `quints vat export` needs one per granted rate.
 - **Excluded accounts:** the `saldo_difference` and `bezugsteuer_expense`
   accounts are kept out of the return by name, so a hand-written settlement
   can't file them wrongly.
@@ -230,13 +245,19 @@ every Ziffer, so the report still renders and names what is missing.
   *signed* net (the figure the settlement posts); `z510` carries a credit as
   a positive number.
 - **`rate_rows`:** the section-II lines, with their rate class, vintage and,
-  under the Saldosteuersatz, the granted rate's `label`.
+  under the Saldosteuersatz, the granted rate's `label` and `activity`.
+  `tax` is `net` × `rate`.
+- **`bezug_rows`:** the Bezugsteuer lines (383/382), one per statutory rate.
+- **`output_vat`:** what the books posted to OutputVAT, which the settlement
+  clears.
 - **`violations`:** anything the form can't represent.
 - **`vat_method`**, **`form`**, **`liable_from`** / **`liable_to`** (the
   stretch actually covered), and **`notices`**.
 
 Keys are only ever added, never renamed or removed.
 
+[^ech-calc]: eCH-0217 *Spezifikation E-MWST* 2.0.0, [Kap. 6.2 and 7.5](https://www.ech.ch/sites/default/files/imce/eCH-Dossier/eCH-Dossier_PDF_Publikationen/Hauptdokument/STAN_d_DEF_2025_06_30_eCH-0217_V2.0.0_E-MWST.pdf): "Die Steuer muss vom Umsatz berechnet werden", "ohne Runden in den Zwischenschritten"; error MWST-0006 when the amount "wurde nicht korrekt berechnet". In quints: `quints.mwst._assemble`.
+[^ech-activity]: eCH-0217 2.0.0, Kap. 3.2: "Für Abrechnungsperioden ab dem 01.01.2025 muss die Kumulation pro Tätigkeit erfolgen."
 [^rates]: Art. 25 MWSTG, [SR 641.20](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_25). In quints: `quints.ledger.VAT_RATES`.
 [^sss-rates]: Verordnung der ESTV über die Höhe der Saldosteuersätze nach Branchen und Tätigkeiten, [SR 641.202.62](https://www.fedlex.admin.ch/eli/cc/2024/500/de) (5 September 2024, in force since 1 January 2025). In quints: `quints.ledger.SALDO_RATES`.
 [^sss-gross]: [MWST-Info 12 *Saldosteuersätze*](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/tableOfContent.xhtml?publicationId=1004992), Ziff. 18.1.

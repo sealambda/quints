@@ -347,8 +347,9 @@ def test_wrong_output_vat_is_listed(tmp_path: Path) -> None:
     (v,) = r.violations
     assert v.expected == Decimal("81.00") and v.posted == Decimal("77.00")
     assert "8.1 %" in v.message
-    # The booking is still reported — under the rate row it claims to be in.
-    assert r.z303_tax == Decimal("77.00")
+    # The row declares what the form computes from the turnover (eCH-0217
+    # Kap. 6.2.1), not the VAT the booking happened to post.
+    assert r.z303_tax == Decimal("81.00") and r.output_vat == Decimal("77.00")
 
 
 def test_rappen_rounding_is_not_a_violation(tmp_path: Path) -> None:
@@ -366,6 +367,45 @@ def test_rappen_rounding_is_not_a_violation(tmp_path: Path) -> None:
 
 
 # ── the credit period (Ziffer 510) ────────────────────────────────────────────
+
+
+def test_tax_is_turnover_times_rate_summed_unrounded(tmp_path: Path) -> None:
+    # eCH-0217 Kap. 6.2.1: "ohne Runden in den Zwischenschritten". 0.42 x 8.1 %
+    # is 0.03402 and 1.70 x 2.6 % is 0.0442: the rows print 0.03 and 0.04, but
+    # the tax owed is their unrounded sum, 0.07822 -> 0.08.
+    r = _compute(
+        tmp_path,
+        _CHART
+        + """
+2026-07-02 * "Acme AG" "Two rates"
+  Assets:CH:GmbH:Receivable:Trade                   2.19 CHF
+  Income:CH:GmbH:Consulting:External:Domestic      -0.42 CHF
+  Income:CH:GmbH:Books:Reduced                     -1.70 CHF
+  Liabilities:CH:GmbH:Tax:OutputVAT                -0.07 CHF
+""",
+    )
+    assert not r.violations
+    assert (r.z303_tax, r.z313_tax) == (Decimal("0.03"), Decimal("0.04"))
+    assert r.z399 == r.z500 == Decimal("0.08")
+    assert r.output_vat == Decimal("0.07")  # what the settlement clears to rounding
+
+
+def test_output_vat_without_income_declares_the_turnover_it_implies(tmp_path: Path) -> None:
+    # A fixed-asset sale credits the asset, not income — but the form has no
+    # tax without turnover, so the Entgelt goes into 200 and 303.
+    r = _compute(
+        tmp_path,
+        _CHART
+        + """
+2026-07-02 * "Occasion AG" "Sale of the old desk"
+  Assets:CH:GmbH:Current:UBS:CHF                 1081.00 CHF
+  Assets:CH:GmbH:Equipment:Office               -1000.00 CHF
+  Liabilities:CH:GmbH:Tax:OutputVAT               -81.00 CHF
+""",
+    )
+    assert not r.violations
+    assert r.z200 == r.z299 == r.z303_net == Decimal("1000.00")
+    assert r.z303_tax == r.z399 == Decimal("81.00")
 
 
 def test_credit_period_reports_510(tmp_path: Path) -> None:

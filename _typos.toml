@@ -52,3 +52,7 @@ entitiy = "entitiy"
 methd = "methd"
 # OpenType axis tag (font width).
 wdth = "wdth"
+
+[files]
+# The published eCH schemas, kept as issued (German and French annotations).
+extend-exclude = ["packages/quints/tests/fixtures/ech0217/"]

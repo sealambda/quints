@@ -1,8 +1,9 @@
 # File your VAT return
 
-Every VAT period ends the same way: compute the return, check it, enter it in
-the ESTV portal, close the period in the books, and pay. quints does the
-computing and the closing entry. Filing and paying are yours.
+Every VAT period ends the same way: compute the return, check it, upload it
+to the ESTV portal, close the period in the books, and pay. quints does the
+computing, the upload file and the closing entry. Submitting and paying are
+yours.
 
 !!! abstract "Applies if"
     - **Legal form:** Einzelfirma, GmbH or AG. Nothing on this page differs
@@ -84,10 +85,50 @@ Two lists appear below the Ziffern when there is something to act on:
 Where a booking lands, and how to move it with a `mwst:` tag, is set out in
 [How quints fills the VAT return](../reference/vat-rules.md).
 
-## 3. Enter it in the ESTV portal
+## 3. File it in the ESTV portal
 
-Copy the Ziffern into the ESTV ePortal.[^portal] quints files nothing. The
-return and the payment are both due **60 days after the period ends**.[^due]
+```bash
+quints vat export -p 2026-Q3 --output-file vat-2026-Q3.xml
+```
+
+It writes the return as an eCH-0217 file, the format the portal takes by
+upload.[^ech] In the ESTV ePortal,[^portal] open *MWST abrechnen*, upload the
+file for the period, compare what the portal shows with the report, and
+submit. quints submits nothing. The return and the payment are both due
+**60 days after the period ends**.[^due]
+
+- **Your UID** is read from `vat_id` in `invoicing/issuer.yaml`, your name
+  from `quints.toml`. The portal rejects a file whose UID, method or period
+  isn't the one it holds for you.
+- **Errors block the export.** While *Prüfung* lists an error, quints writes
+  no file: its figures would be short.
+- **A correction** of a return you already filed: add `--correction`. The
+  file is then a Korrekturabrechnung, complete like the first one, and
+  replaces it.[^ech-types]
+
+=== "Effective method"
+
+    Under the effective method, the file carries what the report shows:
+    turnover net of VAT per rate, Bezugsteuer, and the input VAT of Ziffern
+    400–420.
+
+=== "Saldosteuersatz"
+
+    Under the Saldosteuersatz, the portal takes turnover **per activity**
+    for periods from 2025 on.[^ech-activity] Give each granted rate the
+    5-character activity code the portal shows under
+    *Abrechnungsmodalitäten*:
+
+    ```toml
+    [[vat.saldo]]
+    rate = 6.2
+    activity = "12345"
+    ```
+
+    Without it, `quints vat export` stops and names the rate.
+
+You can still copy the Ziffern in by hand instead. The portal computes the
+tax from the turnover you enter, as quints does.
 
 ## 4. Close the period in the books
 
@@ -100,7 +141,12 @@ balance assertions. Paste them into `books/<year>.bean`. The entry moves
 OutputVAT, InputVAT and Bezugsteuer into `PayableVAT`, so the next period
 starts at zero. It carries the `^VAT-2026-Q3` link and a `due:` date.
 
-Under the Saldosteuersatz there is one more leg. The entry pays the ESTV the
+Under the effective method the entry can carry one more leg of a few Rappen,
+to the `rounding_income` account. The return's tax is turnover × rate,
+rounded once,[^ech-calc] while your invoices rounded their VAT one by one. The
+leg clears what that leaves on OutputVAT.
+
+Under the Saldosteuersatz there is one more leg too. The entry pays the ESTV the
 Saldosteuersatz on the gross turnover and books the rest of the VAT your
 invoices collected to the `saldo_difference` income account. That gap is
 what the method pays you for not deducting input tax.
@@ -161,12 +207,15 @@ and its legs depend on the method on the invoice date:
 
 ```bash
 quints vat report -p 2026-Q3 --json
+quints vat export -p 2026-Q3
 quints vat settle -p 2026-Q3 --json
 quints vat status --json
 ```
 
+- **`vat export`** prints the eCH-0217 XML on stdout, or exits 1 with the
+  problems on stderr.
 - **`zNNN`:** every Ziffer, as a decimal string.
-- **`rate_rows`:** the section-II lines.
+- **`rate_rows`** and **`bezug_rows`:** the section-II lines.
 - **`violations`:** the *Prüfung* list.
 - **`notices`:** the timeline notices.
 - **`liable_from`** / **`liable_to`:** the stretch of the period actually
@@ -178,8 +227,18 @@ today (`vat_method`, `period`). The full contract is on the
 
 ## What quints doesn't do here
 
-- **File or pay.** The return goes into the ESTV ePortal by hand, and the
-  payment leaves your bank.
+- **Submit or pay.** quints writes the file. You upload and submit it in the
+  ESTV ePortal, and the payment leaves your bank. The ESTV has no interface
+  for software to file directly yet.[^ech]
+- **The Jahresabstimmung and the Schlussabrechnung.** The annual
+  reconciliation (Art. 72 MWSTG) carries only differences, and the final
+  return on deregistering has its own form in the portal.[^ech-types] Enter
+  both there by hand, from `quints vat report`.
+- **Saldosteuersatz returns before 2025:** the export leaves out the
+  deductions of Ziffern 470 and 471 (forms 1050, 1055 and 1056), which
+  quints doesn't compute.
+- **A description for Ziffer 280.** The file calls it "Diverses". Edit it in
+  the portal after the upload.
 - **Value corrections.** Einlageentsteuerung (410), Eigenverbrauch and
   Vorsteuerkorrekturen (415) depend on what you still own and its current
   value. The notices say when one is due. You book the amount with the
@@ -194,6 +253,10 @@ today (`vat_method`, `period`). The full contract is on the
   only.
 
 [^sss]: Art. 37 MWSTG, [SR 641.20](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_37); [MWST-Info 12 *Saldosteuersätze*](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/tableOfContent.xhtml?publicationId=1004992). The ESTV's sample returns: [effective method](https://www.estv2.admin.ch/mwst/formulare/mwst-form-abr-muster-effektiv-de.pdf), [Saldosteuersatz](https://www.estv2.admin.ch/mwst/formulare/mwst-form-abr-muster-sss-de.pdf).
+[^ech]: eCH-0217 *Spezifikation E-MWST*, version 2.0.0, approved 2025-09-23: [standard (PDF)](https://www.ech.ch/sites/default/files/imce/eCH-Dossier/eCH-Dossier_PDF_Publikationen/Hauptdokument/STAN_d_DEF_2025_06_30_eCH-0217_V2.0.0_E-MWST.pdf). Kap. 2.1: the portal takes the XML by manual upload; a machine-to-machine interface is planned.
+[^ech-types]: eCH-0217 2.0.0, Kap. 3.1: a Korrekturabrechnung "wird wie die Ersteinreichung vollständig ausgefüllt und ersetzt die Ersteinreichung"; the Jahresabstimmung "enthält … nur die festgestellten Differenzen". Kap. 7.3 for the Schlussabrechnung.
+[^ech-activity]: eCH-0217 2.0.0, Kap. 3.2 and 5.3.11: "Für Abrechnungsperioden ab dem 01.01.2025 muss die Kumulation pro Tätigkeit erfolgen"; "Es dürfen nur bewilligte activityId übermittelt werden."
+[^ech-calc]: eCH-0217 2.0.0, Kap. 6.2.1: "Die Steuer muss vom Umsatz berechnet werden" and "auf zwei Nachkommastellen ohne Runden in den Zwischenschritten"; a difference to the tax account "muss entweder im ERP-System automatisiert … oder mittels manueller Buchungen bereinigt werden".
 [^portal]: "Ab dem 1. Januar 2025 müssen alle MWST-pflichtigen Unternehmen die MWST online via ePortal abrechnen." [ESTV, MWST online abrechnen](https://www.estv.admin.ch/de/mwst-online-abrechnen); the [ePortal](https://estvportal.estv.admin.ch).
 [^due]: Art. 71 Abs. 1 and Art. 86 Abs. 1 MWSTG: "Innert 60 Tagen nach Ablauf der Abrechnungsperiode". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_86). For the final return, the 60 days run from the end of liability (Art. 71 Abs. 2).
 [^fx]: Art. 45 MWSTV: the monthly average or the daily selling rate published by the ESTV, the choice kept for at least a tax period. [SR 641.201](https://www.fedlex.admin.ch/eli/cc/2009/828/de#art_45); [MWST-Info 07, Ziff. 1.3.2](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/tableOfContent.xhtml?publicationId=1007607&lang=de). See [FX rates](fx.md).
