@@ -35,8 +35,9 @@ skill).
 A module may only import from layers below its own, and every new module must
 be added to a layer (the contract is exhaustive — `lint-imports` fails until
 you place it). Modules sharing a layer may import each other, but never in a
-cycle. The `beangulp-*`/`beanprice-*` packages are standalone: they never
-import each other or `quints`.
+cycle. The `beangulp-*`/`beanprice-*`/`quints-mailroom` packages are standalone:
+they never import each other or `quints` (the mailroom drives quints via the
+agent's CLI calls, keeping the AI/deterministic boundary a process boundary).
 
 ## Conventions
 
