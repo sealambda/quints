@@ -212,3 +212,35 @@ def test_settlement_flushes_the_accounts_the_report_measured(tmp_path: Path) -> 
     led.write_text(_REAL_QUARTER + "\n" + settlement.settlement_text(s) + "\n")
     _entries, errors = ledger.load_entries(led)
     assert not errors, errors
+
+
+def test_settlement_clears_rounding_to_the_declared_tax(tmp_path: Path) -> None:
+    # The return's tax is turnover x rate (eCH-0217 Kap. 6.2.1): 7.35 x 8.1 % is
+    # 0.60, while seven invoices of 1.05 charged 0.09 each. The 0.03 between the
+    # OutputVAT account and what is owed goes to rounding, not to the ESTV.
+    sales = "".join(
+        f"""
+2026-07-{day:02d} * "Walk-in" "Small sale"
+  Assets:CH:GmbH:Current:UBS:CHF                    1.14 CHF
+  Income:CH:GmbH:Consulting:External:Domestic      -1.05 CHF
+  Liabilities:CH:GmbH:Tax:OutputVAT                -0.09 CHF
+"""
+        for day in range(1, 8)
+    )
+    books = _REAL_QUARTER.split("2026-07-02 *")[0] + (
+        '2026-01-01 open Income:CH:GmbH:Rounding CHF\n  kmu: "6950"\n' + sales
+    )
+    led = tmp_path / "m.bean"
+    led.write_text(books)
+    report = mwst.compute(led, "2026-07-01", "2026-09-30")
+    assert not report.violations
+    assert (report.z303_tax, report.output_vat) == (Decimal("0.60"), Decimal("0.63"))
+
+    s = settlement.build_settlement(led, report, "2026-Q3")
+    assert (s.net, s.difference) == (Decimal("0.60"), Decimal("0.03"))
+    text = settlement.settlement_text(s)
+    assert "Income:CH:GmbH:Rounding" in text and "-0.03 CHF" in text
+
+    led.write_text(books + "\n" + text + "\n")
+    _entries, errors = ledger.load_entries(led)
+    assert not errors, errors

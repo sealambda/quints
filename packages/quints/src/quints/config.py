@@ -96,6 +96,9 @@ class SaldoRate:
     rate: Decimal
     marker: str = ""
     label: str = ""
+    # The 5-character Tätigkeitscode the ESTV portal shows for this rate
+    # (Abrechnungsmodalitäten) — eCH-0217's activityID, from 2025 on.
+    activity: str = ""
 
     @property
     def name(self) -> str:
@@ -508,7 +511,7 @@ _SCHEMA: dict[str, dict[str, str]] = {
         "account_id": "str",
         "rules": "rules",
     },
-    "[[vat.saldo]]": {"rate": "number", "marker": "str", "label": "str"},
+    "[[vat.saldo]]": {"rate": "number", "marker": "str", "label": "str", "activity": "str"},
     "[[vat.change]]": {"from": "date", "method": "str", "period": "str", "saldo": "entries"},
 }
 _KINDS = {
@@ -731,6 +734,7 @@ def _saldo_rates(raw: object) -> tuple[SaldoRate, ...]:
                 rate=percent / 100,
                 marker=str(entry.get("marker", "")),
                 label=str(entry.get("label", "")),
+                activity=str(entry.get("activity", "")),
             )
         )
     return tuple(rates)
@@ -850,6 +854,11 @@ def _check_phase(
             raise ConfigError(
                 f"[[vat.saldo]] rate {granted.rate * 100:g} is not a Saldosteuersatz — "
                 f"the ESTV grants one of {rates} (SR 641.202.62)"
+            )
+        if granted.activity and len(granted.activity) != 5:
+            raise ConfigError(
+                f"[[vat.saldo]] activity {granted.activity!r} is not a Tätigkeitscode — "
+                "the ESTV portal shows it with 5 characters (Abrechnungsmodalitäten)"
             )
     labels = [g.name for g in phase.saldo]
     if len(set(labels)) != len(labels):

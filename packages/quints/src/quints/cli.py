@@ -38,6 +38,9 @@ from . import (
     ui,
 )
 from . import (
+    ech0217 as ech0217_mod,
+)
+from . import (
     fx as fx_mod,
 )
 from . import (
@@ -931,7 +934,8 @@ def skills_install(
 
 vat_app = typer.Typer(
     no_args_is_help=True,
-    help="VAT, end to end: check whether you must register, report a period, settle it, "
+    help="VAT, end to end: check whether you must register, report a period, export it "
+    "for filing, settle it, "
     "track what's owed, convert foreign amounts. Swiss MWST — effective and "
     "Saldosteuersatz methods, with registration and method changes over time.",
 )
@@ -995,6 +999,49 @@ def vat_report(
         _json_out(dataclasses.asdict(report))
         return
     mwst_mod.render(report)
+
+
+@vat_app.command("export")
+def vat_export(
+    period: str | None = typer.Option(None, "--period", "-p", help=_PERIOD_HELP),
+    quarter: str | None = typer.Option(None, "--quarter", "-q", help="Alias for --period."),
+    from_: str | None = typer.Option(None, "--from", help="Period start YYYY-MM-DD."),
+    to: str | None = typer.Option(None, "--to", help="Period end YYYY-MM-DD."),
+    correction: bool = typer.Option(
+        False,
+        "--correction",
+        help="A Korrekturabrechnung: it replaces the return already filed for the period.",
+    ),
+    issuer: Path = typer.Option(
+        Path("invoicing/issuer.yaml"), "--issuer", help="Issuer config holding your UID (vat_id)."
+    ),
+    output_file: Path | None = _output_file(),
+    file: Path = _file_option(),
+):
+    """The period's VAT return as the file the tax office takes by upload.
+
+    Swiss MWST: eCH-0217 XML for the ESTV portal ("MWST abrechnen"). The same
+    figures as `vat report`; refused while the report lists an error.
+    """
+    from datetime import datetime
+
+    from .invoice import model as m
+
+    date_from, date_to, label = _vat_period(period or quarter, from_, to)
+    _require_ledger(file)
+    if not issuer.exists():
+        _fail(f"issuer config not found: {issuer} — the return carries its `vat_id` (your UID)")
+    report = mwst_mod.compute(file, date_from, date_to)
+    _problems(report.violations, err=True)
+    xml = ech0217_mod.to_xml(
+        report,
+        name=config_mod.get().entity_name,
+        uid=m.load_issuer(issuer).vat_id or "",
+        reference=f"VAT-{label or f'{date_from}..{date_to}'}",  # the settlement's link
+        generated=datetime.now(UTC),
+        correction=correction,
+    )
+    _write_out(xml.decode(), output_file)
 
 
 @vat_app.command("settle")

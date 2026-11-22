@@ -78,8 +78,13 @@ approved them: these are the figures they will file.
 
 ## 5. File and pay
 
-The user files the return in the ESTV ePortal and pays it. quints does
-neither. Both are due 60 days after the period ends.
+```bash
+quints vat export -p <period> --output-file vat-<period>.xml
+```
+
+It writes the return as the eCH-0217 file the ESTV ePortal takes by upload.
+The user uploads it, submits and pays. quints does none of that. Both are
+due 60 days after the period ends. Don't commit the file.
 
 - Filed: save the filing confirmation under `documents/`, in the folder of
   the `payable_vat` account, and link it from the settlement transaction

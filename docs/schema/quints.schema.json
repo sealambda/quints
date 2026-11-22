@@ -210,6 +210,9 @@
               },
               "label": {
                 "type": "string"
+              },
+              "activity": {
+                "type": "string"
               }
             }
           }
@@ -251,6 +254,9 @@
                       "type": "string"
                     },
                     "label": {
+                      "type": "string"
+                    },
+                    "activity": {
                       "type": "string"
                     }
                   }

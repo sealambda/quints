@@ -98,12 +98,13 @@ def test_vat_report_json_covers_form_310(tmp_path: Path) -> None:
     d = json.loads(res.output)
     assert d["z200"] == "1900.00" and d["z221"] == "300.00"
     assert d["z289"] == "300.00" and d["z299"] == "1600.00"
-    assert (d["z303_net"], d["z303_tax"]) == ("1100.00", "88.70")
+    # Tax is turnover × rate, as the portal computes it — not the VAT posted.
+    assert (d["z303_net"], d["z303_tax"]) == ("1100.00", "89.10")
     assert (d["z313_net"], d["z313_tax"]) == ("500.00", "13.00")
-    assert d["z399"] == "101.70"
+    assert d["z399"] == "102.10"
     # The desk is an investment (kmu 1510) → Ziffer 405, not 400.
     assert (d["z400"], d["z405"], d["z479"]) == ("0.00", "81.00", "81.00")
-    assert d["z500"] == "20.70" and d["z510"] == "0.00"
+    assert d["z500"] == "21.10" and d["z510"] == "0.00"
     rows = {r["ziffer"]: r for r in d["rate_rows"]}
     assert rows["303"]["rate"] == "0.081" and rows["313"]["rate"] == "0.026"
     assert rows["343"]["rate"] == "0.038" and rows["343"]["net"] == "0.00"

@@ -48,9 +48,11 @@ class Settlement:
     payable_after: Decimal
     bezugsteuer: Decimal = Decimal("0")
     method: str = "effective"
-    # Saldosteuersatz only: statutory VAT invoiced minus the SSS owed. It is
-    # the entity's compensation for not deducting input tax, so it lands in
-    # income rather than being paid over.
+    # What the VAT accounts hold beyond the tax declared. The return's tax is
+    # turnover × rate (eCH-0217 Kap. 6.2.1), so under the effective method
+    # this is Rappen of per-invoice rounding, cleared to `rounding_income`.
+    # Under the Saldosteuersatz it is the statutory VAT invoiced minus the SSS
+    # owed: the compensation for not deducting input tax, booked as income.
     difference: Decimal = Decimal("0")
 
 
@@ -100,11 +102,7 @@ def build_settlement(
         net=report.z500,
         payable_after=payable_before - report.z500,
         method=report.vat_method,
-        difference=(
-            report.output_vat - sum((r.tax for r in report.rate_rows), Decimal("0"))
-            if report.vat_method == "saldo"
-            else Decimal("0")
-        ),
+        difference=report.output_vat + report.bezugsteuer_tax - report.z399,
     )
 
 
@@ -130,11 +128,11 @@ def settlement_text(s: Settlement, cfg: config.Config | None = None) -> str:
     ]
     if s.bezugsteuer:
         lines.append(_posting(cfg.bezugsteuer, s.bezugsteuer))
-    if saldo:
-        if s.difference:
-            lines.append(_posting(cfg.saldo_difference, -s.difference))
-    else:
+    if not saldo:
         lines.append(_posting(cfg.input_vat, -s.input_vat))
+    if s.difference:
+        account = cfg.saldo_difference if saldo else cfg.rounding_income
+        lines.append(_posting(account, -s.difference))
     lines += [
         "",
         f"{s.assert_date} balance {cfg.payable_vat:<38}{s.payable_after:>8.2f} CHF",
