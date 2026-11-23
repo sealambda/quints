@@ -1,6 +1,6 @@
 {
   "name": "quints",
-  "version": "0.25.0",
+  "version": "0.25.1",
   "description": "Swiss bookkeeping with quints: book expenses with the right VAT legs, reconcile bank statements, and close a VAT period. The agent drafts; quints computes and validates; a human approves. Not professional tax advice: you, or your Treuhänder, stay responsible for what you file.",
   "author": {
     "name": "Sealambda",

@@ -59,13 +59,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: sealambda/quints/actions/check@v0.25.0
+      - uses: sealambda/quints/actions/check@v0.25.1
 
   statements:
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: read
-    uses: sealambda/quints/.github/workflows/statements.yml@v0.25.0
+    uses: sealambda/quints/.github/workflows/statements.yml@v0.25.1
 ```
 
 1. **Pin both `uses:` lines to the same quints release**, by tag or by
@@ -73,7 +73,7 @@ jobs:
    Marketplace.
 2. **Commit `uv.lock`.** The action runs the quints it pins
    (`uv sync --frozen`). To run another, set `quints:` to a requirement, a
-   path, a wheel or a git URL (`quints: quints==0.25.0`).
+   path, a wheel or a git URL (`quints: quints==0.25.1`).
 3. **Books in a subdirectory?** Set `working-directory:`, and `file:` if
    the main file isn't `main.bean`. Annotation paths stay relative to the
    repository root.
@@ -103,7 +103,7 @@ runs only when you start the workflow by hand (*Run workflow*):
     permissions:
       actions: read # the release job downloads the artifact
       contents: write # and creates the release
-    uses: sealambda/quints/.github/workflows/statements.yml@v0.25.0
+    uses: sealambda/quints/.github/workflows/statements.yml@v0.25.1
     with:
       year: "2026"
       release: true
