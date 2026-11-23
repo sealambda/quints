@@ -14,6 +14,9 @@ driven by an AI coding agent (Claude Code, Codex, …). The agent proposes
 bookings; quints checks them and computes every figure you file. It never
 calls a model.
 
+quints is not professional tax advice. You, or your Treuhänder, stay
+responsible for what you file and sign.
+
 ![quints init scaffolds sample books, quints check validates them, and quints vat report prints the Form-310 VAT return](docs/assets/quickstart.gif)
 
 **Docs: [sealambda.github.io/quints](https://sealambda.github.io/quints/).**
@@ -167,6 +170,7 @@ distribution to PyPI.
 
 ## License
 
-[GPL-2.0-only](LICENSE), the license beancount itself uses. quints is not tax
-or legal advice and comes without warranty (GPL-2.0, sections 11–12). You,
-or your Treuhänder, stay responsible for what you file and sign.
+[GPL-2.0-only](LICENSE), the license beancount itself uses. quints is not
+professional tax or legal advice and comes without warranty (GPL-2.0,
+sections 11–12). You, or your Treuhänder, stay responsible for what you file
+and sign.

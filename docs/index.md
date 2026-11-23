@@ -66,7 +66,8 @@ Every command in these docs runs in the test suite, against the shipped
 example project. Every legal rule a page relies on is footnoted to its
 source, so you can check it applies to you.
 
-quints is not tax or legal advice, and it comes without warranty
+quints is not professional tax or legal advice, and it comes without
+warranty
 ([GPL-2.0](https://github.com/sealambda/quints/blob/main/LICENSE), sections
 11–12). You, or your Treuhänder, stay responsible for what you file and sign.
 

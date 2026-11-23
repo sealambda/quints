@@ -61,6 +61,6 @@ and ship date-ranged in code.
 
 ## License
 
-GPL-2.0-only, the license beancount itself uses. quints is not tax or legal
-advice and comes without warranty. You, or your Treuhänder, stay responsible
-for what you file and sign.
+GPL-2.0-only, the license beancount itself uses. quints is not
+professional tax or legal advice and comes without warranty. You, or your
+Treuhänder, stay responsible for what you file and sign.

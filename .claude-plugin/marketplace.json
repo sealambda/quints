@@ -9,7 +9,7 @@
     {
       "name": "quints",
       "source": "./packages/quints/src/quints/agent_plugin",
-      "description": "Swiss bookkeeping skills for books kept with quints: book an expense, reconcile statements, close a VAT period."
+      "description": "Swiss bookkeeping skills for books kept with quints: book an expense, reconcile statements, close a VAT period. Not professional tax advice."
     }
   ]
 }

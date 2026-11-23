@@ -10,6 +10,11 @@ fetch. Output: every draft booked or raised with the user, the
 statement's balance assertions in the books, and `quints check` green.
 Never book a guess: a draft you can't explain stays in `staging/`.
 
+Not professional tax advice: this skill and quints work out figures from
+what is booked. They don't judge the user's tax position. Say so when you
+show the user a VAT decision or a return, and leave a question of judgement
+to them or their Treuhänder.
+
 ## 1. Import
 
 `AGENTS.md` lists the importers configured in `quints.toml` and what each

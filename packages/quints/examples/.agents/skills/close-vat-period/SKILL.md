@@ -8,6 +8,11 @@ description: Close a Swiss VAT period in quints books - refresh FX rates, check 
 Input: a period, e.g. `2026-Q3`, `2026-H2` or `2026`. Each step below is
 reviewed and committed on its own.
 
+Not professional tax advice: this skill and quints work out figures from
+what is booked. They don't judge the user's tax position. Say so when you
+show the user a VAT decision or a return, and leave a question of judgement
+to them or their Treuhänder.
+
 ## 0. Is there a VAT period to close?
 
 `AGENTS.md` (section *VAT status*) and `quints vat status --json` say how

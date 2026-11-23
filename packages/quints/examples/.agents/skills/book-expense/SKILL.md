@@ -10,6 +10,11 @@ what. Output: one transaction in `books/<year>.bean` with its document
 filed under `documents/`. Never book a transaction without its document,
 and never book a guess: ask the user what the document doesn't say.
 
+Not professional tax advice: this skill and quints work out figures from
+what is booked. They don't judge the user's tax position. Say so when you
+show the user a VAT decision or a return, and leave a question of judgement
+to them or their Treuhänder.
+
 ## 1. Read the VAT status first
 
 `AGENTS.md` (section *VAT status*) and `[entity]` in `quints.toml` say

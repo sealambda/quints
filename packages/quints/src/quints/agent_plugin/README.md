@@ -14,6 +14,14 @@ Skills for an AI agent that keeps Swiss books with
 The skills say how a job is done. The books' own `AGENTS.md`, written by
 `quints init`, says who the company is: legal form, VAT status, importers.
 
+## Not professional tax advice
+
+quints and these skills are not professional tax, legal or accounting
+advice, and neither is what an agent tells you while it uses them. They
+work out figures from what is booked and check them against the rules
+quints knows. They don't judge whether a rule applies to your case. You,
+or your Treuhänder, stay responsible for what you file and sign.
+
 ## A human approves every booking
 
 quints keeps books for a company, so the agent never has the last word:
