@@ -1,8 +1,8 @@
 # Invoicing
 
-Write the invoice as one YAML file, render it, and paste the booking it
-prints. quints produces the QR-bill PDF, checks it against the ledger, and
-later matches the payment to it.
+Write the invoice as a YAML file, render it, and paste the booking it prints.
+quints writes the QR-bill PDF, checks it against the ledger, and later
+matches the payment to it.
 
 !!! abstract "Applies if"
     - **Legal form:** Einzelfirma, GmbH or AG. Same steps for all three.
@@ -15,77 +15,12 @@ later matches the payment to it.
       invoices for services to a customer abroad (SEPA/SWIFT, EU reverse
       charge).
     - **Not covered:** e-invoicing networks and national formats (Peppol,
-      FatturaPA, Verifactu), instalment plans beyond
-      [advances against a pro forma](pro-forma.md),
-      and two kinds of foreign sale whose legal basis differs from the export
-      invoice's note: exported goods, and services taxed in Switzerland
-      although the customer is abroad (see [below](#foreign-invoices)).
+      FatturaPA, Verifactu); instalment plans beyond
+      [advances against a pro forma](pro-forma.md); exported goods, and
+      services taxed in Switzerland although the customer is abroad (see
+      [below](#foreign-invoices)).
 
-## Render a QR-bill
-
-```bash
-quints invoice invoicing/invoices/acme-2026-07.yaml
-```
-
-Writes a Swiss QR-bill PDF (domestic), or an export invoice with the SEPA
-payment details printed — plus a scan-to-pay EPC QR code when it is in EUR —
-and cross-checks the total against your ledger: if the invoice is already
-booked at a different amount, you get a conflict, not a silent
-divergence. If it isn't booked yet, quints prints the draft transaction to
-paste into `books/<year>.bean`. On a EUR invoice the draft's VAT leg is in
-CHF at the issue date's rate (`-75.33 CHF @@ 81.00 EUR`), because the VAT
-return is in CHF.
-
-`--no-verify` skips the cross-check and the draft, for a PDF you only want
-to look at. Whether the invoice is already issued is still read from the
-books: an issued invoice is not rendered again either way.
-
-### Issued means fixed
-
-The draft carries the PDF's SHA-256 next to `document:`:
-
-```text
-    document: "2026-07-02.acme.INV2026014.pdf"
-    sha256: "9f2c…"
-```
-
-Once that is in the books, the invoice is issued. `quints invoice` then
-checks the filed PDF against the hash and reports "already issued": it does
-not render again, so a later change to a template, a font or the customer
-registry cannot alter what was sent. `quints check` verifies every filed PDF
-against its hash, fails on an invoice number booked twice or dated before
-the one preceding it, and warns about gaps in a number series.
-
-To correct an issued invoice under the same number (a wrong address, caught
-early), add `corrected: 2026-07-04` to the invoice file and run
-`quints invoice --reissue`. The PDF states that it replaces the version of
-the issue date; book the new hash it prints. The repository history keeps
-the old bytes. A booking without `sha256:` (from before quints recorded it)
-is issued all the same: once its PDF is filed, `quints invoice` leaves it
-alone and prints the line to add, and `quints check` warns until it is
-there.
-
-When something stops an invoice, every problem is reported in one run. Under
-`--json` they arrive on stdout as
-`{"ok": false, "errors": [{"code", "field", "message"}]}`.
-
-The PDF is filed the way beancount documents are filed — under the income
-account's folder, date-prefixed, so `option "documents"` and Fava pick it up:
-
-```text
-documents/Income/CH/GmbH/Consulting/External/Domestic/2026-07-02.acme.INV2026014.pdf
-```
-
-The customer part is the registry key from `customers.yaml` (the slugified
-name for inline customers). `--out` overrides the location when you need to.
-
-![Rendering the two sample invoices — domestic QR-bill and EUR export —
-each cross-checked against the ledger](../assets/invoice.gif)
-
-![The generated Swiss QR-bill PDF, with receipt and payment
-part](../assets/invoice-qr-bill.png){ width="480" }
-
-An invoice is one YAML file:
+## Write the invoice file
 
 ```yaml
 number: INV2026014
@@ -105,21 +40,87 @@ items:
 locale: de_CH
 ```
 
-Issuer identity — name, address, VAT ID, bank details per currency, logo —
-lives once in `invoicing/issuer.yaml`. Repeat customers can live in
-`invoicing/customers.yaml` and be referenced by key (`customer: acme`). The
-invoice files go in `invoicing/invoices/`, the logo and any fonts in
-`invoicing/brand/`.
+- **Issuer:** name, address, VAT ID, bank accounts and logo live once in
+  `invoicing/issuer.yaml`.
+- **Customers:** repeat customers go in `invoicing/customers.yaml` and are
+  referenced by key (`customer: acme`).
+- **Files:** invoices go in `invoicing/invoices/`, the logo and any fonts in
+  `invoicing/brand/`.
+- **`locale`:** the language, and the number and date formats. German,
+  French, Italian, English and Spanish are supported (`de_CH`, `fr_CH`,
+  `it_CH`, `en_GB`, `es_ES`, …). Any other language is refused at load.
 
-`locale` sets the invoice's language and how its numbers and dates are
-written. Labels exist in German, French, Italian, English and Spanish
-(`de_CH`, `fr_CH`, `it_CH`, `en_GB`, `es_ES`, …). A locale in any other
-language is refused when the file is loaded.
+## Render a QR-bill
+
+```bash
+quints invoice invoicing/invoices/acme-2026-07.yaml
+```
+
+A domestic invoice renders as a Swiss QR-bill. An export invoice prints its
+SEPA payment details, plus an EPC QR code when it is in EUR. The total is
+cross-checked against the ledger:
+
+- **Booked at another amount:** a conflict.
+- **Not booked yet:** quints prints the draft transaction to paste into
+  `books/<year>.bean`. On a EUR invoice the draft's VAT leg is in CHF at the
+  issue date's rate (`-75.33 CHF @@ 81.00 EUR`), because the VAT return is
+  in CHF.
+
+`--no-verify` skips the cross-check and the draft. An issued invoice is not
+rendered again either way.
+
+Every problem that stops an invoice is reported in one run. Under `--json`
+they arrive on stdout as
+`{"ok": false, "errors": [{"code", "field", "message"}]}`.
+
+The PDF is filed where beancount and Fava look for documents: under the
+income account's folder, date-prefixed.
+
+```text
+documents/Income/CH/GmbH/Consulting/External/Domestic/2026-07-02.acme.INV2026014.pdf
+```
+
+The customer part is the key from `customers.yaml`, or the slugified name of
+an inline customer. `--out` writes the PDF elsewhere.
+
+![Rendering the two sample invoices — domestic QR-bill and EUR export —
+each cross-checked against the ledger](../assets/invoice.gif)
+
+![The generated Swiss QR-bill PDF, with receipt and payment
+part](../assets/invoice-qr-bill.png){ width="480" }
+
+### Issued means fixed
+
+The draft carries the PDF's SHA-256 next to `document:`:
+
+```text
+    document: "2026-07-02.acme.INV2026014.pdf"
+    sha256: "9f2c…"
+```
+
+Once that is in the books, the invoice is issued:
+
+- `quints invoice` checks the filed PDF against the hash, reports "already
+  issued" and does not render again. A later change to a template, a font or
+  the customer registry cannot alter what was sent.
+- `quints check` verifies every filed PDF against its hash, fails on a
+  number booked twice or dated before the one preceding it, and warns about
+  gaps in a series.
+
+To correct an issued invoice under the same number (a wrong address, caught
+early), add `corrected: 2026-07-04` to the file and run
+`quints invoice --reissue`. The PDF states that it replaces the version of
+the issue date. Book the new hash it prints; the repository history keeps
+the old bytes.
+
+A booking without `sha256:` (older than the hash) is issued all the same.
+Once its PDF is filed, `quints invoice` leaves it alone and prints the line
+to add, and `quints check` warns until it is there.
 
 ## Supply period
 
-`supply` says when the work was done or the goods delivered, and every invoice
-needs one. It takes one of three forms:
+Every invoice needs a `supply`: when the work was done or the goods
+delivered. It takes one of three forms:
 
 ```yaml
 supply: 2026-07                              # a calendar month
@@ -127,31 +128,27 @@ supply: 2026-07-15                           # a single day
 supply: {from: 2026-07-01, to: 2026-09-30}   # any period, both days included
 ```
 
-It is printed under *Leistungsperiode* / *Service period* in the invoice's
-locale (`Juli 2026`, `15.07.2026`, `1. Juli – 30. Sept. 2026`). On a QR-bill it
-also goes into the billing information as Swico `/31/` (see
-[below](#your-customers-references)), so the payer's software books the input
-tax in the right VAT period without anyone retyping it.
+Free text is refused: `supply: Juli 2026` fails at load, and the error names
+the value to write (`supply: 2026-07`). Swiss law requires the date or
+period of the supply on every invoice,[^supply-ch] EU law when it differs
+from the invoice date.[^supply-eu] quints asks every time.
 
-The law asks for this date. A Swiss invoice has to state the date or period
-of the supply,[^supply-ch] and an EU invoice has to state the date the supply
-was made or completed if it differs from the invoice date.[^supply-eu] An
-invoice that goes out on the day of the supply could skip it, but quints asks
-for it every time. A stated date is never wrong, and the payer's VAT booking
-relies on it.
-
-Free text is refused. `supply: Juli 2026` fails at load, and the error names
-the value to write instead (`supply: 2026-07`), so older invoice files are a
-one-line fix. The ledger draft still reads `Juli 2026 invoiced`.
+It prints as *Leistungsperiode* / *Service period* in the invoice's locale
+(`Juli 2026`, `15.07.2026`, `1. Juli – 30. Sept. 2026`). On a QR-bill it
+also travels as Swico `/31/` ([below](#your-customers-references)), so the
+payer's software books the input tax in the right VAT period.
 
 The supply period also sets the VAT rate: the rate in force when the supply
-was made applies, not the invoice date's.[^rate-change] Without `vat.rate`, the
-invoice charges the standard rate for the supply: 8.1 % from 2024, 7.7 % for
-a 2023 supply invoiced later. Write `vat: {rate: 2.6}` or `{rate: 3.8}` for
-the reduced or lodging rate. A rate the law doesn't set for that period is
-refused at load, because VAT shown on an invoice is owed even when it is too
-high.[^too-high] A supply period that spans a rate change is refused too:
-invoice the part before and the part after separately.
+was made applies, not the invoice date's.[^rate-change]
+
+- Without `vat.rate`, the invoice charges the standard rate for the supply:
+  8.1 % from 2024, 7.7 % for a 2023 supply invoiced later.
+- `vat: {rate: 2.6}` or `{rate: 3.8}` charges the reduced or the lodging
+  rate.
+- A rate the law doesn't set for that period is refused at load, because VAT
+  shown on an invoice is owed even when it is too high.[^too-high]
+- A supply period that spans a rate change is refused too: invoice the part
+  before and the part after separately.
 
 A line taxed at another rate than the rest carries its own:
 
@@ -184,8 +181,8 @@ proportion to their nets. The ledger draft books income net of discounts.
 
 ### Outlays you pass on
 
-A fee paid in the customer's name and on their account — a court fee, a
-visa, a domain registered for them — is neither your revenue nor part of the
+A fee paid in the customer's name and on their account (a court fee, a visa,
+a domain registered for them) is neither your revenue nor part of the
 consideration, as long as the invoice shows it separately.[^pass-through]
 
 ```yaml
@@ -193,16 +190,15 @@ pass_through:
   - {description: Commercial register fee, amount: 120.00}
 ```
 
-The invoice lists these in their own block after the VAT rows and adds them
-to the total without VAT. Book the outlay against `disbursements`
-(`Assets:…:Receivable:Disbursements`, KMU 1190) when you pay it; the ledger
+The invoice lists them after the VAT rows and adds them to the total
+without VAT. Book the outlay against `disbursements`
+(`Assets:…:Receivable:Disbursements`, KMU 1190) when you pay it. The ledger
 draft clears it from there, so it never touches income or the VAT return. A
-cost you incur in your own name and recharge is not a pass-through item: it
-is an ordinary line, with VAT.
+cost you incur in your own name and recharge is an ordinary line, with VAT.
 
 ## Bank details
 
-One account per invoicing currency, under `bank`:
+One account per invoicing currency, under `bank` in `issuer.yaml`:
 
 ```yaml
 bank:
@@ -220,70 +216,53 @@ bank:
     holder: Example GmbH                 # optional — if not the issuer
 ```
 
-Every IBAN is checked at load (length, national layout, mod-97 check digits)
-and every BIC against ISO 9362, so a transposed digit fails before the PDF
-exists rather than after it was sent.
+Every IBAN (length, national layout, mod-97 check digits) and every BIC
+(ISO 9362) is checked at load.
 
-**`bic` is mandatory for any currency you invoice abroad in.** An export
-invoice refuses to render without one: it goes on the PDF as `BIC/SWIFT`,
-next to the beneficiary and the bank's name, so the payer copies it instead
-of looking one up — a guessed BIC is how a SEPA transfer comes back. quints
-never derives it from the IBAN: that mapping lives in a bank registry that
-changes, and a wrong-but-plausible BIC would be worse than none. Ask the bank
-that holds the account.
+- **`bic` is mandatory for any currency you invoice abroad in.** An export
+  invoice refuses to render without one and prints it as `BIC/SWIFT`. quints
+  never derives it from the IBAN: that mapping lives in a bank registry that
+  changes, and a wrong but plausible BIC is worse than none. Ask the bank.
+- **A EUR export invoice also carries an EPC QR code.** The payer's banking
+  app scans it and pre-fills the transfer: beneficiary, IBAN, BIC, amount
+  and RF reference.[^epc] Not every bank's app reads it; the printed fields
+  stay. Other currencies get no code: the standard covers euro credit
+  transfers only.
+- **`holder`** is the beneficiary in that code, else your company name.
+  Write it as the bank holds the account, letter for letter, legal form
+  included: an EU payer's bank checks the name against the IBAN before
+  sending, where the payee's bank takes part.[^vop]
 
-**A EUR export invoice also carries an EPC QR code** next to those fields.
-The payer scans it in their banking app and gets the transfer pre-filled:
-beneficiary, IBAN, BIC, amount and the RF reference.[^epc] Support is
-optional for banks and uneven across countries; where an app doesn't read it,
-the payer types the printed fields as before. Other currencies get no code —
-the standard covers euro credit transfers only.
-
-The beneficiary in the code is the account's `holder` (else your company
-name). Set it to the name the bank holds the account under, letter for
-letter, legal form included: an EU payer's bank checks that name against the
-IBAN before sending, wherever the payee's bank takes part in the check.[^vop]
-
-[^epc]: European Payments Council,
-    [EPC069-12 v3.1](https://www.europeanpaymentscouncil.eu/sites/default/files/kb/file/2024-03/EPC069-12%20v3.1%20Quick%20Response%20Code%20-%20Guidelines%20to%20Enable%20the%20Data%20Capture%20for%20the%20Initiation%20of%20an%20SCT.pdf),
-    *Quick Response Code: Guidelines to Enable the Data Capture for the
-    Initiation of a SEPA Credit Transfer*, §2.2. The BIC stays mandatory for
-    accounts outside the EEA, so a Swiss account always includes it. The
-    guideline itself is optional for banks to implement (§1).
-
-[^vop]: [Regulation (EU) 2024/886](https://eur-lex.europa.eu/eli/reg/2024/886/oj),
-    Art. 5c (verification of the payee). It binds banks in the EU; a Swiss
-    bank answers the check only if it has joined the EPC's Verification of
-    Payee scheme — ask yours. Where it hasn't, the payer sees that no check
-    was possible.
-
-To check a pair before it ships — or every account in the issuer config:
+Check a pair, or every account in the issuer config:
 
 ```bash
 quints iban "DE89 3704 0044 0532 0130 00" --bic COBADEFFXXX
 quints iban
 ```
 
-It reports the country, the institution (IID) for Swiss and Liechtenstein
-IBANs, and flags a BIC whose country doesn't match the IBAN's — normal for a
-payment provider (a Wise EUR account is a Belgian IBAN), wrong if you pasted
-another account's code. It exits non-zero when something is off, so it fits a
-pre-flight check.
+It reports the country and, for Swiss and Liechtenstein IBANs, the
+institution (IID). A BIC whose country differs from the IBAN's is flagged:
+normal for a payment provider (a Wise EUR account is a Belgian IBAN), wrong
+if you pasted another account's code. It exits non-zero when something is
+off.
 
 ## Payment reference
 
-Every invoice asks to be paid with a structured reference, so the payment
-arrives carrying its own invoice id. Switzerland has two, each tied to a
-different kind of bank account, and quints picks the Swiss-native one whenever
-your account can carry it:
+Every invoice asks to be paid with a structured reference derived from its
+number, so the payment arrives carrying its own invoice id. quints picks the
+scheme from the account:
 
-**QRR** — the Swiss QR reference, paid into a **QR-IBAN**. The payer's bank
-refuses any payment to a QR-IBAN without a valid reference, so every payment
-that reaches you is matchable. It is numeric — quints encodes the invoice
-number so its digits stay visible at the end — and CHF-only. An account with a
-`qr_iban` uses it for CHF QR-bills without further ado; add the six-digit
-identification your bank assigns you, and keep the regular `iban` for CHF from
-abroad:
+| Invoice | Account | Reference |
+|---|---|---|
+| QR-bill in CHF | has a `qr_iban` | **QRR**, the numeric Swiss QR reference, paid into the QR-IBAN |
+| QR-bill in CHF | no `qr_iban`, or `reference: scor` | **SCOR**, paid into the regular `iban` |
+| QR-bill in EUR | any | **SCOR**, paid into the regular `iban` |
+| Export | any | **SCOR**, paid into the regular `iban` |
+
+SCOR is the ISO 11649 Creditor Reference: `RF`, two check digits, then the
+invoice number (`RF47 INV2 0260 14`). With a QR-IBAN, add the six-digit
+identification your bank assigns you, and keep the regular `iban` for CHF
+from abroad:
 
 ```yaml
 bank:
@@ -291,66 +270,28 @@ bank:
     qr_iban: CH57 3000 0123 0008 8901 2
     qr_reference_id: "123456"   # quoted: YAML reads a leading zero as octal
     iban: CH93 0076 2011 6238 5295 7
+    # reference: scor           # issue SCOR although there is a QR-IBAN
 ```
 
-**SCOR** — the ISO 11649 Creditor Reference, paid into the regular **IBAN**.
-`RF`, two check digits, then the invoice number itself:
-
-```text
-RF47 INV2 0260 14
-```
-
-Readable on a bank statement, quotable in a reminder email, valid on a Swiss
-QR-bill in CHF and EUR *and* in a SEPA transfer. It is what an account without
-a `qr_iban` uses, what every QR-bill in EUR uses, and what every export invoice
-uses. Prefer it although you have a QR-IBAN? Say so:
-
-```yaml
-bank:
-  CHF:
-    reference: scor
-    qr_iban: CH57 3000 0123 0008 8901 2
-    iban: CH93 0076 2011 6238 5295 7
-```
-
-The same invoice under each scheme — the payment part is what the customer
-scans or retypes. With a QR-IBAN and the bank's identification, a QR
-reference whose tail is the invoice's own digits:
-
-![Payment part paid by QR reference: account CH57 3000 0123 0008 8901 2 (a QR-IBAN), reference 12 34561 00841 17000 00202 60143](../assets/payment-part-qrr.png)
-
-With the regular IBAN, a creditor reference that spells the invoice number out:
-
-![Payment part paid by creditor reference: account CH93 0076 2011 6238 5295 7, reference RF47 INV2 0260 14](../assets/payment-part-scor.png)
-
-[**Payment references**](payment-references.md) covers the whole picture — the
-three types the standard defines, the exact pairing rules with their
-citations, what the QR reference contains, how to choose, and how a payment
-finds its way back to the invoice.
-
-The reference is derived from the invoice number and nothing else, which is
-what lets `quints import` and `quints match` credit an incoming payment to
-its invoice — by the reference it quotes, the plain number, or a QR reference
-decoded back into one. Two invoices never share a reference as long as their
-numbers differ in a letter or digit: case and punctuation are not carried, so
-`INV-014` and `INV014` would collide (the matcher then reports the payment as
-ambiguous instead of guessing). A number too long to encode is refused instead
-of truncated, because a truncated reference is a payment credited to somebody
-else's invoice. `quints invoice` prints the reference it used:
+`quints invoice` prints the reference it used:
 
 ```text
 ref SCOR RF47 INV2 0260 14
 ```
 
-Set `reference:` on the *invoice* only to re-issue one that went out with a
-reference from elsewhere — it is validated by its check digits at load, and
-refused if it doesn't match the account's scheme.
+`quints import` and `quints match` credit an incoming payment to its invoice
+by that reference. Case and punctuation are not carried, so keep numbers
+distinct in their letters and digits: `INV-014` and `INV014` would collide.
+
+[Payment references](payment-references.md) has the pairing rules with their
+citations, both payment parts side by side, what the QR reference contains,
+how to choose, length limits, and overriding one invoice's reference.
 
 ## Your customer's references
 
-Accounts-payable departments pay against their own numbers.
-`customer_reference` is their PO or order number; `references` is the long
-tail — a Leitweg-ID, a CIG/CUP, a cost centre, a framework contract:
+`customer_reference` is the customer's PO or order number. `references`
+takes the rest: a Leitweg-ID, a CIG/CUP, a cost centre, a framework
+contract.
 
 ```yaml
 number: INV2026014
@@ -363,31 +304,29 @@ references:
     value: KST-4711
 ```
 
-Both are printed next to the invoice number and date, on domestic and export
-invoices alike, with `customer_reference` labelled in the invoice's language
-("Ihre Referenz" / "Your reference" / "Su referencia") and the extras labelled
-exactly as you wrote them. `customer_reference` also lands in the ledger draft
-as `customer_reference:` metadata, so the books can be searched by the number
-the customer quotes.
+Both print next to the invoice number and date, on domestic and export
+invoices: `customer_reference` labelled in the invoice's language ("Ihre
+Referenz" / "Your reference" / "Su referencia"), the extras as you wrote
+them. `customer_reference` also lands in the ledger draft as metadata, so
+the books can be searched by the customer's number.
 
-On a QR-bill it additionally travels in the structured *billing information*
-element, in Swico's S1 syntax:[^s1]
+On a QR-bill it also travels in the *billing information* element, in
+Swico's S1 syntax:[^s1]
 
 ```text
 //S1/10/INV2026014/11/260702/20/PO-2026-118/30/267359056/31/260701260731/32/8.1/40/0:30
 ```
 
-That is the invoice number, its date, your customer's reference, your UID, the
-supply period (`/31/`, first and last day as `YYMMDD`; a single day is one
-date), the VAT rate and the payment terms — machine-readable for the payer's
-accounts-payable software. Banks do not forward it with the payment; what comes
-back to you is the reference and the unstructured message, which carries the
-invoice number.
+That is the invoice number, its date, your customer's reference, your UID,
+the supply period (`/31/`, first and last day as `YYMMDD`; a single day is
+one date), the VAT rate and the payment terms. Banks do not forward it with
+the payment: what comes back is the reference and the unstructured message,
+which carries the invoice number.
 
 ## Branding
 
 The PDF's typography and palette come from the `brand` block in
-`issuer.yaml`. Three font roles are separate on purpose:
+`issuer.yaml`:
 
 ```yaml
 brand:
@@ -401,23 +340,26 @@ brand:
   credit: true             # "Made with quints" line under the body
 ```
 
-`font_mono` is what keeps amount columns aligned on the digit — point it at
-any monospace (or a face with tabular figures; the template requests them
-either way). All the values above are also the defaults: the three families
-ship with quints, so an issuer that configures nothing still renders
-identically on every machine. Set `font_dir` to use families of your own;
-that also switches machine-installed fonts off, so a designer's locally
-installed variable font can never change how the same invoice renders
-elsewhere. `credit: false` drops the small "Made with quints" line under
-the body. The full token list (ink, subtle, rule, panel, display weight and
-stretch) is in the [issuer schema](https://sealambda.github.io/quints/schema/issuer.schema.json).
+- **Defaults:** the three fonts, the accent and `credit` above. The
+  families ship with quints, so an issuer that configures nothing renders
+  identically on every machine. `logo` and `font_dir` have no default;
+  `logo_height` defaults to 12.
+- **`font_mono`** keeps amount columns aligned on the digit. Any monospace
+  works, or a face with tabular figures.
+- **`font_dir`** uses families of your own and switches machine-installed
+  fonts off, so a locally installed font cannot change how the invoice
+  renders elsewhere.
+- **`credit: false`** drops the "Made with quints" line.
+
+The full token list (ink, subtle, rule, panel, display weight and stretch)
+is in the
+[issuer schema](https://sealambda.github.io/quints/schema/issuer.schema.json).
 
 ## Post it in a window envelope
 
-Print the PDF on A4 and fold it with the address outside: the recipient's
-address shows through the window of a standard envelope, either side. Say
-which side the window of your envelopes is on, in the `brand` block of
-`issuer.yaml`:
+Printed on A4 and folded with the address outside, the invoice shows the
+recipient's address through the window of a standard envelope. Set the
+window's side in the `brand` block of `issuer.yaml`:
 
 ```yaml
 brand:
@@ -425,13 +367,15 @@ brand:
   address_top: 57       # mm from the sheet's top edge to the first address line
 ```
 
-Both values are the defaults. A sheet slides inside its envelope (an A4 sheet
-has 19 mm of play sideways in a C5 and 13.5 mm up and down), so what counts is
-the part of the sheet the window shows wherever the sheet sits. Swiss Post
-asks for exactly that: the address stays fully readable when the sheet
-shifts, and nothing else shows.[^post-window] quints starts the address
-132 mm from the sheet's left edge for a right window and 25 mm for a left
-one, and keeps the title and invoice details on the other side.
+Both values are the defaults. quints starts the address 132 mm from the
+sheet's left edge for a right window and 25 mm for a left one, and keeps the
+title and invoice details on the other side.
+
+A sheet slides inside its envelope: an A4 sheet has 19 mm of play sideways
+in a C5 and 13.5 mm up and down. What counts is the part of the sheet the
+window shows wherever the sheet sits. Swiss Post asks that the address stay
+fully readable when the sheet shifts, and that nothing else
+show.[^post-window]
 
 | Envelope, A4 fold | Window | Always visible, mm from the sheet's top | Address lines that fit |
 | --- | --- | --- | --- |
@@ -443,15 +387,15 @@ one, and keeps the title and invoice details on the other side.
 | DIN C5, folded once | 90 × 45 mm, left | 57–88.5 | 7 |
 | DIN C4, unfolded | 90 × 55 mm, left | 57–85 | 6 |
 
-The last column is for the default `address_top`, at 4.4 mm a line; the
-recipient's name, a name that wraps and the country of a foreign customer each
-count as a line. The window positions are the Swiss[^window-ch] and
+The last column is for the default `address_top`, at 4.4 mm a line. The
+recipient's name, a name that wraps and the country of a foreign customer
+each count as a line. The window positions are the Swiss[^window-ch] and
 German[^window-din] standard ones.
 
-1. Pick your envelope's row. If your addresses run longer than it fits, or the
-   envelope isn't listed, set `address_top`: the first line must start inside
-   the visible range and the last one end inside it. With Swiss C5 envelopes
-   only, `address_top: 53` fits seven lines.
+1. Pick your envelope's row. If your addresses run longer than it fits, or
+   the envelope isn't listed, set `address_top`: the first line must start
+   inside the visible range and the last one end inside it. With Swiss C5
+   envelopes only, `address_top: 53` fits seven lines.
 2. Print one invoice, fold it, and push the sheet into each corner of the
    envelope in turn. The whole address stays in the window every time, and
    nothing else does.
@@ -461,8 +405,8 @@ German[^window-din] standard ones.
 A business that isn't registered must not show VAT on its invoices. If it
 does, it owes the VAT it showed.[^art27] quints takes the status from
 `quints.toml` for the invoice's **issue date**: `vat_registered = false`, or
-a date before `vat_registered_since` or after `vat_registered_until`. For such
-an invoice, quints leaves out:
+a date before `vat_registered_since` or after `vat_registered_until`. For
+such an invoice, quints leaves out:
 
 - the VAT row: the total is the net amount;
 - the Swiss export note on an export invoice;
@@ -479,8 +423,8 @@ The issuer's `vat_id` has to match:
   unregistered issuer whose `vat_id` reads as a VAT number.
 
 The day registration starts, the next invoice charges VAT, with no change to
-the invoice files. Invoices dated before that day keep rendering without VAT,
-so a re-render reproduces what was sent.
+the invoice files. Invoices dated before that day keep rendering without
+VAT, so a re-render reproduces what was sent.
 
 ## Foreign invoices
 
@@ -488,28 +432,31 @@ so a re-render reproduces what was sent.
 quints invoice invoicing/invoices/globex-2026-08.yaml
 ```
 
-An export invoice (`kind: export`) renders without a QR part. It shows the
-full SEPA/international payment instruction instead (beneficiary, IBAN,
+An export invoice (`kind: export`) renders without a QR part. It prints the
+SEPA/international payment instruction instead (beneficiary, IBAN,
 BIC/SWIFT, bank, reference) and the Swiss note that the place of supply is
-abroad.[^place] That note is right for a service whose place of supply is the
-customer's seat. It is wrong for exported goods, which are exempt on other
-grounds and need an export record, and for the services the law places in
-Switzerland whatever the customer's seat, such as work on Swiss real estate,
-events held here, restaurant services and passenger
-transport.[^not-export] Don't use `kind: export` for those. It defaults to the
-EU B2B reverse-charge note, which requires the customer's VAT number in the
-registry.[^reverse] Set
-`reverse_charge: false` for customers outside a reverse-charge regime (e.g.
-the US). The currency's account needs both a regular `iban` (a QR-IBAN can't
-receive an ordinary credit transfer) and a `bic`.
+abroad.[^place]
+
+- **Use it for** a service whose place of supply is the customer's seat.
+- **Don't use it for** exported goods, which are exempt on other grounds and
+  need an export record, or for the services the law places in Switzerland
+  whatever the customer's seat: work on Swiss real estate, events held here,
+  restaurant services, passenger transport.[^not-export] The note would be
+  wrong.
+- **Reverse charge:** it defaults to the EU B2B reverse-charge note, which
+  requires the customer's VAT number in the registry.[^reverse] Set
+  `reverse_charge: false` for customers outside a reverse-charge regime
+  (e.g. the US).
+- **Bank account:** the currency's account needs a regular `iban` (a QR-IBAN
+  can't receive an ordinary credit transfer) and a `bic`.
 
 ![The generated export invoice PDF — SEPA payment details with an EPC QR
 code, and the reverse-charge note](../assets/invoice-export.png){ width="480" }
 
-A project scaffolded with `quints init --samples` includes both flavours:
+`quints init --samples` scaffolds both kinds:
 `invoicing/invoices/acme-<year>-07.yaml` (domestic QR-bill) and
-`invoicing/invoices/globex-<year>-08.yaml` (EUR export), each tied to a booking
-in the sample quarter so the cross-check reconciles.
+`invoicing/invoices/globex-<year>-08.yaml` (EUR export), each tied to a
+booking in the sample quarter so the cross-check reconciles.
 
 ## Get paid before you invoice: pro forma
 
@@ -519,9 +466,9 @@ forma, and the invoice later credits the advance:
 
 ## Cancel or reduce an invoice: credit note
 
-An issued invoice is corrected by a further document that refers to it.[^credit-note]
-Copy the invoice file, give it a number from its own series, and name the
-invoice it corrects:
+An issued invoice is corrected by a further document that refers to
+it.[^credit-note] Copy the invoice file, give it a number from its own
+series, and name the invoice it corrects:
 
 ```yaml
 number: CN2026001
@@ -535,12 +482,14 @@ issue_date: 2026-07-10
 every amount negated, a reference to the invoice and no payment part. The
 ledger draft reverses income and VAT per rate, and its receivable leg
 carries `invoice: "INV2026014"`, so `quints receivables` nets it against the
-invoice. A cancelled invoice then shows nothing open; re-invoice under a new
-number. If the customer had already paid, the open item turns negative: book
-the refund against it.
+invoice.
 
-Use this when the customer has booked or paid the original, or when amounts
-change. For a wrong address caught early, a
+- **Cancelled in full:** nothing stays open. Re-invoice under a new number.
+- **Already paid:** the open item turns negative. Book the refund against
+  it.
+
+Use a credit note when the customer has booked or paid the original, or when
+amounts change. For a wrong address caught early, a
 [reissue](#issued-means-fixed) under the same number is enough.
 
 ## The next invoice of a recurring one
@@ -549,12 +498,12 @@ change. For a wrong address caught early, a
 quints invoice new --from invoicing/invoices/acme-2026-07.yaml --period 2026-08
 ```
 
-Copies the invoice file to `invoicing/invoices/acme-2026-08.yaml` with the next
-free number of its series, today's date (`--date` sets another) and the new
-supply period; everything else, comments included, stays as written. A
+Copies the invoice file to `invoicing/invoices/acme-2026-08.yaml` with the
+next free number of its series, today's date (`--date` sets another) and the
+new supply period. Everything else, comments included, stays as written. A
 series that carries the year (`INV2026014`) starts again at `001` in a new
-year. It never overwrites a file. quints does not schedule anything: you, an
-agent or cron decide when to run it, then `quints invoice` on the new file.
+year. It never overwrites a file. quints schedules nothing: you, an agent or
+cron run it, then `quints invoice` on the new file.
 
 ## Change the numbering scheme
 
@@ -566,55 +515,52 @@ Start the new series on a set day, a new year being the cleanest, and tell
 gap_check_from = 2027-01-01
 ```
 
-Leave the old numbers as they are: they are issued. Gaps are then checked
-only between invoices issued from that day on. Duplicates and dates out of
-order are still checked across all of them.
+Leave the old numbers alone: they are issued. Gaps are then checked only
+between invoices issued from that day on. Duplicates and dates out of order
+are still checked across all of them.
 
-What quints continues and checks is a prefix, the year and a counter:
-`INV2027001`, or one series per customer, `ACME2027001`. Swiss law
-prescribes no scheme, only a document behind each booking[^belege]. The EU
-asks for a sequential number in one or more series[^sequential], and that
-is what your EU customers' bookkeepers expect. A number that encodes the
-month (`ACME202608`) is not a counter: a second invoice that month needs a
-suffix, and every month without one reads as a gap.
+quints continues and checks a prefix, the year and a counter: `INV2027001`,
+or one series per customer, `ACME2027001`. Swiss law prescribes no scheme,
+only a document behind each booking.[^belege] The EU asks for a sequential
+number in one or more series,[^sequential] which is what your EU customers'
+bookkeepers expect. A number that encodes the month (`ACME202608`) is not a
+counter: a second invoice that month needs a suffix, and every month without
+one reads as a gap.
 
 ## Structured invoice data: Factur-X / ZUGFeRD
 
-Every invoice and credit note PDF carries itself as data: an embedded
-`factur-x.xml` in the EN 16931 profile, which accounts-payable software in
-Germany, Austria and France reads instead of the page.[^facturx] There is
-nothing to switch on. The PDF is PDF/A-3a (the archival format that allows
-the attachment) and PDF/UA-1, validated in CI with veraPDF; the XML is
-checked against the official schema and business rules in the test suite.
+Every invoice and credit note PDF embeds itself as data: `factur-x.xml` in
+the EN 16931 profile, which accounts-payable software in Germany, Austria
+and France reads instead of the page.[^facturx] There is nothing to switch
+on. The PDF is PDF/A-3a (the archival format that allows the attachment) and
+PDF/UA-1, validated in CI with veraPDF. The test suite checks the XML
+against the official schema and business rules.
 
 - Every amount in the XML is one the PDF prints. Nothing is added up again.
 - A pro forma carries none: software would book it as the invoice.
 - Swiss VAT travels as category `S` with the Swiss rate. An export with the
-  reverse-charge mention is `AE`; any other invoice without VAT (an export
+  reverse-charge mention is `AE`. Any other invoice without VAT (an export
   outside a reverse-charge regime, an issuer not registered) is `O`, "not
   subject to VAT". Pass-through items are a document-level charge.
 - The `unit` text is mapped to its standard code where it is a common one
   (hours, days, months, pieces, lump sum, km, kg, in the five invoice
-  languages); anything else is sent as a plain unit (`C62`).
+  languages). Anything else is sent as a plain unit (`C62`).
 
 The EU makes structured invoices mandatory for cross-border B2B between
 businesses established in the EU from 1 July 2030.[^vida] That does not bind
-a Swiss supplier; EU customers will come to expect the format all the same.
+a Swiss supplier, but EU customers will expect the format.
 
 ## Editor validation
 
-The invoice, issuer, and customers files have JSON Schemas, published with
-this site at
+The invoice, issuer and customers files have JSON Schemas, published at
 [`/quints/schema/`](https://sealambda.github.io/quints/schema/invoice.schema.json).
-Scaffolded YAMLs already carry the matching `yaml-language-server: $schema=`
-modeline, so schema-aware editors (and agents) validate fields as you type.
-To work offline:
+Scaffolded YAMLs carry the matching `yaml-language-server: $schema=`
+modeline, so schema-aware editors and agents validate fields as you type.
+To work offline, write the same schemas to `invoicing/schema/`:
 
 ```bash
 quints schema
 ```
-
-writes the same schemas to `invoicing/schema/`.
 
 ## Who owes you
 
@@ -622,17 +568,21 @@ writes the same schemas to `invoicing/schema/`.
 quints receivables
 ```
 
-Open invoices against `Receivable:Trade`, grouped by invoice id, aged by due
-date. An invoice disappears from the list when the payment leg is booked with
-the same `^invoice-id` link. A receivable posting with no invoice id (an
-opening balance, a payment booked without the link) is listed below the
-table, so the open total never quietly differs from the account balance.
+Open invoices against `Receivable:Trade`, grouped by invoice id and aged by
+due date.
 
-Each invoice shows in its own currency; below the per-currency totals a
-consolidated total converts everything at the latest rate in your price file
-(`≈ Total CHF`). It consolidates in the operating currency by default —
-`--in EUR` picks another. A currency with no rate is excluded and called out;
-`quints prices sync` fixes that.
+- An invoice leaves the list when the payment leg is booked with the same
+  `^invoice-id` link.
+- A receivable posting with no invoice id (an opening balance, a payment
+  booked without the link) is listed below the table, so the open total
+  always accounts for the whole balance.
+- Each invoice shows in its own currency. A consolidated total converts
+  everything at the latest rate in your price file, into the operating
+  currency or the one `--in EUR` names. A currency with no rate is excluded
+  and called out; `quints prices sync` fixes that.
+
+Allocating payments, reminders and write-offs:
+[Allocate customer payments](receivables.md).
 
 ![quints receivables lists open invoices aged by due date](../assets/receivables.gif)
 
@@ -643,18 +593,18 @@ consolidated total converts everything at the latest rate in your price file
   on the bottom of its envelope shows the window more of what is above the
   address: from 38.5 mm down the sheet in a Swiss C5, 34 mm in a C5/6, 28 mm
   in a C4. The hairline under the header sits 4 mm below your address block
-  (32 mm down the sheet with four lines, 42 mm with seven) and can show at the
-  top of the window. Behind a right-hand window, so can the last lines of a
-  block longer than four lines (C4) or five (C5/6). Leave `email` or `phone`
-  off the issuer to shorten it.
+  (32 mm down the sheet with four lines, 42 mm with seven) and can show at
+  the top of the window. Behind a right-hand window, so can the last lines
+  of a block longer than four lines (C4) or five (C5/6). Leave `email` or
+  `phone` off the issuer to shorten it.
 - **Break a long reference without hyphens or spaces.** The invoice details
   are 78 mm wide beside a right window and 70 mm beside a left one; a
-  `references` value of more than 20 (right) or 16 (left) unbroken characters
-  runs past that column.
+  `references` value of more than 20 (right) or 16 (left) unbroken
+  characters runs past that column.
 - **Other e-invoicing formats and networks** (XRechnung, Peppol, FatturaPA,
-  Verifactu, EDIFACT). The PDF carries Factur-X data; nothing is transmitted.
-- **Derive a BIC from an IBAN.** Ask the bank. A guessed BIC is worse than
-  none.
+  Verifactu, EDIFACT). The PDF carries Factur-X data; nothing is
+  transmitted.
+- **Derive a BIC from an IBAN.** Ask the bank.
 
 [^supply-ch]: Art. 26 Abs. 2 Bst. c MWSTG, [SR 641.20](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_26).
 [^supply-eu]: Art. 226 point (7) of the VAT Directive 2006/112/EC: "the date on which the supply … was made or completed … in so far as that date can be determined and differs from the date of issue". [EUR-Lex](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02006L0112-20250414).
@@ -662,6 +612,8 @@ consolidated total converts everything at the latest rate in your price file
 [^per-rate]: Art. 26 Abs. 2 Bst. f MWSTG: the invoice states "den anwendbaren Steuersatz und den vom Entgelt geschuldeten Steuerbetrag". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_26).
 [^discount]: Art. 24 Abs. 1 MWSTG: "Die Steuer wird vom tatsächlich empfangenen Entgelt berechnet." [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_24).
 [^pass-through]: Art. 24 Abs. 6 Bst. b MWSTG: not part of the consideration are "Beträge, die die steuerpflichtige Person von der die Leistung empfangenden Person als Erstattung der in deren Namen und für deren Rechnung getätigten Auslagen erhält, sofern sie diese gesondert ausweist (durchlaufende Posten)". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_24).
+[^epc]: European Payments Council, [EPC069-12 v3.1](https://www.europeanpaymentscouncil.eu/sites/default/files/kb/file/2024-03/EPC069-12%20v3.1%20Quick%20Response%20Code%20-%20Guidelines%20to%20Enable%20the%20Data%20Capture%20for%20the%20Initiation%20of%20an%20SCT.pdf), *Quick Response Code: Guidelines to Enable the Data Capture for the Initiation of a SEPA Credit Transfer*, §2.2. The BIC stays mandatory for accounts outside the EEA, so a Swiss account always includes it. The guideline itself is optional for banks to implement (§1).
+[^vop]: [Regulation (EU) 2024/886](https://eur-lex.europa.eu/eli/reg/2024/886/oj), Art. 5c (verification of the payee). It binds banks in the EU; a Swiss bank answers the check only if it has joined the EPC's Verification of Payee scheme — ask yours. Where it hasn't, the payer sees that no check was possible.
 [^credit-note]: Art. 27 Abs. 4 MWSTG: a later correction is made by a document, addressed to the recipient, that refers to the original invoice and revokes it. MWST-Info 16, Ziff. 2.5.1. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^facturx]: Factur-X 1.0 / ZUGFeRD 2.x, profile EN 16931, UN/CEFACT Cross Industry Invoice syntax. [FNFE-MPE](https://fnfe-mpe.org/factur-x/), [FeRD](https://www.ferd-net.de/standards/zugferd).
 [^vida]: Council Directive (EU) 2025/516 (VAT in the Digital Age). [EUR-Lex](https://eur-lex.europa.eu/eli/dir/2025/516/oj).

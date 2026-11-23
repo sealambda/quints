@@ -1,17 +1,18 @@
 # quints.toml
 
 Everything entity-specific lives in `quints.toml`, next to `main.bean`.
-`quints init` writes it fully populated; this page is the key-by-key
-reference. VAT *rates* are deliberately absent — they are law and ship
-date-ranged in code.
+`quints init` writes it fully populated. VAT *rates* are not in it: they are
+law and ship date-ranged in code.
 
-Resolution: `--config <path>` > the `quints.toml` beside the ledger you pass
-with `-f`, or in the nearest directory above it > `./quints.toml` > built-in
-defaults. So `quints vat report -f ~/books/main.bean` run from anywhere uses
-`~/books/quints.toml`.
+quints takes the first of: `--config <path>`; the `quints.toml` beside the
+ledger you pass with `-f`, or in the nearest directory above it;
+`./quints.toml`; the built-in defaults. So
+`quints vat report -f ~/books/main.bean` uses `~/books/quints.toml` from
+anywhere.
 
-Every key is checked. An unknown section or key, or a value of the wrong
-kind, stops the command and names the problem, with the closest known key:
+An unknown section or key, or a value of the wrong kind, stops the command
+and names the problem, with the closest known key. A typo never falls back
+to a default:
 
 ```text
 quints.toml:
@@ -19,17 +20,13 @@ quints.toml:
   [entity] vat_registered = 'no' must be true or false
 ```
 
-A typo never falls back to a default.
-
-An editor can say the same before you run anything. `quints init` writes
-this as the first line, and Taplo (Even Better TOML) then checks every key
-against the schema as you type. Add it to a `quints.toml` written earlier:
+`quints init` writes this first line. Taplo (Even Better TOML) then checks
+every key in the editor; add it to a `quints.toml` written earlier. See
+[Check the books as you edit](../guides/editing.md).
 
 ```toml
 #:schema https://sealambda.github.io/quints/schema/quints.schema.json
 ```
-
-See [Check the books as you edit](../guides/editing.md).
 
 ## `[entity]`
 
@@ -51,7 +48,7 @@ The VAT keys describe the entity's registration:
 | `vat_registered_until` | the last day of liability, after deregistering | none: still registered |
 | `vat_method` | the method the registration **started** with. A later switch is a `[[vat.change]]` | `effective` |
 
-The steps behind each key, with the law, are in
+The steps and the law behind each key:
 [Register, switch method, deregister](../guides/vat-registration.md).
 
 ## `[ledger]`
@@ -64,7 +61,7 @@ prices = "prices.bean"
 
 ## `[accounts]`
 
-Account names mirror `accounts.bean` — change them in both files together.
+Account names mirror `accounts.bean`: change them in both files together.
 
 ```toml
 [accounts]
@@ -92,12 +89,12 @@ fx_loss = "Expenses:CH:Einzelfirma:FX:CurrencyLoss"
 rounding_income = "Income:CH:Einzelfirma:Rounding"
 ```
 
-The markers are matched as substrings of the account name, most specific
-first, and route income to a Form-310 Ziffer or an Art. 25 rate class;
-everything unmarked under `income_prefix` is domestic turnover at the
-standard rate. Set a marker to `""` to disable it. A `mwst:` metadata tag on
-a transaction or posting overrides them, and the account's `kmu:` code
-supplies the rest (Erlösminderungen → Ziffer 235, the 400/405 split). See
+The markers match substrings of the account name, most specific first, and
+route income to a Form-310 Ziffer or an Art. 25 rate class. Unmarked income
+under `income_prefix` is domestic turnover at the standard rate. Set a
+marker to `""` to disable it. A `mwst:` tag on a transaction or posting
+overrides the markers, and the account's `kmu:` code supplies the rest
+(Erlösminderungen → Ziffer 235, the 400/405 split). See
 [How quints fills the VAT return](vat-rules.md).
 
 ## `[vat]`
@@ -123,11 +120,12 @@ marker = ":Handel"
 activity = "12346"
 ```
 
-`period` drives the period grid that `quints close check` expects. The
-effective method files quarterly and the Saldosteuersatz half-yearly; either
-may file annually on request.[^periods] A `rate` the ESTV can't grant is
-rejected at load: the permitted list is law,[^sss-rates] so it ships in
-quints, dated.
+`period` sets the period grid `quints close check` expects. The effective
+method files quarterly and the Saldosteuersatz half-yearly; either may file
+annually on request.[^periods] A `rate` the ESTV can't grant is rejected at
+load: the permitted list is law,[^sss-rates] so it ships in quints, dated.
+An optional `label` renames a rate for the `mwst: "sss=<label>"` tag; the
+default is the rate in per cent (`6.2`).
 
 ### `[[vat.change]]`
 
@@ -140,8 +138,6 @@ method = "saldo"           # optional: effective | saldo
 period = "half-year"       # optional: quarter | half-year | year
 saldo = [{ rate = 6.2 }]   # optional: the rates granted from that date
 ```
-
-The rules:
 
 - **Order:** list entries oldest first.
 - **Inheritance:** each entry keeps what it doesn't name from the phase
@@ -164,13 +160,9 @@ bezugsteuer_expense = "Expenses:CH:Einzelfirma:Tax:Bezugsteuer"
 ```
 
 The first takes the gap between the VAT your invoices collected and the SSS
-you owe; the second takes the reverse charge, which the SSS does not pay back.
-Both are kept out of the return by name, so a hand-written settlement can't
-file them wrongly. See [File your VAT return](../guides/vat.md).
-
-[^periods]: Art. 35 Abs. 1 and 1bis Bst. b MWSTG, Art. 35a MWSTG. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_35).
-[^sss-rates]: [SR 641.202.62](https://www.fedlex.admin.ch/eli/cc/2024/500/de), in force since 1 January 2025.
-[^switch]: Art. 37 Abs. 4 MWSTG, Art. 34 Abs. 2 MWSTG. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_37).
+you owe. The second takes the reverse charge, which the SSS does not pay
+back. Both are kept out of the return by name, so a hand-written settlement
+can't file them wrongly. See [File your VAT return](../guides/vat.md).
 
 ## `[invoice]`
 
@@ -194,6 +186,19 @@ default_terms_days = 30    # due date for a bill that carries no `due:`
 `quints payables` ages open supplier bills against their due date: the `due:`
 metadata on the bill transaction, or its date plus these terms.
 
+## `[prices]`
+
+```toml
+[prices]
+source = "ecbrates"             # beanprice source module (default: beanprice_bazg)
+currencies = ["EUR"]            # priced against operating_currency (default: USD, EUR)
+tickers = { EUR = "EUR-CHF" }   # only where the source's ticker differs
+```
+
+`quints prices sync` reads the `price:` metadata in `commodities.bean`. This
+section only matters for a ledger that declares none: see
+[FX rates](../guides/fx.md).
+
 ## `[report]`
 
 ```toml
@@ -205,19 +210,19 @@ language = "en"    # or "de"; --lang overrides per command
 
 ```toml
 [close]
-depreciation_account = "Expenses:CH:GmbH:Depreciation"   # KMU 6800
+depreciation_account = "Expenses:CH:Einzelfirma:Depreciation"   # KMU 6800
 method = "direct"                   # or "indirect": credit a Wertberichtigung (15x9)
 prorata = "full"                    # or "months" in the year of acquisition
 receivable_review_days = 90         # open longer at year end → Delkredere review
 ```
 
 Defaults for the year-end close. Per-asset rates and methods live on the
-fixed-asset `open` directives, not here — see [Close the year](../guides/year-end.md).
+fixed-asset `open` directives: see [Close the year](../guides/year-end.md).
 
 ## `[import.*]`
 
 One section per importer. Rules are `[payee regex, counter account, flag]`
-triples — `*` books the draft as complete, `!` leaves it flagged for your VAT
+triples: `*` books the draft as complete, `!` leaves it flagged for your VAT
 decision and a linked document.
 
 ```toml
@@ -253,15 +258,21 @@ rules = []
 EUR = "Assets:CH:Einzelfirma:Current:Stripe:EUR"
 ```
 
-API credentials never go in `quints.toml` — they live in `.env`
+`[import.ubs]` and `[import.yapeal]` also take `currency` (default `CHF`).
+
+API credentials never go in `quints.toml`. They live in `.env`
 (`QUINTS_WISE_API_TOKEN`, `QUINTS_WISE_PRIVATE_KEY`, `QUINTS_STRIPE_API_KEY`),
 which the scaffold gitignores. The Stripe key is a restricted one with
 *Balance transaction sources: Read* and *Charges: Read*, plus *Invoices: Read*
-if you use `quints import stripe --invoices`.
+for `quints import stripe --invoices`.
 
 ## Debugging
 
-A problem in your own files — a malformed IBAN, an invoice that doesn't
-balance — is reported as a single `ERROR:` line on stderr, with exit code 1.
-Set `QUINTS_TRACEBACK=1` to get the Python traceback instead, for when the
-error looks like a bug in quints rather than in the books.
+A problem in your own files (a malformed IBAN, an invoice that doesn't
+balance) prints as one `ERROR:` line on stderr, with exit code 1. Set
+`QUINTS_TRACEBACK=1` to get the Python traceback instead, when the error
+looks like a bug in quints.
+
+[^periods]: Art. 35 Abs. 1 and 1bis Bst. b MWSTG, Art. 35a MWSTG. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_35).
+[^sss-rates]: [SR 641.202.62](https://www.fedlex.admin.ch/eli/cc/2024/500/de), in force since 1 January 2025.
+[^switch]: Art. 37 Abs. 4 MWSTG, Art. 34 Abs. 2 MWSTG. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_37).

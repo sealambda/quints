@@ -1,16 +1,12 @@
 # Check the books as you edit
 
-CI checks a change once it is pushed. This page sets up the same check
-earlier: after every edit an agent makes, and on every save in your editor.
-An agent that sees its mistake one edit later fixes it. A small local model
-needs that more than a large one does.
+CI checks a change once it is pushed. Run the same check earlier: after
+every edit an agent makes, and on every save in your editor.
 
 !!! abstract "Applies if"
-    - **Legal form:** Einzelfirma, GmbH or AG. Nothing on this page differs
-      between them.
-    - **VAT status, method and filing period:** any. The check is the one
-      `quints check` runs; [Diagnostics](../reference/diagnostics.md) says
-      which codes appear in which case.
+    - **Legal form, VAT status, method, filing period:** any. The check is
+      `quints check`; [Diagnostics](../reference/diagnostics.md) says which
+      codes appear in which case.
     - **Who edits the books:** an AI coding agent (steps 1 to 3), a person
       in an editor (steps 4 and 5), or both.
     - **Where the books live:** a git repository. Steps 1 to 3 compare with
@@ -26,31 +22,31 @@ quints explain document-missing
 quints check --fix
 ```
 
-- `--review` adds what is still to do to what is wrong: `!` flags, entries
-  with no document, bank balances not asserted for a quarter.
-- `quints explain <code>` prints what a code means and how to fix it. It
-  reads the installed package, so it works with no network.
+- `--review` also lists what is still to do: `!` flags, entries with no
+  document, bank balances not asserted for a quarter.
+- `quints explain <code>` prints what a code means and how to fix it, from
+  the installed package: no network.
 - `--fix` applies the fixes that need no judgement, then checks again.
 
-After an edit, one more flag keeps the answer short:
+After an edit, report only what the edit brought:
 
 <!-- no-test: needs a git repository with a commit -->
 ```bash
 quints check --review --strict --base-ref HEAD
 ```
 
-`--base-ref HEAD` checks the books twice, as committed and as they are now,
-and reports only the problems the commit doesn't have: what the edit
-brought. `--strict` makes a new warning exit 1 too. Books that already have
-fifty problems still answer "you added this one".
+`--base-ref HEAD` checks the books as committed and as they are now, and
+reports the problems the commit doesn't have. `--strict` makes a new
+warning exit 1 too. Books with fifty old problems still answer "you added
+this one".
 
 ## 2. Claude Code: nothing to do
 
 `quints init` writes `.claude/settings.json`. Claude Code then runs the
-command of step 1 after each edit it makes, and the problems the edit
-brought go back to the model.[^hooks] For books scaffolded earlier, upgrade
-quints first (`uv lock --upgrade-package quints`: older releases lack the
-flags), then add the file by hand:
+command of step 1 after each edit, and the new problems go back to the
+model.[^hooks] For books scaffolded earlier, upgrade quints
+(`uv lock --upgrade-package quints`: older releases lack the flags), then
+add the file by hand:
 
 ```json
 {
@@ -72,16 +68,15 @@ flags), then add the file by hand:
 }
 ```
 
-Commit once the check is clean. The next edit is then compared with that
-commit.
+Commit once the check is clean: the next edit is compared with that commit.
 
 ## 3. Other agents
 
-Any agent that reads `AGENTS.md` is told to run the command of step 1 after
-each edit. Nothing else is needed.
+`AGENTS.md` tells any agent that reads it to run the command of step 1
+after each edit. Nothing else is needed.
 
-OpenCode can also take the problems from the language server of step 4 and
-hand them to the model.[^opencode] In `opencode.json`:
+OpenCode can also hand the model the problems from the language server of
+step 4.[^opencode] In `opencode.json`:
 
 ```json
 {
@@ -95,14 +90,14 @@ hand them to the model.[^opencode] In `opencode.json`:
 }
 ```
 
-The language server reports every problem in the books, not only the new
-ones. On books that already have many, prefer the command of step 1.
+The language server reports every problem, not only the new ones. On books
+that already have many, prefer the command of step 1.
 
 ## 4. Your editor: `quints lsp`
 
 `quints lsp` is a language server.[^lsp] It shows each problem at its file
-and line when the editor opens the books, and again each time you save. The
-code links to its entry in [Diagnostics](../reference/diagnostics.md), and a
+and line when the editor opens the books, and again on every save. The code
+links to its entry in [Diagnostics](../reference/diagnostics.md), and a
 problem that has a fix offers it as a quick fix. What `--review` adds shows
 as information, not as a warning.
 
@@ -142,31 +137,30 @@ uv add 'quints[lsp]'
     ```
 
 Any other editor that starts a language server from a command works the
-same way: the command is `uv run quints lsp`, in the directory that holds
-`main.bean`, for beancount files.
+same: `uv run quints lsp`, in the directory that holds `main.bean`, for
+beancount files.
 
 ## 5. Completion, formatting and the other files
 
-`quints lsp` reports problems and nothing else. Three more servers cover the
-rest, and each runs beside it:
+`quints lsp` only reports problems. Three more servers run beside it:
 
 - **Beancount files:** `beancount-language-server` completes accounts and
   payees and formats entries. It runs beancount with the books' `.venv`, so
   after `uv sync` it loads `quints.plugins.kmu` and reports a missing `kmu:`
   code in the editor.[^bls]
-- **`quints.toml`:** the first line `quints init` writes,
-  `#:schema …/schema/quints.schema.json`, points Taplo (Even Better TOML) at
-  the schema: an unknown key or a value of the wrong kind is underlined.[^taplo]
-  For a `quints.toml` written earlier, add the line at the top.
+- **`quints.toml`:** its first line, `#:schema …/schema/quints.schema.json`,
+  points Taplo (Even Better TOML) at the schema: an unknown key or a value
+  of the wrong kind is underlined.[^taplo] `quints init` writes the line;
+  add it to a `quints.toml` written earlier.
 - **Invoice YAML:** each file under `invoicing/` carries a
   `yaml-language-server` modeline to its schema.
+
+For an editor with no network, write the same schemas to
+`invoicing/schema/`:
 
 ```bash
 quints schema
 ```
-
-writes the same schemas to `invoicing/schema/`, for an editor with no
-network.
 
 ## What quints doesn't do here
 

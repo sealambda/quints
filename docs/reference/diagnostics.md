@@ -1,21 +1,19 @@
 # Diagnostics: what each problem means
 
-`quints check` names every problem it finds with a code, a severity and,
-when there is one, the file and line it is about. This page lists every
-code: what it means, and how to fix it. The SARIF output links each code
-here.
+`quints check` gives every problem a code, a severity and, when there is
+one, a file and line. This page says what each code means and how to fix
+it. The SARIF output links each code here.
 
 !!! abstract "Applies if"
-    - **Legal form:** Einzelfirma, GmbH or AG. Nothing on this page differs
-      between them.
+    - **Legal form:** any. Nothing here differs.
     - **VAT status:** any. The `vat-…` codes appear only for a period you
       were registered for and have not settled yet. Not registered, you see
       none of them.
     - **VAT method:** effective or Saldosteuersatz. Two codes appear only
       under the Saldosteuersatz: `vat-saldo-input` and
       `vat-output-no-turnover`.
-    - **Filing period:** quarter, half-year or year. The period only decides
-      which VAT returns `check` runs: every one not settled yet.
+    - **Filing period:** quarter, half-year or year. It only decides which
+      VAT returns `check` runs: every one not settled yet.
 
 ## How to read a diagnostic
 
@@ -23,9 +21,9 @@ here.
 quints check
 ```
 
-Each problem prints as `path:line: message [code]`, with the path relative
-to the repository root, or as `path:line: warning: message [code]`. A
-problem with no single place in the books prints as
+A problem prints as `path:line: message [code]`, a warning as
+`path:line: warning: message [code]`, with the path relative to the
+repository root. One with no single place in the books prints as
 `quints: message [code]`.
 
 - An **error** fails `quints check` (exit 1): a statement or a VAT return
@@ -37,10 +35,8 @@ under their figures, and in `--json` under `violations`, each with its
 `code`, `severity`, `file` and `line`.
 
 `check` runs the VAT returns of the periods not settled yet. A settled
-period is corrected by a counter-entry in a later one, so its old problems
-don't fail `check`. `quints vat report` for that period still lists them.
-
-Four more things `check` does:
+period is corrected by a counter-entry in a later one, so its problems no
+longer fail `check`. `quints vat report` for that period still lists them.
 
 ```bash
 quints explain vat-mismatch
@@ -49,11 +45,11 @@ quints check --fix
 ```
 
 - `quints explain <code>` prints a code's entry from this page, from the
-  installed package: it needs no network. Without a code it lists them all.
+  installed package: no network. Without a code it lists them all.
 - `--review` adds three warnings about what is still to do:
   [`flag-pending`](#flag-pending), [`document-missing`](#document-missing)
   and [`balance-stale`](#balance-stale). Books mid-year always have some, so
-  they are not part of the plain check.
+  the plain check leaves them out.
 - `--fix` applies the fixes that need no judgement, then checks again. Today
   that is one: [`invoice-unhashed`](#invoice-unhashed). In `--json`, a
   problem that has a fix carries it under `fix`.
@@ -252,7 +248,6 @@ start of its date. The diagnostic points at the account's `open` directive.
 - **No fix that needs judgement.** `--fix` never changes an amount, an
   account or a tag. A wrong VAT leg (`vat-mismatch`) has two honest fixes,
   the VAT or the net, and quints can't tell which: you decide.
-
 - **No inline suppression.** A problem in an open period can't be marked as
   accepted: fix it, or settle the period if the return is filed. A settled
   period's problems no longer fail `check`.

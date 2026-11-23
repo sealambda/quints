@@ -3,8 +3,8 @@
 A fiscal year is closed when the books stop moving: every VAT period settled,
 every bank balance tied to a statement, the year's FX difference and
 depreciation booked. `quints close check` is that list, computed from your
-ledger. The rest of the commands here print the entries it asks for — for you
-to review and paste, never written for you.
+ledger. The other commands print the entries it asks for. You review and
+paste them: quints never writes your books.
 
 !!! abstract "Applies if"
     - **Legal form:** Einzelfirma, GmbH or AG. The checklist is the same for
@@ -31,27 +31,23 @@ The steps:
 
 1. **Refresh the rates.** `quints prices sync` needs the network, so it
    isn't in the block above ([FX rates](fx.md)).
-2. **Check.** `quints close check` lists what is still open. In CI,
-   `--strict` fails the job while an item fails, and `--output-format`
-   (`github`, `gitlab`, `azure`, `sarif`) annotates each ledger error at its
-   file and line.
+2. **Check.** `quints close check` lists what is still open.
 3. **Book what the check asks for.** The other commands print the entries.
 4. **Check again**, until nothing fails.
 5. **Hand the PDF to your Treuhänder** ([Statutory reports](reports.md)).
 6. **Archive the closed year** ([below](#keep-the-books-for-ten-years)).
 
-A registered business also runs `quints vat liability --at 2026-12-31` at
-the year end. If turnover stayed below the threshold, it says whether you may
-deregister and by when ([Register, switch method, deregister](vat-registration.md)).
+A registered business also runs `quints vat liability --at 2026-12-31`. If
+turnover stayed below the threshold, it says whether you may deregister and
+by when ([Register, switch method, deregister](vat-registration.md)).
 
 ## An extended first year
 
 A GmbH or AG may skip the closing in the calendar year it was founded. Its
-first fiscal year then runs on to the end of the next calendar year at the
-latest: founded 4 July 2025, first closing 31 December 2026.[^fy] Zürich asks
-you to report the extension to the Kantonales Steueramt; check what your
-canton asks.[^zh] An Einzelfirma can't extend: it closes every calendar
-year.[^fy-ef]
+first fiscal year then ends by 31 December of the next year: founded
+4 July 2025, first closing 31 December 2026.[^fy] Zürich wants the extension
+reported to the Kantonales Steueramt; check what your canton asks.[^zh] An
+Einzelfirma can't extend: it closes every calendar year.[^fy-ef]
 
 ```bash
 quints close check --year 2025
@@ -62,8 +58,8 @@ quints report statements --year 2026 --from 2025-07-04
 
 1. **Check both calendar years.** `close check` works per calendar year, so
    the founding year's VAT periods, flagged entries and missing documents
-   only show up under `--year 2025`. Its year-end items (`fx`, `prices`,
-   `depreciation`, `receivables`) don't apply to 2025: nothing closes on
+   only show under `--year 2025`. Ignore its year-end items there (`fx`,
+   `prices`, `depreciation`, `receivables`): nothing closes on
    31 December 2025.
 2. **Depreciate once, for 2026.** Don't run `close depreciation --year 2025`.
    The 2026 run charges one year's depreciation, 2025 purchases included.
@@ -87,8 +83,8 @@ quints report statements --year 2026 --from 2025-07-04
 quints close check --year 2026
 ```
 
-Every item comes back **pass**, **warn** or **fail**, with the specifics —
-counts, account names, dates — and the command that fixes it.
+Every item is **pass**, **warn** or **fail**, with the counts, accounts and
+dates behind it and the command that fixes it.
 
 | Item | Passes when |
 |---|---|
@@ -104,28 +100,24 @@ counts, account names, dates — and the command that fixes it.
 | `depreciation` | the year's write-down is booked on every asset that has a rate |
 | `receivables` | nothing has been open longer than `receivable_review_days` |
 
-A **fail** must be booked or fixed before the numbers are final. A **warn** is
-a judgement call quints will not make for you: an old receivable may deserve a
-Delkredere or a write-off, a missing document may simply not exist.
-
-Two details worth knowing:
+A **fail** must be booked or fixed before the numbers are final. A **warn**
+is your call: an old receivable may deserve a Delkredere or a write-off, a
+missing document may not exist.
 
 - **Balance assertions are read at the start of their date.** An assertion
   dated `2026-12-31` verifies the balance *before* that day's bookings, so
   only `2027-01-01 balance …` ties the year end to your December statement.
-  That is the date the check looks for, and the date the generated entries
-  below use.
-- **Generated entries are exempt from `documents`.** A VAT settlement or its
-  payment (recognised by the `^VAT-…` link), the FX revaluation (its only
-  income/expense legs are the configured gain/loss, rounding and depreciation
-  accounts) and the depreciation entry (its `depreciation_year:` marker) are
-  quints' own output — there is no supplier PDF behind them.
-
-The command **reports and exits 0**: a year mid-close is the normal case, and
-the example project shipped with quints is exactly that — VAT still to settle,
-no year-end assertions yet. Add `--strict` to exit 1 while any item fails,
-which is what a CI job or an agent loop should gate on. `--json` returns the
-same items with `ok`, `failed` and `warned` counters.
+  The check looks for that date, and the generated entries below use it.
+- **Generated entries are exempt from `documents`:** a VAT settlement or its
+  payment (the `^VAT-…` link), the FX revaluation (its only income/expense
+  legs are the configured gain/loss, rounding and depreciation accounts) and
+  the depreciation entry (its `depreciation_year:` marker). No supplier PDF
+  stands behind them.
+- **The command exits 0**, because a year mid-close is the normal case.
+  `--strict` exits 1 while an item fails: gate a CI job or an agent loop on
+  it. `--json` returns the same items with `ok`, `failed` and `warned`
+  counters. `--output-format` (`github`, `gitlab`, `azure`, `sarif`)
+  annotates each ledger problem at its file and line.
 
 ## Depreciation
 
@@ -134,10 +126,9 @@ quints close depreciation --year 2026
 ```
 
 Prints the year's depreciation entry[^960a] to paste into
-`books/2026.bean`, with a balance assertion per asset. Run it again after
-booking and it prints nothing: the generated transaction carries
-`depreciation_year: "2026"`, which is how quints knows the charge is already
-in the books.
+`books/2026.bean`, with a balance assertion per asset. The entry carries
+`depreciation_year: "2026"`, so a second run after booking finds the charge
+and prints nothing to paste.
 
 ### The metadata is the source of truth
 
@@ -164,18 +155,17 @@ never in a spreadsheet:
 | `depreciation_contra:` | book indirectly against this Wertberichtigung account |
 
 Declining balance applies the rate to the book value carried into the year
-plus the year's own purchases; linear applies it to historical cost. Both stop
-at `residual:`. An asset bought during the year gets a full year of
-depreciation — the Swiss small-business default — unless you set
-`prorata = "months"` in `quints.toml`, which counts from the month of
-acquisition.
+plus the year's purchases. Linear applies it to historical cost. Both stop at
+`residual:`. An asset bought during the year gets a full year of
+depreciation, the Swiss small-business default. `prorata = "months"` in
+`quints.toml` counts from the month of acquisition instead.
 
 ### Maximum rates: ESTV Merkblatt A/1995
 
 `depreciation_category:` is checked against the *Normalsätze* of the ESTV's
-Merkblatt A/1995.[^a1995] The rates are
-percentages **of book value**; the Merkblatt's footnote 3 halves them when you
-depreciate from the Anschaffungswert, which is what `linear` does here.
+Merkblatt A/1995.[^a1995] The rates are percentages **of book value**. The
+Merkblatt's footnote 3 halves them when you depreciate from the
+Anschaffungswert, which is what `linear` does.
 
 | Category | Max (declining) | Merkblatt heading |
 |---|---|---|
@@ -190,31 +180,30 @@ depreciate from the Anschaffungswert, which is what `linear` does here.
 | `tools` | 45% | Werkzeuge, Werkgeschirr, Geräte, Paletten |
 
 The full table (buildings with and without land, tanks, rail sidings, hotel
-supplies, …) is in `quints.closing.MERKBLATT_A1995`. A rate above the ceiling
-is a **warning**, not a refusal: it is legal bookkeeping, but the excess needs
-a reason your Steuerverwaltung accepts.
+supplies, …) is in `quints.closing.MERKBLATT_A1995`. A rate above the maximum
+is a **warning**, not a refusal: the books are legal, but the excess needs a
+reason your Steuerverwaltung accepts.
 
 ### Direct or indirect
 
-By default the charge writes the asset down (**direct**). Set a
-`depreciation_contra:` account on the asset — a Wertberichtigung account from
-the KMU Kontenrahmen (1509, 1519, 1529, 1539, …) — to book **indirectly**
-instead: cost stays visible on the asset, the accumulated depreciation sits
-next to it, and both roll up to the same Bilanz row (Sachanlagen, KMU
-1500–1699). `method = "indirect"` in `quints.toml` makes it the default and
-makes quints warn about any asset that has no contra account.
+By default the charge writes the asset down (**direct**). To book
+**indirectly**, set `depreciation_contra:` on the asset to a
+Wertberichtigung account from the KMU Kontenrahmen (1509, 1519, 1529, 1539,
+…). Cost stays on the asset, the accumulated depreciation sits next to it,
+and both roll up to the same Bilanz row (Sachanlagen, KMU 1500–1699).
+`method = "indirect"` in `quints.toml` makes it the default, and quints then
+warns about any asset without a contra account.
 
 ## Keep the books for ten years
 
-The ledger, the documents it links and the statements are your business
-records. Keep them for ten years after the end of the fiscal year.[^keep]
-VAT records stay until the tax claim expires, which is ten years after the
-period ends. Records about real estate take longer.[^keep-vat] They have to
-stay complete, unaltered and readable for the whole period.[^gebuev]
+Keep the ledger, the documents it links and the statements for ten years
+after the end of the fiscal year.[^keep] VAT records stay until the tax
+claim expires, ten years after the period ends, and records about real
+estate longer.[^keep-vat] All of it must stay complete, unaltered and
+readable.[^gebuev]
 
-A quints project is plain text in git, so every change shows up in the
-history, but anyone with access can rewrite that history. Once the year is
-closed, fix its state in place:
+Git shows every change, but anyone with access can rewrite its history. Once
+the year is closed, fix its state:
 
 ```bash
 git add -A && git commit -m "Close fiscal year 2026"
@@ -224,13 +213,12 @@ shasum -a 256 books-2026.tar.gz > books-2026.tar.gz.sha256
 ```
 
 1. **Commit everything:** books, `documents/`, the statements PDF.
-2. **Sign a tag** for the closed year. A signed tag is verifiable, and moving it
-   later shows. Its date, though, is whatever the signer's clock said.
-3. **Archive the tagged state** and its checksum to storage you don't edit
-   day to day, which records when it was stored: a bucket with write-once
-   retention, or a timestamp from a trusted timestamping service on the
-   checksum. Integrity alone isn't enough on modifiable media. The time of
-   storage has to be provable too.[^gebuev]
+2. **Sign a tag** for the closed year. A signed tag is verifiable, and moving
+   it later shows. Its date is only what the signer's clock said.
+3. **Archive the tagged state** and its checksum to storage that records
+   when it was stored: a bucket with write-once retention, or a timestamp
+   from a trusted timestamping service on the checksum. On modifiable media,
+   integrity isn't enough: the time of storage must be provable too.[^gebuev]
 4. **Write down how the books are kept:** who books, who reviews, where the
    archive lives. The scaffolded `AGENTS.md` describes the booking procedure
    and is a starting point.[^procedure]
@@ -255,8 +243,6 @@ receivable_review_days = 90         # open longer at year end → Delkredere rev
   decision of a GmbH/AG, the owner's share of an Einzelfirma).
 - **Judgements:** tax provisions, Delkredere percentages, and whether to
   depreciate less than the maximum. Those are yours, or your Treuhänder's.
-  quints computes what follows from the books and the published rates, and
-  says so.
 - **A fiscal year that isn't the calendar year**, other than an extended
   first one. Even then, `close check` and `close depreciation` work per
   calendar year ([An extended first year](#an-extended-first-year)).

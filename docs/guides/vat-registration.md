@@ -1,17 +1,14 @@
 # Register, switch method, deregister
 
-A company's VAT situation is not fixed. It usually starts below the
-registration threshold, registers when it crosses it (or earlier, by choice),
-may switch between the effective and the Saldosteuersatz method, may move to
-annual filing, and eventually deregisters. You record each change in
-`quints.toml` once. quints then computes every period under the rules that
-applied to it, and refuses a change the law doesn't allow.
+Record each change of your VAT situation in `quints.toml` once. quints
+computes every period under the rules in force for it, and refuses a change
+the law doesn't allow.
 
 !!! abstract "Applies if"
     - **Legal form:** Einzelfirma, GmbH or AG. The rules are the same for all
       three.
-    - **VAT status:** every stage. This page is the lifecycle, and each section
-      opens with the stage it covers.
+    - **VAT status:** every stage. Each section opens with the stage it
+      covers.
     - **Not covered:** the Pauschalsteuersatz method, which is for public
       bodies and associations only,[^pauschal] and group taxation.
 
@@ -23,18 +20,15 @@ quints vat liability --at 2026-12-31
 
 It totals each year's turnover the way the threshold counts it,[^threshold]
 converts a partial first year to a full one,[^annualise] and says what
-follows. Leave out `--at` to assess as of today; the running year is then
-marked *on course* rather than decided.
+follows. Without `--at` it assesses as of today, and marks the running year
+*on course* rather than decided.
 
-What counts:
+What counts, classified as in `quints vat report`:
 
-- **Worldwide turnover.** Exports and supplies abroad count, not only
-  domestic sales.
+- **Worldwide turnover:** exports and supplies abroad too.
 - **Net of VAT.**
-- **Supplies exempt under Art. 21 MWSTG don't count** (Ziffer 230, the
-  `:Exempt` accounts), and neither do subsidies or donations.
-
-quints classifies each booking the same way `quints vat report` does.
+- **Not** supplies exempt under Art. 21 MWSTG (Ziffer 230, the `:Exempt`
+  accounts), subsidies or donations.
 
 The threshold is **CHF 100'000 a year**. Once a business year reaches it, you
 are liable from the start of the next year and must register with the ESTV
@@ -43,13 +37,12 @@ within 30 days.[^start] `vat liability` prints both dates.
 !!! warning "The part quints cannot compute"
     A **new** business that expects to pass CHF 100'000 within its first 12
     months is liable from its first day, not from the next year.[^new] If you
-    can't tell yet, reassess after three months at the latest. That is an
-    expectation, not a booking, so the decision is yours. Record what you
-    decided (step 2).
+    can't tell yet, reassess after three months at the latest. The decision
+    is yours: record it in step 2.
 
-Registering below the threshold is allowed. The waiver of the exemption
-holds for at least one tax period.[^waiver] It can pay off when you have large
-input VAT to recover, such as a start-up investing before its first sale.
+You may register below the threshold. The waiver of the exemption holds for
+at least one tax period.[^waiver] It pays off with large input VAT to
+recover, such as a start-up investing before its first sale.
 
 ## 2. Record the registration
 
@@ -62,18 +55,18 @@ vat_registered_since = 2026-04-01
 vat_method = "effective"      # or "saldo" — see step 3
 ```
 
-Before that date, a business that is not registered:
+Before that date, the business:
 
 - **Books everything gross.** No InputVAT, OutputVAT or Bezugsteuer
   postings.
 - **Invoices without VAT.** No VAT row and no VAT number: an invoice that
-  shows VAT makes it owed.[^art27] `quints invoice` knows the issue date and
-  leaves both out.
-- **Owes Bezugsteuer only above CHF 10'000.** That limit is for services
-  bought from abroad in a calendar year; above it, the business must register
-  for them.[^bezug]
+  shows VAT makes it owed.[^art27] `quints invoice` leaves both out, by the
+  issue date.
+- **Owes Bezugsteuer only above CHF 10'000** of services bought from abroad
+  in a calendar year. Above it, the business must register for
+  them.[^bezug]
 
-A project scaffolded before registering says so:
+A project scaffolded before registering:
 
 ```bash
 quints init jane-books --name "Jane Doe" --legal-form einzelfirma --vat-registered-since no --samples --yes
@@ -87,10 +80,10 @@ Its `quints.toml` carries `vat_registered = false`. When you register,
 replace that line with the two above.
 
 **The first return** runs from the registration date to the end of that
-period. `quints vat report` clamps the period to it and prints a notice.
-Under the effective method, you may recover input VAT on goods and assets
-still on hand that you bought for taxable use: the *Einlageentsteuerung*,
-Ziffer 410.[^einlage] Book it against InputVAT tagged
+period. `quints vat report` clamps the period and prints a notice. Under the
+effective method, you may recover input VAT on goods and assets still on
+hand that you bought for taxable use: the *Einlageentsteuerung*, Ziffer
+410.[^einlage] Book it against InputVAT, tagged
 `mwst: "einlageentsteuerung"`. Services already consumed (consulting,
 advertising) don't qualify.
 
@@ -107,23 +100,21 @@ advertising) don't qualify.
 Your invoices are the same either way: customers pay the statutory 8.1 % /
 2.6 % / 3.8 %.
 
-The Saldosteuersatz has to be requested within 60 days of receiving the VAT
-number. If you don't, you stay on the effective method for three whole tax
+Request the Saldosteuersatz within 60 days of receiving the VAT number.
+Otherwise you stay on the effective method for three whole tax
 periods.[^sss-apply] [File your VAT return](vat.md) shows both methods step
 by step.
 
 ## 4. Switch method or filing period
 
-A switch always starts on **1 January**, the start of a tax period, and has
-to be notified to the ESTV within 60 days of that date. The minimum stays
-are:[^switch]
+A switch starts on a **1 January**, and the ESTV must be told within 60 days
+of that date. The minimum stays are:[^switch]
 
-- **Effective method:** at least three years before a switch to the
-  Saldosteuersatz.
-- **Saldosteuersatz:** at least one tax period before going back.
+- **Effective method:** three years before a switch to the Saldosteuersatz.
+- **Saldosteuersatz:** one tax period before going back.
 
-Record the switch as a dated entry. The fields at the top of `quints.toml`
-stay the *first* phase:
+Record the switch as a dated entry. The `[entity]` fields stay the *first*
+phase:
 
 ```toml
 [entity]
@@ -142,9 +133,9 @@ Saldosteuersätze. quints rejects a `from` that isn't a 1 January, a change
 listed out of order, and a switch before the minimum stay has passed, and it
 names the earliest legal date.
 
-Every return is then computed under the phase in force for its period, and a
-period that spans a switch is refused. The switch itself needs one
-correction, in a specific return:
+Every return is computed under the phase in force for its period. A period
+that spans a switch is refused. The switch needs one correction, in one
+return:
 
 - **Effective → Saldosteuersatz:** in the *last effective* return, repay the
   input VAT deducted on goods and assets still on hand, at their current
@@ -153,13 +144,11 @@ correction, in a specific return:
   the input VAT on goods and assets still on hand. That is Ziffer 410, tagged
   `mwst: "einlageentsteuerung"`.[^to-eff]
 
-`quints vat report` prints the matching notice on both returns. The amounts
-are valuations of what you still own, so you work them out. quints tells you
-where they go.
+`quints vat report` prints the matching notice on both returns.
 
 **Annual filing** is a change of period, not of method. It is available on
-request up to CHF 5.005 m turnover,[^annual] and you pay instalments during
-the year:
+request up to CHF 5.005 m turnover,[^annual] with instalments during the
+year:
 
 ```toml
 [[vat.change]]
@@ -169,11 +158,10 @@ period = "year"
 
 ## 5. Deregister
 
-Liability ends when the business stops trading. It can also end at the end
-of a tax period in which turnover stayed below the threshold, provided you
-don't expect to reach it in the next one.[^end] `quints vat liability` tells
-a registered business when it may deregister, and by when the ESTV must be
-told:
+Liability ends when the business stops trading. It can also end with a tax
+period in which turnover stayed below the threshold, if you don't expect to
+reach it in the next one.[^end] `quints vat liability` tells a registered
+business when it may deregister. Tell the ESTV:
 
 - **Below the threshold:** within 60 days of the tax period's end. Staying
   registered counts as waiving the exemption.
@@ -190,26 +178,25 @@ vat_registered_until = 2030-12-31
 Under the effective method, goods and assets still on hand on which you
 deducted input VAT are *Eigenverbrauch*: book the correction as Ziffer 415,
 tagged `mwst: "vorsteuerkorrektur"`.[^eigen] Under the Saldosteuersatz there
-is no such correction; the turnover up to the end is taxed at the granted
+is no such correction: the turnover up to the end is taxed at the granted
 rates.[^sss-end] From the day after, invoices carry no VAT again.
 
 ## What quints doesn't do here
 
-- **Register, switch or deregister with the ESTV.** That happens online at
-  the ESTV. quints records the result.
+- **Register, switch or deregister with the ESTV.** You do that online.
+  quints records the result.
 - **Value what you still own.** The Einlageentsteuerung and Eigenverbrauch
-  amounts depend on the current value of goods and assets (the purchase
-  value less a fifth for each year of use, for movables). quints names the
-  correction, its Ziffer and its tag, and the amount is yours to book.
+  amounts depend on the current value of goods and assets (for movables,
+  the purchase value less a fifth per year of use). quints names the
+  correction, its Ziffer and its tag. You book the amount.
 - **Decide on expectations.** "Will we pass CHF 100'000 in our first year?"
   and "will we stay below it next year?" are judgements. quints computes the
   past and says which question to ask.
 - **A business year that is not the calendar year.** quints assesses
   calendar years, like the books (one file per year).
 - **Know when trading really started.** `vat liability` counts from the
-  first booking. For books migrated from elsewhere, that is the opening
-  balance, not the start of the business, so read a converted first year
-  with that in mind.
+  first booking. In books migrated from elsewhere, that is the opening
+  balance, so read a converted first year with that in mind.
 - **Change the accounting basis** (vereinbart ↔ vereinnahmt). quints books
   on agreed Entgelte only.
 

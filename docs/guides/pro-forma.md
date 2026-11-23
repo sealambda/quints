@@ -1,10 +1,10 @@
 # Get paid before you invoice
 
 A customer pays part of a project now but wants the invoice dated later, for
-example in their next financial year. Send a **pro forma**: a request for an
-advance payment, not an invoice. Book the payment as a customer advance when it
-arrives. The invoice then follows with the supply, shows VAT on the whole of
-it, subtracts the advance, and asks for the rest.
+example in their next financial year. Send a **pro forma**, a request for an
+advance, and book the payment as a customer advance when it arrives. The
+invoice follows with the supply: it shows VAT on the whole, subtracts the
+advance, and asks for the rest.
 
 !!! abstract "Applies if"
     - **Legal form:** any. Same steps.
@@ -20,10 +20,10 @@ it, subtracts the advance, and asks for the rest.
     - **Filing period:** any. The advance lands in the period of the payment,
       the rest in the period of the invoice.
 
-Either way the advance goes into the return for the period it is paid in, even
-though no invoice exists yet. The invoice's period declares only the remainder.
-quints handles that through two accounts in `quints.toml`, both KMU 2030
-*Erhaltene Anzahlungen*:
+The advance goes into the return of the period it is paid in, although no
+invoice exists yet. The invoice's period declares only the remainder. quints
+does that through two accounts in `quints.toml`, both KMU 2030 *Erhaltene
+Anzahlungen*:
 
 ```toml
 [accounts]
@@ -31,8 +31,8 @@ advances_domestic = "Liabilities:CH:GmbH:Advances:Domestic"
 advances_export = "Liabilities:CH:GmbH:Advances:Export"
 ```
 
-Open them in `accounts.bean` (a project scaffolded by `quints init` already
-has them):
+Open them in `accounts.bean`. A project scaffolded by `quints init` already
+has them.
 
 ```beancount
 2026-01-01 open Liabilities:CH:GmbH:Advances:Domestic
@@ -44,7 +44,7 @@ has them):
 ## 1. Render the pro forma
 
 Give it its own number series, so its payment reference never collides with
-an invoice's. Write the advance as the line item, and the supply period of the
+an invoice's. The line item is the advance; `supply` is the period of the
 work it pays for:
 
 ```yaml
@@ -66,17 +66,23 @@ items:
 quints invoice invoicing/invoices/globex-pf2026001.yaml
 ```
 
-The PDF is titled *Proforma-Rechnung* / *Pro forma invoice*, never
-*Rechnung*. It carries a note that it is a request for an advance, which the
-invoice will credit together with the VAT it contains. It asks to be paid,
-with a QR-bill or the SEPA block and a reference derived from `PF2026001`.
-Swiss law treats any document that bills a supply as an invoice, whatever its
-title,[^rechnung] and VAT shown on an invoice is owed as shown.[^art27] The
-advance's VAT is owed anyway, in the period the money arrives.[^advance-vat]
-The invoice that follows names that VAT again on the advance row, so it isn't
-shown twice (see step 3). The pro forma carries no Swico billing information, because
-the payer's accounts-payable software would book that as the invoice. It is
-filed under the advances account:
+The PDF:
+
+- is titled *Proforma-Rechnung* / *Pro forma invoice*, never *Rechnung*;
+- notes that it requests an advance, which the invoice will credit together
+  with the VAT it contains;
+- asks to be paid, with a QR-bill or the SEPA block and a reference derived
+  from `PF2026001`;
+- carries no Swico billing information, because the payer's accounts-payable
+  software would book that as the invoice.
+
+Swiss law treats any document that bills a supply as an invoice, whatever
+its title,[^rechnung] and VAT shown on an invoice is owed as
+shown.[^art27] The advance's VAT is owed anyway, in the period the money
+arrives.[^advance-vat] The invoice names that VAT again on the advance row,
+so it isn't shown twice (step 3).
+
+The pro forma is filed under the advances account:
 
 ```text
 documents/Liabilities/CH/GmbH/Advances/Export/2026-11-02.globex.PF2026001.pdf
@@ -98,14 +104,17 @@ the day the money arrived:
     Liabilities:CH:GmbH:Advances:Export      -10000.00 EUR
 ```
 
-A domestic advance also splits out its VAT: CHF 10'810 received is
-`Advances:Domestic -10000.00` and `OutputVAT -810.00`. In a foreign
-currency that VAT is owed in CHF at the rate of the day the money
-arrived,[^advance-rate] which the pro forma cannot know: its OutputVAT leg is
-marked `TODO`. Convert it with `quints vat convert <vat> EUR <day received>`.
-If the customer paid a different amount, split that amount: VAT = amount ×
-rate ÷ (100 + rate). Run `quints invoice` on the pro forma again and it
-reports *Advance received*, or *received X of Y* while it is paid in part.
+- **Domestic advance:** it also splits out its VAT. CHF 10'810 received is
+  `Advances:Domestic -10000.00` and `OutputVAT -810.00`.
+- **Foreign currency:** that VAT is owed in CHF at the rate of the day the
+  money arrived,[^advance-rate] which the pro forma cannot know, so its
+  OutputVAT leg is marked `TODO`. Convert it with
+  `quints vat convert <vat> EUR <day received>`.
+- **Another amount paid:** split what arrived. VAT = amount × rate ÷
+  (100 + rate).
+
+Run `quints invoice` on the pro forma again: it reports *Advance received*,
+or *received X of Y* while it is paid in part.
 
 ## 3. Invoice the supply and credit the advance
 
@@ -133,14 +142,17 @@ A pro forma paid in instalments is listed once per instalment; the
 cross-check adds them up.
 
 The PDF shows the invoice total with VAT on the whole supply, then each
-advance with the VAT it contained (*Anzahlung PF2026001 vom 20.11.2026, inkl.
-MWST 810.00* on a domestic invoice), then the **amount due**. The pro forma
-already showed that VAT. Naming it on the advance row shows that it is credited
-here, not charged a second time. An export invoice shows no VAT, so its advance
-rows show none either. The QR-bill asks for the amount due only. An invoice the
-advances cover in full asks for nothing and carries no payment part. The draft
-books the whole income, releases the advance as its receipt booked it, and
-leaves the rest as receivable:
+advance with the VAT it contained (*Anzahlung PF2026001 vom 20.11.2026,
+inkl. MWST 810.00* on a domestic invoice), then the **amount due**.
+
+- Naming the VAT on the advance row shows that it is credited here, not
+  charged a second time. An export invoice shows no VAT, so its advance rows
+  show none either.
+- The QR-bill asks for the amount due only. An invoice the advances cover in
+  full asks for nothing and carries no payment part.
+
+The draft books the whole income, releases the advance as its receipt booked
+it, and leaves the rest as receivable:
 
 ```beancount
 2027-01-29 * "Globex Ltd" "1 Jan – 31 Mar 2027 invoiced" ^INV2027001
@@ -152,17 +164,16 @@ leaves the rest as receivable:
       proforma: "PF2026001"
 ```
 
-In a foreign currency the advance leaves at the CHF it came in at (here EUR
-10'000 at 0.93 in November), and the share of income it becomes is valued at
-that too. The advances account then clears in CHF as well as in EUR; the rest
-of the income is valued at the invoice date.
-
-On a domestic invoice the OutputVAT leg is only the VAT not yet declared:
-CHF 1'620 on the whole supply, minus the 810 the advance declared. The
-cross-check confirms each advance against its receipts in the ledger and
-reports one booked at another amount, on the other advances account, or with
-VAT that does not match the invoice's rate — any of them would leave
-OutputVAT or the advances account out of balance.
+- **Foreign currency:** the advance leaves at the CHF it came in at (here
+  EUR 10'000 at 0.93 in November), and the share of income it becomes is
+  valued at that too. The advances account then clears in CHF as well as in
+  EUR. The rest of the income is valued at the invoice date.
+- **Domestic:** the OutputVAT leg is only the VAT not yet declared: CHF
+  1'620 on the whole supply, minus the 810 the advance declared.
+- **Cross-check:** each advance is confirmed against its receipts in the
+  ledger. One booked at another amount, on the other advances account, or
+  with VAT that does not match the invoice's rate is reported: any of them
+  would leave OutputVAT or the advances account out of balance.
 
 ## 4. File the two returns
 
@@ -172,16 +183,16 @@ quints vat report -p 2026-Q4
 quints vat report -p 2027-Q1
 ```
 
-Q4 2026 declares the advance, Q1 2027 the rest. The advance is settled by the
-work, not in money, so it is not revalued at year end: `quints fx revalue`
-skips it, and the balance sheet carries it at the CHF it was received at
-until the invoice releases it.
+Q4 2026 declares the advance, Q1 2027 the rest. The advance is settled by
+the work, not in money, so `quints fx revalue` skips it at year end: the
+balance sheet carries it at the CHF it was received at until the invoice
+releases it.
 
 ## What quints doesn't do here
 
 - **Match a pro forma's payment on import.** It isn't booked until paid, so
   `quints import` has no open item to match it to and leaves the draft `!`.
-  Complete it with the legs `quints invoice` printed for the pro forma.
+  Complete it as in step 2.
 
 [^rechnung]: Art. 3 Bst. k MWSTG: "Rechnung: jedes Dokument, mit dem gegenüber einer Drittperson über das Entgelt für eine Leistung abgerechnet wird, gleichgültig, wie dieses Dokument im Geschäftsverkehr bezeichnet wird". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_3)
 [^art27]: Art. 27 Abs. 1 and 2 MWSTG: "Wer nicht im Register der steuerpflichtigen Personen eingetragen ist …, darf in Rechnungen nicht auf die Steuer hinweisen"; who shows it anyway "schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).

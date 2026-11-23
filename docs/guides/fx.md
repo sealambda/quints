@@ -1,11 +1,10 @@
 # FX rates
 
 Keep `prices.bean` filled with official rates, so every foreign amount
-converts to CHF the way the tax authorities accept. For VAT, a foreign amount
-is converted at the rate the ESTV publishes, either the monthly average or
-the daily selling rate, and you keep your choice for at least a tax
-period.[^fx] quints uses the daily rate and fetches it from the BAZG at full
-precision.
+converts to CHF the way the tax authorities accept. For VAT, the ESTV
+publishes a monthly average and a daily selling rate, and you keep your
+choice for at least a tax period.[^fx] quints uses the daily rate, fetched
+from the BAZG at full precision.
 
 !!! abstract "Applies if"
     - **Legal form:** any.
@@ -22,52 +21,53 @@ quints prices sync                     # fill gaps and extend to today
 quints prices sync --from 2026-01-01   # repair mode: re-check every day
 ```
 
-Needs network. Every run extends each currency forward to today **and**
-fills interior gaps — days missing anywhere in the file's history are
-fetched too. Days the source has no rate for (weekends, holidays) are
-checked once and recorded in a `; quints: verified …` comment in the file
-header, so they are never re-fetched. A day only counts as checked once a
-newer rate is in the file: today, before the source publishes, is asked
-again next time. The scan never reaches back more than ten years, the time
-books are kept,[^keep] so a mistyped year in an old line can't start a
-century of requests. The file is written as rates arrive:
-interrupt a long backfill and the next run resumes where it left off.
-`--from` ignores the verified record and re-checks the whole range.
+Needs network. Each run extends every currency to today and fetches any day
+missing from the file's history.
 
-The BAZG API has no bulk endpoint — the fetch is one request per calendar
-day per currency, so a first backfill takes a while; a live per-currency
-progress bar shows how far along it is. Rates already in the file are never
-touched — manual overrides survive a sync, with any `; comment` on their
-line. The file is replaced in one step, so a crash mid-write leaves the
-old file. A line below the first price that isn't a price (another
-directive, a stray note) is refused before anything is fetched, because
-the rewrite would drop it.
+- **Days without a rate** (weekends, holidays) are checked once and recorded
+  in a `; quints: verified …` comment in the file header. A day counts as
+  checked only once a newer rate is in the file, so today is asked again
+  until the source publishes. `--from` ignores the record and re-checks the
+  whole range.
+- **Ten years back at most,** the time books are kept:[^keep] a mistyped
+  year in an old line can't start a century of requests.
+- **Interruptible.** The file is written as rates arrive, and the next run
+  resumes. Each write replaces the file in one step, so a crash leaves the
+  old one.
+- **Slow the first time.** The BAZG API takes one request per day per
+  currency. A progress bar per currency shows how far along it is.
+- **Manual overrides survive.** A rate already in the file is never
+  touched, and keeps the `; comment` on its line.
+- **Nothing but prices below the first price.** Another directive or a
+  stray note there is refused before anything is fetched, because the
+  rewrite would drop it.
 
-Which currencies to fetch, and from which source, comes from the ledger —
-the same commodity `price:` metadata `bean-price` reads, with the same
-syntax, so quints and the standard beancount tooling always agree on where
-rates come from:
+### Which currencies, from which source
+
+The ledger says, in the commodity `price:` metadata that `bean-price` reads:
 
 ```beancount
 2026-01-01 commodity EUR
   price: "CHF:beanprice_bazg/EUR"
 ```
 
-Any [beanprice](https://github.com/beancount/beanprice) source works —
+Any [beanprice](https://github.com/beancount/beanprice) source works:
 bundled ones by short name (`ecbrates/EUR-CHF`), third-party ones by module
-path — whether it serves bulk series or single days; quints drives it
-day-by-day when it has to. The full bean-price syntax is supported: fallback
-chains (`"CHF:beanprice_bazg/EUR,ecbrates/EUR-CHF"` — the first source that
-answers wins), inverted pairs (`^` prefix stores the reciprocal rate),
-several quote currencies separated by spaces, and `price: ""` to opt a
-commodity out. quints additionally refuses rates quoted in the wrong
-currency, so a wrong ticker fails loudly instead of corrupting the file.
-A `price:` value quints can't parse is listed, the other currencies still
-sync, and the run then exits 1, so a currency never goes unfetched quietly.
+path. The full bean-price syntax is supported:
 
-When the ledger declares no priced commodities (or you run outside a
-ledger), a `[prices]` section in `quints.toml` supplies the plan instead —
-and `--source MODULE` forces a specific module either way:
+- **Fallback chains:** `"CHF:beanprice_bazg/EUR,ecbrates/EUR-CHF"`. The
+  first source that answers wins.
+- **Inverted pairs:** a `^` prefix stores the reciprocal rate.
+- **Several quote currencies,** separated by spaces.
+- **`price: ""`** opts a commodity out.
+
+quints refuses a rate quoted in the wrong currency, so a wrong ticker fails
+instead of corrupting the file. A `price:` value it can't parse is listed,
+the other currencies still sync, and the run exits 1.
+
+When the ledger declares no priced commodity, or you run outside a ledger,
+`[prices]` in `quints.toml` supplies the plan. `--source MODULE` forces a
+module either way:
 
 ```toml
 [prices]
@@ -78,28 +78,21 @@ tickers = { EUR = "EUR-CHF" }   # 1 EUR = x CHF
 
 ## Why `quints prices sync` and not `bean-price`?
 
-Both read the same commodity metadata and drive the same sources —
-`bean-price` works fine against a quints ledger, and quints' own
-`beanprice-bazg` source is tested against it. The difference is what happens
-around the fetch:
+Both read the same metadata and drive the same sources. `bean-price` works
+against a quints ledger, and `beanprice-bazg` is tested against it. Sync
+adds:
 
-- **The file is maintained, not just appended to.** `bean-price` prints
-  directives for you to paste; sync owns `prices.bean` — sorted, one entry
-  per day, weekend echoes de-duplicated, manual overrides left alone.
-- **Gaps heal themselves.** `bean-price` fetches the dates you ask for.
-  Every sync run re-checks the whole history and fills any missing day, so
-  a stretch lost to a laptop shutdown or a source outage doesn't stay
-  missing silently. Days the source genuinely has no rate for (weekends,
-  holidays) are recorded in the file header and checked exactly once.
-- **Interrupts are cheap.** Rates are written as they arrive; killing a
-  2-year backfill loses at most one window, and the next run resumes.
+- **A maintained file.** `bean-price` prints directives for you to paste.
+  Sync owns `prices.bean`: sorted, one entry per day, weekend echoes
+  de-duplicated, manual overrides left alone.
+- **Gap filling.** `bean-price` fetches the dates you ask for. Sync
+  re-checks the whole history on every run.
 - **Full precision.** `bean-price --update` rounds through the ledger's
-  `display_precision`; sync writes the raw source rate (BAZG publishes five
-  decimals), which is what the ESTV-accepted daily rate actually is.
-- **Daily rates, by day.** quints converts at the official rate of the
-  transaction day (the daily option of Art. 45 MWSTV), not the latest
-  quote — so the unit of work here is "keep a complete daily series
-  current", which is a loop and a file format, not a one-shot fetch.
+  `display_precision`. Sync writes the raw source rate (BAZG publishes five
+  decimals).
+- **The rate of the day.** quints converts at the official rate of the
+  transaction day (the daily option of Art. 45 MWSTV), not at the latest
+  quote, so it needs a complete daily series.
 
 ## Year-end revaluation
 
@@ -107,17 +100,14 @@ around the fetch:
 quints fx revalue --at 2026-12-31
 ```
 
-Prints the year-end revaluation transaction:[^960] unrealized FX
-differences on non-CHF balances, booked against the configured
-`fx_gain`/`fx_loss` accounts. Review it, paste it into `books/<year>.bean`.
-Like everything in quints, it's printed for review — never written into your
-books directly.
+It prints the year-end revaluation transaction:[^960] unrealized FX
+differences on non-CHF balances, booked against the `fx_gain`/`fx_loss`
+accounts. Review it and paste it into `books/<year>.bean`.
+`quints close check` says whether it is still outstanding
+([Close the year](year-end.md)).
 
-It is one step of the year-end sequence — `quints close check` says whether
-it is still outstanding; see [Close the year](year-end.md).
-
-For VAT amounts on foreign invoices, use [`quints vat convert`](vat.md#foreign-currency-vat)
-instead of manual conversion.
+For VAT on a foreign invoice, use
+[`quints vat convert`](vat.md#foreign-currency-vat).
 
 [^fx]: Art. 45 MWSTV, [SR 641.201](https://www.fedlex.admin.ch/eli/cc/2009/828/de#art_45). Abs. 3: "nach dem von der ESTV veröffentlichten Wechselkurs, wobei wahlweise der Monatsmittelkurs oder der Tageskurs für den Verkauf von Devisen verwendet werden kann"; Abs. 5: the choice is kept "während mindestens einer Steuerperiode". Input tax follows the same rule (Art. 58 MWSTV). [MWST-Info 07 *Steuerbemessung und Steuersätze*, Ziff. 1.3.2](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/tableOfContent.xhtml?publicationId=1007607&lang=de); [ESTV, Fremdwährungskurse](https://www.estv.admin.ch/de/mwst-fremdwaehrungskurse); the daily rates: [BAZG](https://www.rates.bazg.admin.ch/home).
 [^960]: Valuation: Art. 960 ff. OR; the currency of the accounts and the disclosure of the rates used: Art. 958d Abs. 3 OR. [SR 220](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_958_d).

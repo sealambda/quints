@@ -1,17 +1,15 @@
 # Allocate customer payments
 
-A customer payment rarely matches one invoice to the cent. It comes in a few
-Rappen short, it covers last month's shortfall too, or it arrives as an
-instalment with no invoice number on it. This page covers how `quints import`
-drafts those payments, how to confirm them, and how to fix an allocation
+A payment that is short, covers two invoices or quotes none: how
+`quints import` drafts it, how you confirm it, and how to fix an allocation
 after it was booked.
 
 !!! abstract "Applies if"
     - **Legal form:** Einzelfirma, GmbH or AG. Same steps for all three.
-    - **VAT status and method:** any, until a write-off. Then not
-      VAT-registered and VAT-registered differ, see
-      [step 5](#5-write-off-what-will-never-be-paid). The effective method and
-      the Saldosteuersatz book a write-off the same way.
+    - **VAT status and method:** any. Only a write-off differs: without a
+      VAT leg when not registered, with one under the effective method and
+      the Saldosteuersatz alike
+      ([step 5](#5-write-off-what-will-never-be-paid)).
     - **Invoices:** booked to `Receivable:Trade` with an invoice id
       (`invoice:` or a `^link`), as `quints invoice` drafts them.
     - **Period:** any. Allocation is per payment, not per VAT period.
@@ -22,8 +20,7 @@ after it was booked.
 quints import ubs statements/ubs-2026.mt940
 ```
 
-Each incoming payment from a customer with open invoices is drafted one of
-four ways:
+A payment from a customer with open invoices is drafted one of four ways:
 
 | The payment | Draft | Receivable legs |
 |---|---|---|
@@ -32,7 +29,7 @@ four ways:
 | quotes an invoice and pays any other amount | `!` | one, on the quoted invoice |
 | quotes no invoice | `!` | one per invoice, oldest due first,[^art87] plus an untagged leg for what is left |
 
-Every `!` draft carries a `;` comment above it saying what was assumed:
+Every `!` draft carries a `;` comment saying what was assumed:
 
 ```beancount
 ; overpaid ACME202603 by 0.47 CHF — applied to older open ACME202602 0.47
@@ -45,21 +42,21 @@ Every `!` draft carries a `;` comment above it saying what was assumed:
     invoice: "ACME202602"
 ```
 
-A payment that quotes an invoice stays on that invoice: the customer named
-the debt.[^art86] quints moves money to another invoice only when the
-difference matches that invoice to the cent. It never writes anything off.
+A payment that quotes an invoice stays on it: the customer named the
+debt.[^art86] Money moves to another invoice only when the difference
+matches that invoice to the cent. Nothing is ever written off.
 
 ## 2. Confirm each `!` draft
 
-Read the comment, then check it against what the customer told you: a
-remittance advice, an email, the payment text.
+Check the comment against what the customer told you: a remittance advice,
+an email, the payment text.
 
 - **The allocation is right:** change `!` to `*`, delete the comment line,
   and move the draft to `books/<year>.bean`.
 - **It is wrong:** edit the `invoice:` tags and amounts on the receivable
-  legs before you move it. Their sum must still equal the payment.
-- **A short payment:** leave it on its invoice. Ask the customer for the
-  rest, or write it off in step 5.
+  legs first. Their sum must still equal the payment.
+- **A short payment:** leave it on its invoice. Ask for the rest, or write
+  it off in step 5.
 - **"left without an invoice":** keep the untagged leg. `quints receivables`
   lists it below the table until you know which invoice it pays.
 
@@ -71,12 +68,12 @@ quints receivables
 
 - An invoice with a negative open amount is marked **overpaid**.
 - An open invoice and an overpaid one of the same customer that net to zero
-  (for example `+0.47` and `-0.47`) get a one-line hint below the table. A
-  payment went to the wrong invoice. Fix it in step 4.
+  (`+0.47` and `-0.47`) get a hint below the table: a payment went to the
+  wrong invoice. Fix it in step 4.
 - Money on `Receivable:Trade` without an invoice id is listed below the
   table.
 
-The report never moves money between invoices.
+The report moves nothing.
 
 ### Remind what is overdue
 
@@ -85,26 +82,28 @@ quints receivables --remind --at 2026-10-15
 ```
 
 Writes one reminder PDF per overdue invoice, next to the invoice in
-`documents/` (`2026-10-15.acme.INV2026014.reminder.pdf`): the invoice again,
-titled as a reminder, with what was paid, the amount still open and a new
-deadline (`--days`, 10 by default). The payment part asks for the open
-amount under the invoice's own reference, so the payment matches on import
-like any other. An invoice is overdue once the `due:` date of its booking
-has passed, or, without one, the payment terms of its invoice file. Open
-items without an invoice file under `invoicing/` are listed, not reminded.
+`documents/` (`2026-10-15.acme.INV2026014.reminder.pdf`).
+
+- **The PDF** is the invoice again, titled as a reminder, with what was
+  paid, the amount still open and a new deadline (`--days`, default 10). Its
+  payment part asks for the open amount under the invoice's own reference,
+  so the payment matches on import.
+- **Overdue** means the `due:` date of the booking has passed or, without
+  one, the payment terms of the invoice file.
+- **Open items without an invoice file** under `invoicing/` (`--invoices`)
+  are listed, not reminded.
 
 A reminder puts the customer in default.[^verzug] It carries no fee and no
-default interest; if you charge them, book and invoice them yourself. quints
+default interest: if you charge them, book and invoice them yourself. quints
 writes the PDF and sends nothing.
 
 ## 4. Move a booked payment to another invoice
 
 Don't edit the original booking. Add a zero-sum **relink** entry: two
-receivable postings that cancel out, each tagged with the invoice it moves
-money to or from.
+receivable postings that cancel out, each tagged with its invoice.
 
-Here a payment of 4075.84 was booked in full to ACME202603, which was open for
-4075.37. The extra 0.47 was ACME202602's shortfall:
+Here 4075.84 was booked in full to ACME202603, which was open for 4075.37.
+The extra 0.47 was ACME202602's shortfall:
 
 ```beancount
 2026-05-31 * "ACME" "Relink 0.47 from ACME202603 to ACME202602"
@@ -114,16 +113,15 @@ Here a payment of 4075.84 was booked in full to ACME202603, which was open for
     invoice: "ACME202602"
 ```
 
-A posting's `invoice:` overrides the transaction's invoice id. That is what
-lets one transaction touch several invoices. The account balance doesn't
-change, and both invoices close.
+A posting's `invoice:` overrides the transaction's invoice id, so one
+transaction can touch several invoices. The account balance doesn't change,
+and both invoices close.
 
 ## 5. Write off what will never be paid
 
-Some differences are never paid: a rounding difference, a bank fee the
-customer deducted, a discount you agreed to. Book them as a reduction of the
-price paid (Entgeltsminderung). The revenue goes down, and so does the output
-VAT if you charged any.[^art41] quints doesn't book this for you.
+A rounding difference, a bank fee the customer deducted, a discount you
+agreed to: book it by hand as a reduction of the price (Entgeltsminderung).
+Revenue goes down, and so does the output VAT if you charged any.[^art41]
 
 For anything the customer should have on paper (a cancelled invoice, a lower
 price, a returned delivery), issue a
@@ -158,10 +156,10 @@ its ledger draft is this booking, per VAT rate, with a PDF to send.
 
 === "Saldosteuersatz"
 
-    Sales carry the statutory VAT to OutputVAT under the Saldosteuersatz too,
-    so the write-off is booked the same way. The `mwst: "reduction"` tag
-    deducts it in Ziffer 235 of the return. There it counts gross (0.47),
-    because the Saldosteuersatz applies to turnover including VAT:[^235]
+    Under the Saldosteuersatz, sales carry the statutory VAT to OutputVAT
+    too, so the booking is the same. The `mwst: "reduction"` tag puts it in
+    Ziffer 235, gross (0.47), because the Saldosteuersatz applies to turnover
+    including VAT:[^235]
 
     ```beancount
     2026-06-30 * "ACME" "ACME202602: 0.47 never paid"
@@ -176,9 +174,8 @@ Use your own legal form's accounts (`Income:CH:Einzelfirma:…` and so on).
 
 ## 6. Refund or set off after a credit note
 
-A credit note against an invoice the customer already paid leaves that
-invoice with a negative open amount: you owe them. `quints receivables`
-marks it **overpaid**.
+A credit note against a paid invoice leaves it with a negative open amount:
+you owe the customer. `quints receivables` marks it **overpaid**.
 
 INV2026014 for 1081.00 was paid on 20 July and cancelled on 10 August by
 credit note CN2026001. Pay the money back and book the refund against the
@@ -191,47 +188,44 @@ invoice:
   Assets:CH:GmbH:Current:UBS:CHF   -1081.00 CHF
 ```
 
-The invoice closes. Income and VAT were already reversed by the credit
-note's own booking, so the refund touches neither.
+The invoice closes. The credit note's own booking already reversed income
+and VAT, so the refund touches neither.
 
-If the customer would rather have it set off against another open invoice,
-don't refund: move the credit there with a relink entry as in step 4, from
-`INV2026014` to the invoice it should pay.
+To set it off against another open invoice instead, don't refund: relink the
+credit as in step 4, from `INV2026014` to the invoice it should pay.
 
 ## What quints doesn't do here
 
 - **Rank a debt under Betreibung first.** Art. 87 Abs. 1 OR applies an
-  unassigned payment to the debt the customer was first prosecuted for
-  before it looks at due dates. quints doesn't know about Betreibungen. If
-  one is running, edit the draft's `invoice:` tags by hand.
-- **Apply a payment when nothing is due yet.** In that case Art. 87 Abs. 3 OR
-  picks the debt that is least secured for you. quints still orders by due
-  date. Check the draft.
-- **Know your due dates.** `quints invoice` doesn't write a `due:` onto the
+  unassigned payment to the debt the customer was first prosecuted for,
+  before due dates. quints doesn't know about Betreibungen: if one is
+  running, edit the draft's `invoice:` tags by hand.
+- **Apply a payment when nothing is due yet.** Art. 87 Abs. 3 OR then picks
+  the debt that is least secured for you. quints still orders by due date.
+  Check the draft.
+- **Know your due dates.** `quints invoice` writes no `due:` onto the
   invoice booking, so quints orders by invoice date and says so in the
   comment. Add `due: YYYY-MM-DD` to the invoice transaction to order by due
-  date instead.
+  date.
 - **Book write-offs, Skonto or bad debts.** Book them by hand as in step 5.
-- **Allocate supplier payments by amount.** `quints import` flags a payment
-  that quotes a bill but doesn't pay its open amount (`!` with a comment). It
-  doesn't split payments across bills. You choose what you pay, so tag the
-  payment yourself, with a posting-level `bill:` per bill.
+- **Allocate supplier payments by amount.** A payment that quotes a bill but
+  doesn't pay its open amount is drafted `!` with a comment, and never split
+  across bills. Tag it yourself, with a posting-level `bill:` per bill.
 
 ??? info "How it works"
-    - **Open amounts** come from `quints receivables`' own computation, at
-      the day of the import. One payment in an import uses up what it
-      allocates, so a later payment in the same statement can't settle the
-      same invoice again.
+    - **Open amounts** are what `quints receivables` computes on the day of
+      the import. A payment uses up what it allocates, so a later payment in
+      the same statement can't settle the same invoice again.
     - **An exact amount** means within 0.005.
     - **"Older open invoices"** (row 2 of the table) are the other open
       invoices of the same payee and currency, oldest due first. quints adds
       them up one at a time and stops at the first sum that equals the
       extra. If none does, the whole payment stays on the quoted invoice.
-    - **A payment with no reference** is matched to a customer the way
-      supplier payments are: the payment's payee name contains the invoice's
-      payee name, or the other way round. If invoices of more than one payee
-      fit, nothing is allocated. A draft that a payee rule already sent to
-      another account than `Receivable:Trade` is left as the rule drafted it.
+    - **A payment with no reference** is matched to a customer by name: the
+      payment's payee contains the invoice's payee, or the other way round.
+      If invoices of more than one payee fit, nothing is allocated. A draft
+      that a payee rule sent to another account than `Receivable:Trade` is
+      left as drafted.
     - **Same-day debts** share a payment that doesn't cover them all in
       proportion to what is open on each.[^art87] The last share absorbs the
       rounding, so the legs always add up to the payment.

@@ -8,7 +8,8 @@ Skills for an AI agent that keeps Swiss books with
 - **reconcile:** bank and payment-provider statements imported, every
   draft worked into the books, the balance assertions landed.
 - **close-vat-period:** a VAT quarter, half-year or year checked for
-  completeness, reported, settled, then tracked until it is filed and paid.
+  completeness, reported, exported for upload, settled, then tracked until
+  it is paid.
 
 The skills say how a job is done. The books' own `AGENTS.md`, written by
 `quints init`, says who the company is: legal form, VAT status, importers.

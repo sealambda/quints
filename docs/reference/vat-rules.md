@@ -1,14 +1,14 @@
 # How quints fills the VAT return
 
-What `quints vat report` does with each booking: which Ziffer it lands in, at
-which rate, and what it checks. Read this to predict a result or tag a booking
-that the defaults would put somewhere else. The steps for filing are in
+What `quints vat report` does with each booking: its Ziffer, its rate, and
+what it checks. Read it to predict a result, or to tag a booking the
+defaults would put elsewhere. The filing steps are in
 [File your VAT return](../guides/vat.md).
 
 ## The rates
 
 Rates are law,[^rates] so they ship with quints, dated. You never put one in
-`quints.toml`. The form has two rate vintages side by side, one Ziffer each:
+`quints.toml`. The form has two rate vintages, one Ziffer each:
 
 | Rate class | From 01.01.2024 | Ziffer | Until 31.12.2023 | Ziffer |
 | --- | --- | --- | --- | --- |
@@ -18,13 +18,12 @@ Rates are law,[^rates] so they ship with quints, dated. You never put one in
 | Bezugsteuer (Art. 45 ff.) | — | 383 | — | 382 |
 
 quints picks the vintage from the **transaction date**. A supply made in
-2023 but invoiced later still belongs in the old column: tag that transaction
-`mwst: "old_rate"` and it files under 302/312/342. The report prints only
-the rows in force in the period, plus any old-rate row that carries an
-amount.
+2023 but invoiced later belongs in the old column: tag the transaction
+`mwst: "old_rate"` and it files under 302/312/342. The report prints the
+rows in force in the period, plus any old-rate row that carries an amount.
 
-The Saldosteuersätze the ESTV can grant are law too,[^sss-rates] so a rate in
-`quints.toml` that isn't on the list is rejected:
+The Saldosteuersätze the ESTV can grant are law too:[^sss-rates] a rate in
+`quints.toml` that isn't on the list is rejected.
 
 | From 01.01.2024 | 0.1 | 0.6 | 1.3 | 2.1 | 3.0 | 3.7 | 4.5 | 5.3 | 6.2 | 6.8 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -35,7 +34,7 @@ activity worth more than 10 % of taxable turnover.
 
 ## Which Ziffer a booking lands in
 
-Four rules, applied in order. The first one that matches wins.
+Four rules, in order. The first that matches wins.
 
 **1. A `mwst:` tag** on the posting, or else on the transaction. The value is
 a space-separated list of tokens:
@@ -61,8 +60,8 @@ a space-separated list of tokens:
 | `vorsteuerkuerzung` | Ziffer 420 (Art. 33 Abs. 2) |
 | `sss=6.2` | Saldosteuersatz only: the granted rate this supply falls under |
 
-An unknown token is never ignored. It is listed in the report's *Prüfung*
-table, so a typo can't quietly change a return.
+An unknown token is never ignored. It is listed under *Prüfung*, so a typo
+can't quietly change a return.
 
 ```beancount
 2026-09-10 * "Altkunde" "2023 supply, invoiced now"
@@ -79,21 +78,21 @@ table, so a typo can't quietly change a return.
   turnover, and its OutputVAT reversal reduces the matching rate row.
 - **Income outside 3000–3899** isn't *Entgelt* and stays out of the return:
   realised FX gains (6950), rounding, Bestandesänderungen (39xx). The
-  exception is a transaction that charges OutputVAT with no 3000–3899 leg
-  beside it, such as a side-business sale on 7000. VAT was charged, so it
-  was a taxable supply,[^entgelt] and its net is counted with its tax.
+  exception is a transaction that charges OutputVAT with no 3000–3899 leg,
+  such as a side-business sale on 7000. VAT was charged, so it was a
+  taxable supply,[^entgelt] and its net is counted with its tax.
 - **OutputVAT with no income leg at all**, such as the sale of a fixed asset
   that credits the asset account, declares the Entgelt it implies: the VAT
   divided by the standard rate goes into 200 and 303. The form has no tax
   without turnover. Under the Saldosteuersatz it is listed under *Prüfung*
   instead.
-- **Income on 7000–8999 without a tag** (betrieblicher Nebenerfolg,
-  betriebsfremder or ausserordentlicher Ertrag) and without OutputVAT is
-  listed under *Prüfung* with its amount, and stays out of the figures. Its
-  code can't tell whether it is Entgelt: exempt rent belongs in 200 and 230,
+- **Untagged income on 7000–8999** (betrieblicher Nebenerfolg,
+  betriebsfremder or ausserordentlicher Ertrag) without OutputVAT is listed
+  under *Prüfung* with its amount, and stays out of the figures. Its code
+  can't tell whether it is Entgelt: exempt rent belongs in 200 and 230,
   Schadenersatz in 910. Tag it `exempt`, `taxable`, `donation`, `subvention`
-  or `not_entgelt` so Ziffer 200 is complete. Financial income (6950–6999)
-  and FX gains are not affected.
+  or `not_entgelt`. Financial income (6950–6999) and FX gains are not
+  affected.
 - **Input VAT** is split into 400 or 405 by the **counter-leg's** code
   (below).
 
@@ -110,27 +109,27 @@ reduced_marker = ":Reduced"           # 2.6 % → Ziffer 313
 lodging_marker = ":Lodging"           # 3.8 % → Ziffer 343
 ```
 
-So `Income:CH:GmbH:Books:Reduced` is reduced-rate turnover without any tag,
-and `Income:CH:GmbH:Trade:ExportGoods` lands in 220 rather than 221. Set a
-marker to `""` to turn it off.
+So `Income:CH:GmbH:Books:Reduced` is reduced-rate turnover without a tag,
+and `Income:CH:GmbH:Trade:ExportGoods` lands in 220, not 221. Set a marker
+to `""` to turn it off.
 
 **4. Otherwise**, a booking is domestic turnover at the standard rate.
 
-Ziffer 200 is the gross worldwide turnover; 289 adds up 220–280; 299 is
+Ziffer 200 is the gross worldwide turnover. 289 adds up 220–280. 299 is
 200 − 289 and always equals the net of the section-II rate rows. If it
 doesn't, some turnover landed nowhere, and the report says so.
 
 ## Input VAT: 400 vs 405
 
-The form splits the deduction in two. quints decides from the **KMU code of
-the dominant counter-leg**, the posting with the largest CHF amount:
+quints splits the deduction by the **KMU code of the dominant counter-leg**,
+the posting with the largest CHF amount:
 
 - Kontenklasse **4** (Material-, Waren-, Dienstleistungsaufwand) → **400**
 - everything else → **405**: investments (**1400–1799**), personnel and
   übriger Betriebsaufwand (**5/6/7**), or no code at all
 
-For a consulting company, almost everything is 405. The total (479) is the
-same either way, but the form asks for the split. A tag overrides it.
+For a consulting company, almost everything is 405. A tag overrides the
+split:
 
 ```beancount
 2026-07-03 * "Eigenverbrauch" "Vorsteuerkorrektur (Art. 31)"
@@ -139,15 +138,19 @@ same either way, but the form asks for the split. A tag overrides it.
   Expenses:CH:GmbH:Material      30.00 CHF
 ```
 
-479 = 400 + 405 + 410 − 415 − 420, exactly as the form computes it.
+479 = 400 + 405 + 410 − 415 − 420, as the form computes it.
 
 **Credits to InputVAT.** A supplier's credit note credits InputVAT together
 with the expense or investment it reduces. That credit reduces 400 or 405 in
-the period it is booked.[^art41] A credit with no such leg, i.e. input VAT moved
-into cost, is ambiguous. Dated on `vat_registered_since`, it is read as the
-reversal of input VAT booked before you were liable: never deducted, so it
-stays out of the return. On any other day, tag it `vorsteuerkorrektur` or
-`vorsteuerkuerzung`. Untagged, it is listed under *Prüfung* and left out.
+the period it is booked.[^art41] A credit with no such leg (input VAT moved
+into cost) is ambiguous:
+
+- **Dated on `vat_registered_since`,** it is read as the reversal of input
+  VAT booked before you were liable. That was never deducted, so it stays
+  out of the return.
+- **On any other day,** tag it `vorsteuerkorrektur` or `vorsteuerkuerzung`.
+  Untagged, it is listed under *Prüfung* and left out.
+
 A Bezugsteuer debit outside a settlement (a foreign supplier's credit note)
 reduces 383/382 the same way.
 
@@ -155,11 +158,11 @@ reduces 383/382 the same way.
 
 `399 − 479` is the period's result.
 
-- **Positive:** it prints as **Ziffer 500** (zu bezahlender Betrag).
-- **Negative:** it prints as **Ziffer 510** (Guthaben der steuerpflichtigen
-  Person). That is a claim on the ESTV: the settlement books it as a debit
-  balance on `PayableVAT`, and `quints vat status` shows it as a negative
-  amount until it is refunded or offset.
+- **Positive:** **Ziffer 500** (zu bezahlender Betrag).
+- **Negative:** **Ziffer 510** (Guthaben der steuerpflichtigen Person), a
+  claim on the ESTV. The settlement books it as a debit balance on
+  `PayableVAT`, and `quints vat status` shows it as a negative amount until
+  it is refunded or offset.
 
 ## The tax is turnover × rate
 
@@ -169,9 +172,9 @@ end.[^ech-calc] The ESTV portal computes it the same way and rejects an
 uploaded return whose 500/510 differs.
 
 So the OutputVAT your invoices posted is checked, not declared. On every
-transaction with turnover it must equal net × rate, within a few Rappen. The
-report lists any mismatch, and so does `--json` under `violations`. Typical
-causes are the old rate applied by habit, a missing VAT leg, or VAT on an
+transaction with turnover it must equal net × rate, within a few Rappen. A
+mismatch is listed in the report, and in `--json` under `violations`.
+Typical causes: the old rate applied by habit, a missing VAT leg, VAT on an
 exempt supply. A sale with legs at different rates (100.00 at 8.1 % and
 1000.00 at 2.6 %, posting 34.10) is checked as a whole, and each net lands
 on its own rate row.
@@ -189,14 +192,15 @@ between 299 and the rate rows goes to the largest row.
 
 An amount in another currency is valued at the rate in `prices.bean` for its
 date, or the latest one before it. With no rate at all, the amount is left
-out of the return and listed. It is never counted as CHF 0: run
-`quints prices sync`. A VAT leg (OutputVAT, InputVAT, Bezugsteuer) booked in
-another currency is counted at its CHF value and listed, because the return
-and the settlement are in CHF. Book VAT legs in CHF with `quints vat convert`.
+out of the return and listed, never counted as CHF 0: run
+`quints prices sync`.
 
-The ledger's own loader errors are listed the same way, first. A file the
-loader couldn't read, or a transaction with a syntax error, is missing from
-every Ziffer, so the report still renders and names what is missing.
+A VAT leg (OutputVAT, InputVAT, Bezugsteuer) booked in another currency is
+counted at its CHF value and listed, because the return and the settlement
+are in CHF. Book VAT legs in CHF with `quints vat convert`.
+
+Ledger loader errors are listed first. A file the loader couldn't read, or
+a transaction with a syntax error, is missing from every Ziffer.
 
 ## Under the Saldosteuersatz
 
@@ -221,8 +225,7 @@ every Ziffer, so the report still renders and names what is missing.
     On the effective form, 415 is *Vorsteuerkorrekturen* (mixed use,
     Eigenverbrauch, and the switch to the Saldosteuersatz). On the
     Saldosteuersatz form, 415 is *Korrekturen bei Übernahme im
-    Meldeverfahren*.[^sss-form] quints fills neither form's 415 from the
-    other's meaning, and doesn't produce the Saldosteuersatz form's 415.
+    Meldeverfahren*.[^sss-form] quints fills only the effective form's.
 
 ## The periods and their dates
 
@@ -240,10 +243,10 @@ every Ziffer, so the report still renders and names what is missing.
 
 `quints vat report --json` returns:
 
-- **`zNNN`:** each Ziffer as a key, with a decimal string rounded to the
-  Rappen, exactly as the text report prints it. `z500` is the
-  *signed* net (the figure the settlement posts); `z510` carries a credit as
-  a positive number.
+- **`zNNN`:** each Ziffer, as a decimal string rounded to the Rappen,
+  exactly as the text report prints it. `z500` is the *signed* net (the
+  figure the settlement posts); `z510` carries a credit as a positive
+  number.
 - **`rate_rows`:** the section-II lines, with their rate class, vintage and,
   under the Saldosteuersatz, the granted rate's `label` and `activity`.
   `tax` is `net` × `rate`.

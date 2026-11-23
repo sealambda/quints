@@ -4,46 +4,41 @@
 [![PyPI](https://img.shields.io/pypi/v/quints)](https://pypi.org/project/quints/)
 [![Docs](https://img.shields.io/badge/docs-sealambda.github.io%2Fquints-blue)](https://sealambda.github.io/quints/)
 
-Plain-text accounting for Swiss micro-companies, on top of
+Swiss bookkeeping as plain text: VAT (MWST) returns, QR-bill invoices and
+statutory statements for a GmbH, AG or Einzelfirma, on
 [beancount](https://github.com/beancount/beancount) and
 [Fava](https://github.com/beancount/fava).
 
-Swiss VAT (MWST) returns, Bezugsteuer, QR-bill invoicing, statutory KMU
-statements, and official BAZG FX rates — the things a Swiss micro-company
-(GmbH, AG, or Einzelfirma) actually has to do, on a ledger you own as text.
-
-`quints` is built to be **driven by an AI coding agent** (Claude Code, Codex,
-…): it's a deterministic CLI with machine-readable output, so the agent
-proposes bookings and `quints` checks and reports on them. It never calls a
-model itself.
+quints is a deterministic CLI with machine-readable output, built to be
+driven by an AI coding agent (Claude Code, Codex, …). The agent proposes
+bookings; quints checks them and computes every figure you file. It never
+calls a model.
 
 ![quints init scaffolds sample books, quints check validates them, and quints vat report prints the Form-310 VAT return](docs/assets/quickstart.gif)
 
-**Docs: [sealambda.github.io/quints](https://sealambda.github.io/quints/)** —
-every command shown there is executed by the test suite.
+**Docs: [sealambda.github.io/quints](https://sealambda.github.io/quints/).**
+Every command shown there runs in the test suite.
 
 ## Install
 
 ```bash
 uv tool install quints        # or: pipx install quints  /  pip install quints
-quints --help
 ```
 
-Needs Python 3.11+ (uv installs it for you if missing). Typst — for the PDFs —
-and everything else come bundled; nothing more to install.
+Python 3.11+ (uv installs it if missing). Typst, for the PDFs, is bundled.
 
 ## Quick start
 
-Scaffold a project with a sample quarter already booked, and run against it:
+Sample books, with a quarter already booked:
 
 ```bash
-quints init my-books --samples --yes   # drop --yes to answer the questionnaire
+quints init my-books --samples --yes
 cd my-books
+quints check
 quints vat report -p 2026-Q3
 ```
 
-For real books, hand the setup to your AI agent. Paste this into Claude
-Code, Codex or another coding agent:
+For real books, paste this into Claude Code, Codex or another coding agent:
 
 <!-- agent-prompt -->
 ```text
@@ -65,156 +60,92 @@ https://sealambda.github.io/quints/llms.txt
 
 Or do it by hand: [Getting started](https://sealambda.github.io/quints/getting-started/).
 
-`quints init` writes a runnable project. Drop `--samples` for empty books.
-
-| File | What it holds |
-|---|---|
-| `accounts.bean` | Swiss KMU chart of accounts, every account mapped to its Kontenrahmen code |
-| `books/<year>.bean` | transactions, one file per fiscal year |
-| `quints.toml` | everything entity-specific: name, VAT registration, account names, importer rules |
-| `pyproject.toml` | after `uv sync`, the plain beancount toolchain (`bean-check main.bean`, `fava main.bean`) works too |
-| `AGENTS.md`, `CLAUDE.md` | how a coding agent extends the books and validates them with `quints check` |
-| `.claude/settings.json` | Claude Code runs `quints check` after each edit it makes, and sees the problems the edit brought |
-| `.claude/skills/`, `.agents/skills/` | step-by-step skills for the recurring jobs: book an expense, reconcile statements, close a VAT period |
-| `.github/workflows/books.yml` | `quints check` on every pull request, the statements every month (`--ci gitlab` or `--ci none` instead) |
-
-In Claude Code, the same skills install as a plugin, for any books:
+`quints init` writes a plain beancount project and commits it to a new git
+repository: the Swiss KMU chart of accounts for your legal form,
+`quints.toml` for everything entity-specific, an `AGENTS.md` playbook and
+skills for a coding agent, and a CI workflow that runs `quints check` on
+every pull request. In Claude Code, the skills also install as a plugin:
 
 ```text
 /plugin install quints --marketplace sealambda/quints
 ```
 
-The project starts as a git repository with the pristine scaffold committed,
-so every change is a reviewable diff.
+## What it does
 
-It asks for your legal form — `gmbh`, `ag`, or `einzelfirma` (sole
-proprietorship / freelancer) — and scaffolds the matching equity block from
-the official KMU Kontenrahmen: share capital for a GmbH/AG; owner's equity,
-capital contributions, and the Privat account for an Einzelunternehmen. The
-account namespace follows (`:CH:GmbH:`, `:CH:AG:`, `:CH:Einzelfirma:`).
-VAT *rates* are law, not configuration, and ship date-ranged in code.
-
-## What it does — by the job
-
-Run these from your project directory; with `--samples` they work out of the box.
-
-### Swiss VAT (MWST), from the threshold to the last return
+These run as shown in the sample books.
 
 ```bash
-quints vat liability            # must you register? turnover vs the CHF 100'000 threshold
-quints vat report -p 2026-Q3    # the return, Ziffer by Ziffer — effective or Saldosteuersatz
-quints vat export -p 2026-Q3    # the return as eCH-0217 XML, to upload in the ESTV portal
-quints vat settle -p 2026-Q3    # the settlement entry to paste once the return is filed
+# VAT (MWST), effective or Saldosteuersatz method
+quints vat liability            # must you register? turnover vs CHF 100'000
+quints vat report -p 2026-Q3    # the return, Ziffer by Ziffer
+quints vat export -p 2026-Q3    # the return as eCH-0217 XML, for the ESTV portal
+quints vat settle -p 2026-Q3    # the settlement entry to paste once filed
 quints vat status               # VAT filed but not yet paid, with due dates
-```
 
-Registration, a switch of method, annual filing and deregistration are dated
-entries in `quints.toml`; every period is computed under the rules in force
-for it, and invoices dated before registration carry no VAT.
+# Open items
+quints receivables                            # open invoices, aged by due date
+quints receivables --remind --at 2026-10-15   # a reminder PDF per overdue invoice
+quints payables                               # open supplier bills, aged by due date
 
-### See who owes you, and whom you owe
-
-```bash
-quints receivables                              # open invoices, aged by due date
-quints receivables --remind --at 2026-10-15     # a reminder PDF per overdue invoice
-quints payables                                 # open supplier bills, aged by due date
-```
-
-![quints receivables lists open invoices aged by due date](docs/assets/receivables.gif)
-
-### Close the year, with statements for your Treuhänder / auditor
-
-```bash
-quints close check --year 2026                   # what is still open before the year can close
+# Year-end
+quints close check --year 2026                   # what is still open
+quints fx revalue --at 2026-12-31                # FX revaluation entry (Art. 960 ff. OR)
 quints report bilanz --at 2026-12-31             # balance sheet (OR Art. 959a)
 quints report erfolg --year 2026                 # income statement (OR Art. 959b)
 quints report statements --year 2026 --lang de   # both, as one PDF
-```
 
-![Generated Bilanz page of the statements PDF, grouped by KMU
-code](docs/assets/statements.png)
-
-### Check every change in CI
-
-```bash
+# The gate: ledger, statements, every VAT return not settled yet
 quints check --output-format github   # also gitlab, azure, sarif, json
+quints check --review                 # plus what is still to do: drafts, missing documents
+quints explain vat-mismatch           # what a code means and how to fix it, offline
+
+# Invoicing
+quints invoice invoicing/invoices/acme-2026-07.yaml   # QR-bill PDF, cross-checked against the ledger
 ```
 
-`quints check` is the one gate: the ledger, the statutory statements and
-every VAT return not settled yet. Each problem is annotated at its file and
-line, in the runner's own format. A GitHub action
-(`sealambda/quints/actions/check`), a reusable statements workflow, and
-`quints diff` / `quints digest` for pull-request and weekly summaries are in
-[Check the books in CI](https://sealambda.github.io/quints/guides/ci/).
-
-### Check every edit, before CI
-
+<!-- no-test: needs a statement file, and the network -->
 ```bash
-quints check --review    # also what is still to do: drafts, missing documents
-quints explain vat-mismatch
+quints import ubs <statement.mt940>   # drafts into staging/, never into your books
+quints prices sync                    # official BAZG/EZV daily CHF rates
 ```
 
-An agent gets the same check after each edit it makes, cut down to the
-problems that edit brought, and an editor gets it on every save
-(`quints lsp`). `quints explain` works offline, for a model that does too.
-Setup for Claude Code, OpenCode, Helix and Neovim is in
-[Check the books as you edit](https://sealambda.github.io/quints/guides/editing/).
-
-### Keep FX rates right
-
-<!-- no-test: prices sync needs network; docs/guides/fx.md covers revalue -->
-```bash
-quints prices sync                    # official BAZG/EZV daily CHF rates (needs network)
-quints fx revalue --at 2026-12-31     # year-end revaluation entry to paste (Art. 960 ff. OR)
-```
-
-### Draft bank / PSP statements into a review area
-
-```bash
-quints import ubs <statement.mt940>   # → staging/, never straight into your books
-```
-
-Yapeal, Wise and Stripe importers exist too (`import yapeal` for a CSV export;
-`import wise` / `import stripe` with `--fetch` to pull from their APIs, and
-`--invoices` to file each Stripe charge's customer invoice PDF into `inbox/`).
-Drafts land in `staging/` flagged for the VAT decision + a linked document;
-nothing reaches your books until you review it.
-
-### Send a Swiss QR-bill invoice
-
-```bash
-quints invoice <invoice.yaml>         # QR-bill PDF, cross-checked against the ledger
-```
-
-Renders a QR-bill PDF (domestic or export / reverse-charge) and reconciles the
-total against the matching booking in your ledger, so an invoice can't silently
-diverge from your books. The PDF is filed under `documents/` in the income
-account's folder, date-prefixed — where beancount and Fava expect documents.
-It is PDF/A with Factur-X data embedded, labelled in German, French, Italian,
-English or Spanish. Discounts, pass-through items, credit notes, pro forma
-invoices and the next invoice of a recurring one are covered in
-[Invoicing](https://sealambda.github.io/quints/guides/invoicing/).
+- **VAT.** Registration, a switch of method, annual filing and
+  deregistration are dated entries in `quints.toml`. Each period is computed
+  under the rules in force for it. Rates are law, not configuration: they
+  ship date-ranged in code.
+  [Register, switch method, deregister](https://sealambda.github.io/quints/guides/vat-registration/),
+  [File your VAT return](https://sealambda.github.io/quints/guides/vat/).
+- **Check.** Every problem prints at its file and line, in the CI runner's
+  own format. There is a GitHub action (`sealambda/quints/actions/check`), a
+  reusable statements workflow, and `quints diff` and `quints digest` for
+  pull-request and weekly summaries:
+  [Check the books in CI](https://sealambda.github.io/quints/guides/ci/).
+  An agent gets the check after each edit, cut down to what that edit
+  brought, and an editor gets it on save (`quints lsp`):
+  [Check the books as you edit](https://sealambda.github.io/quints/guides/editing/).
+- **Imports.** UBS (MT940), Yapeal (CSV), Wise and Stripe (`--fetch` pulls
+  from their APIs). Each draft is flagged for its VAT decision and its
+  document. Nothing reaches your books until you review it.
+  [Import statements](https://sealambda.github.io/quints/guides/importing/).
+- **Invoices.** Domestic or export, as PDF/A with Factur-X data embedded, in
+  German, French, Italian, English or Spanish, filed under `documents/`.
+  Discounts, pass-through items, credit notes, pro forma and recurring
+  invoices: [Invoicing](https://sealambda.github.io/quints/guides/invoicing/).
 
 ![Generated Swiss QR-bill invoice PDF with payment
 part](docs/assets/invoice-qr-bill.png)
 
-> **Ready-to-run samples:** the repo's
-> [`packages/quints/examples/`](packages/quints/examples) ships a working
-> `invoicing/` and `statements/` set. Clone the repo, `cd` in, and try
-> `quints invoice invoicing/invoices/acme-2026-07.yaml` and
-> `quints import ubs statements/ubs-2026.mt940`. To run them against the
-> checkout rather than a released `quints` on your `PATH`, use the workspace
-> environment: `uv run --project ../.. quints …` from inside `examples/`.
+![Generated Bilanz page of the statements PDF, grouped by KMU
+code](docs/assets/statements.png)
 
-## The building blocks
+## Packages
 
-`quints` is assembled from standalone distributions, each useful on its own in
-any beancount setup. They all live in this repo and are all published to PyPI —
-installing `quints` pulls them in.
+Six distributions live in this repo, each usable on its own in any beancount
+setup. Installing `quints` pulls in the other five.
 
 | Package | What it does |
 |---|---|
-| [`quints`](packages/quints) | Swiss VAT (MWST) reports & settlement, Bezugsteuer helpers, QR-bill invoicing, KMU statutory statements (OR Art. 959a/959b), statement importing into a review staging area, Fava extension |
+| [`quints`](packages/quints) | the CLI: VAT, invoicing, statements, importing into staging, a Fava extension |
 | [`beangulp-mt940`](packages/beangulp-mt940) | beangulp importer for SWIFT MT940 bank statements (UBS et al.) |
 | [`beangulp-yapeal`](packages/beangulp-yapeal) | beangulp importer for Yapeal CSV bank statements |
 | [`beangulp-wise`](packages/beangulp-wise) | beangulp importer for Wise balance statements, with an SCA-capable API client |
@@ -230,11 +161,9 @@ uv sync
 make check     # ruff, basedpyright, import-linter, deptry, vulture, pytest
 ```
 
-`make check` is the quality gate for the Python code. CI runs more checks:
-[CONTRIBUTING.md](CONTRIBUTING.md#the-quality-gate) lists them. Pushing a
-`vX.Y.Z` tag builds and publishes every distribution to PyPI (trusted
-publishing). See [CONTRIBUTING.md](CONTRIBUTING.md) for the architecture and
-conventions.
+Architecture, conventions and the other CI checks are in
+[CONTRIBUTING.md](CONTRIBUTING.md). Pushing a `vX.Y.Z` tag publishes every
+distribution to PyPI.
 
 ## License
 

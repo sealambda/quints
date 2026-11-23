@@ -1,13 +1,14 @@
 # quints
 
-Plain-text accounting for Swiss micro-companies (GmbH, AG, or Einzelfirma),
-on top of [beancount](https://github.com/beancount/beancount) and
+Swiss bookkeeping as plain text: VAT (MWST) returns, QR-bill invoices and
+statutory statements for a GmbH, AG or Einzelfirma, on
+[beancount](https://github.com/beancount/beancount) and
 [Fava](https://github.com/beancount/fava).
 
 ![quints init scaffolds sample books, quints check validates them, and quints vat report prints the Form-310 VAT return](https://raw.githubusercontent.com/sealambda/quints/main/docs/assets/quickstart.gif)
 
-**Docs: [sealambda.github.io/quints](https://sealambda.github.io/quints/)** —
-every command shown there is executed by the test suite.
+**Docs: [sealambda.github.io/quints](https://sealambda.github.io/quints/).**
+Every command shown there runs in the test suite.
 
 ## Install
 
@@ -23,8 +24,9 @@ Needs Python 3.11+. Typst, for the PDFs, comes bundled.
 ## What it does
 
 - **VAT (MWST)**: the registration threshold, the return Ziffer by Ziffer
-  under the effective or the Saldosteuersatz method, settlement entries,
-  what is filed but unpaid, and Bezugsteuer (Art. 45 ff. MWSTG).
+  under the effective or the Saldosteuersatz method, its eCH-0217 XML for
+  the ESTV portal, settlement entries, what is filed but unpaid, and
+  Bezugsteuer (Art. 45 ff. MWSTG).
   Registration, a method switch and deregistration are dated, and every
   period is computed under the rules in force for it.
 - **Invoicing**: Swiss QR-bill and export invoices as PDF/A with embedded
@@ -43,10 +45,15 @@ Needs Python 3.11+. Typst, for the PDFs, comes bundled.
 - **Year-end**: a closing checklist, the depreciation entry and the FX
   revaluation (Art. 960 ff. OR), at official BAZG/EZV rates via
   [beanprice-bazg](https://pypi.org/project/beanprice-bazg/).
+- **One gate**: `quints check` validates the ledger, the statements and
+  every VAT return not settled yet, and reports each problem at its file and
+  line: in the terminal, in CI (GitHub, GitLab, Azure, SARIF) and in an
+  editor (`quints lsp`).
 - **Fava extension**: a review panel inside the UI you already run.
 
 quints is deterministic and every reporting command takes `--json`, so an AI
-coding agent can drive it. It never calls a model itself.
+coding agent can drive it. `quints init` ships the playbook and the skills
+for one. quints never calls a model itself.
 
 Everything entity-specific (accounts, VAT registration, importer rules) lives
 in a `quints.toml` next to your ledger. VAT rates are law, not configuration,

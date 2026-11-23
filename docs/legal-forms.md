@@ -1,18 +1,18 @@
 # Legal forms
 
-Pick the legal form when you scaffold the books. It decides the account
-namespace and the equity block. The rest of the chart (VAT, receivables,
-income, expenses) is the same for every form.
+The legal form decides the account namespace and the equity block. The rest
+of the chart (VAT, receivables, income, expenses) is the same for every
+form. Pick it when you scaffold the books.
 
 !!! abstract "Applies if"
     - **Legal form:** an Einzelunternehmen (sole proprietorship, freelancer),
       a GmbH or an AG.[^forms] These are the three families the Swiss KMU
       Kontenrahmen prints an equity variant for.[^kmu]
     - **VAT status:** any. The legal form and the VAT registration are
-      independent: an Einzelfirma can be registered, and a GmbH can be below
-      the threshold.
+      independent.
     - **Not covered:** Kollektiv- and Kommanditgesellschaft (per-partner
-      capital blocks), Genossenschaft, Verein, Stiftung.
+      capital blocks), Genossenschaft, Verein, Stiftung. `quints init`
+      rejects them.
 
 | `--legal-form` | Entity | Account namespace |
 |---|---|---|
@@ -20,12 +20,9 @@ income, expenses) is the same for every form.
 | `gmbh` | GmbH | `:CH:GmbH:` |
 | `ag` | AG | `:CH:AG:` |
 
-`quints init` rejects the other forms instead of scaffolding them wrongly.
-
 ## What changes: Klasse 28 (equity)
 
-The KMU chart is identical across legal forms except the equity class. quints
-scaffolds the official variant:
+quints scaffolds the official variant:
 
 === "Einzelfirma"
 
@@ -41,9 +38,8 @@ scaffolds the official variant:
     ```
 
     No share capital and no statutory reserves. Private withdrawals go
-    through 2850. The owner is not an employee of their own business, so
-    what you take out is not a salary expense: the profit is your
-    income.[^owner]
+    through 2850. The owner is not an employee of the business, so what you
+    take out is not a salary expense: the profit is your income.[^owner]
 
 === "GmbH / AG"
 
@@ -56,10 +52,7 @@ scaffolds the official variant:
 
     2800 renders as *Stammkapital* (GmbH) or *Aktienkapital* (AG) on German
     statements. An owner-manager is employed by the company, so their salary
-    is a Klasse-5 personnel expense, unlike in an Einzelfirma.
-
-Everything else — VAT accounts, receivables, income and expense classes — is
-the same chart with a different namespace.
+    is a Klasse-5 personnel expense.
 
 ## What follows from the form
 
@@ -68,13 +61,13 @@ the same chart with a different namespace.
   all account names in `[accounts]`.
 - `main.bean` passes the marker to the validation plugin:
   `plugin "quints.plugins.kmu" ":CH:Einzelfirma:"`.
-- The Bilanz labels the equity section correctly per form (Eigenkapital /
+- The Bilanz labels the equity section per form (Eigenkapital /
   Stammkapital / Aktienkapital), in English and German.
 
 ## Changing form later
 
 There's no migration command. Rename the namespace in `accounts.bean`,
-`books/*.bean`, and `quints.toml` together, and swap the Klasse-28 block for
+`books/*.bean` and `quints.toml` together, and swap the Klasse-28 block for
 the target form's variant. `quints check` tells you when you're done.
 
 [^forms]: GmbH: Art. 772 ff. OR; AG: Art. 620 ff. OR; Kollektiv- and Kommanditgesellschaft: Art. 552 ff. and 594 ff. OR. An Einzelunternehmen with at least CHF 100'000 turnover must be entered in the commercial register (Art. 931 Abs. 1 OR). [SR 220](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_931).

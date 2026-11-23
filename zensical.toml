@@ -5,7 +5,7 @@
 
 [project]
 site_name = "quints"
-site_description = "Swiss VAT and accounting for plain-text (beancount) books — MWST returns, QR-bill invoicing, KMU statutory statements, statement importers."
+site_description = "Swiss bookkeeping as plain text, on beancount: VAT (MWST) returns, QR-bill invoices, statutory KMU statements, statement importers."
 site_url = "https://sealambda.github.io/quints/"
 repo_url = "https://github.com/sealambda/quints"
 copyright = "Copyright &copy; 2026 Sealambda GmbH — GPL-2.0-only"

@@ -1,22 +1,18 @@
 # Working with AI agents
 
 quints is built to be driven by an AI coding agent: Claude Code, Codex,
-Cursor, GitHub Copilot, opencode, or one built on an agent SDK. The division
-of labour is strict:
+Cursor, GitHub Copilot, opencode, or one built on an agent SDK. The split is
+strict:
 
 - **The agent** reads documents, proposes bookings, extends the chart of
-  accounts, writes transactions. The judgement calls.
-- **quints** validates, computes, reports. Deterministically. It never calls
-  a model, and the same input always produces the same output.
+  accounts and writes transactions: the judgement calls.
+- **quints** validates, computes and reports. It never calls a model, and
+  the same input always gives the same output.
 
-Numbers you file come from quints, not from the model. An agent that invents
-a VAT figure is a bug; the playbook tells it to compute instead.
-
-The same goes for rules. Every page of these docs opens with an *Applies if*
-block (legal form, VAT status, method), gives the steps, and footnotes each
-legal claim to its source: the article, the ESTV publication, the standard.
-An agent can check that a rule applies to the entity in front of it, and
-show a human where it came from.
+Numbers you file come from quints, never from the model. So do the rules:
+every page of these docs opens with an *Applies if* block and footnotes each
+legal claim to its source, so an agent can check that a rule applies to the
+entity in front of it and show a human where it came from.
 
 ## Start from zero
 
@@ -31,20 +27,18 @@ It lists every question `quints init` asks: the flag that answers it, the
 allowed values, when it applies, and where the answer is found (the
 commercial register, the ESTV's registration confirmation). The agent
 answers what it knows, asks a human the rest, and passes each answer as a
-flag. `quints init --json` then echoes the answers it scaffolded from, so
-the agent can show them back.
+flag. `quints init --json` echoes the answers it scaffolded from.
 
-An agent cannot be prompted. With a question unanswered and no `--yes`,
-`quints init` exits non-zero before it writes anything. `--yes` fills in
-demo answers and is for trying quints, not for real books.
+`quints init` never prompts an agent. With a question unanswered and no
+`--yes`, it exits non-zero before it writes anything. `--yes` fills in demo
+answers: for trying quints, never for real books.
 
 ## Your data
 
-quints itself sends nothing anywhere: it runs locally and calls no model. The
-agent is different. Everything it reads goes to its model provider: bookings,
-`customers.yaml`, the PDFs under `documents/`, bank statements. That includes
-personal data: an Einzelfirma customer's name and address, an employee's
-salary.
+quints sends nothing anywhere: it runs locally and calls no model. The agent
+sends everything it reads to its model provider: bookings, `customers.yaml`,
+the PDFs under `documents/`, bank statements. That includes personal data:
+an Einzelfirma customer's name and address, an employee's salary.
 
 The provider processes that data on your behalf, often outside
 Switzerland.[^processor] Before you point an agent at real books:
@@ -61,52 +55,49 @@ Switzerland.[^processor] Before you point an agent at real books:
 
 ## AGENTS.md
 
-`quints init` scaffolds an `AGENTS.md` into every project: the layout, the
-KMU-code rule, both halves of the loop (bank statements in, invoices out),
-the configured importer roster with its credentials, and the
-machine-readable surfaces. Codex, Cursor, GitHub Copilot, opencode, Amp,
-Goose and most other coding agents read `AGENTS.md` on their own.[^agentsmd]
-Claude Code reads `CLAUDE.md`, so a one-line `CLAUDE.md` (`@AGENTS.md`) sits
-next to it and pulls the playbook in. The fenced commands in the generated
-file run in CI against the example project, like every page of these docs.
+`quints init` scaffolds an `AGENTS.md`: the layout, the KMU-code rule, the
+statement and invoice loops, the configured importers with their
+credentials, and the machine-readable surfaces. Codex, Cursor, GitHub
+Copilot, opencode, Amp, Goose and most other coding agents read it on their
+own.[^agentsmd] Claude Code reads `CLAUDE.md`, so a one-line `CLAUDE.md`
+(`@AGENTS.md`) pulls it in. Its fenced commands run in CI against the
+example project, like every page of these docs.
 
-It opens with the entity's **VAT status**: whether the books are
-registered, under which method, how often they file, and that every change
-to that goes into `quints.toml` before the period it affects. An agent that
-books a purchase needs to know this first, because it decides whether there
-is a VAT leg at all.
+It opens with the entity's **VAT status**: registered or not, the method,
+the filing period, and that every change to those goes into `quints.toml`
+before the period it affects. The status decides whether a booking has a
+VAT leg at all.
 
-The statement loop the playbook describes:
+The statement loop it describes:
 
 1. `quints import …` drafts statements into `staging/`.
-2. The agent reviews each draft — VAT decision, linked document — and moves
+2. The agent reviews each draft (VAT decision, linked document) and moves
    it to `books/<year>.bean`.
-3. `quints check` before the books are considered consistent.
+3. `quints check` passes before the books count as consistent.
 
-Between two edits the agent asks a narrower question: what did this edit
-break? `quints check --review --strict --base-ref HEAD` reports only the
-problems the last commit doesn't have. The scaffolded
-`.claude/settings.json` runs it after every edit Claude Code makes, and the
-playbook tells any other agent to run it itself.
+After each edit, `quints check --review --strict --base-ref HEAD` reports
+only the problems the last commit doesn't have. The scaffolded
+`.claude/settings.json` runs it after every edit Claude Code makes, and
+`AGENTS.md` tells any other agent to run it.
 [Check the books as you edit](../guides/editing.md) has the setup for each
 agent and editor.
 
-The scaffold is also a git repository with the pristine project as its
-initial commit — "what did the agent change" is always one `git diff` away,
-and a wrong edit is a revert, not an archaeology dig. Always.
+The scaffold is a git repository with the pristine project as its first
+commit, so what the agent changed is one `git diff` away and a wrong edit
+is a revert.
 
 ## Skills
 
 `AGENTS.md` says who the company is. Skills say how a recurring job is
-done, step by step, so the agent doesn't work it out again each time:
+done, step by step:
 
 - **`book-expense`:** a receipt or supplier invoice, booked with the VAT
   legs the VAT status calls for, and its document filed.
 - **`reconcile`:** statements imported, every draft booked or raised with
   you, the balance assertions landed.
 - **`close-vat-period`:** a quarter, half-year or year checked for
-  completeness, reported and settled, then tracked until it is filed and
-  paid.
+  completeness, reported and settled, exported for upload to the ESTV
+  portal, then tracked until it is filed and paid.
 
 `quints init` writes each skill twice: to `.claude/skills/` for Claude Code
 and to `.agents/skills/` for Codex. Most other agents read one of the
@@ -133,7 +124,8 @@ files the return and makes the payment.
 
 ## Machine-readable surfaces
 
-Every reporting command takes `--json`:
+Every reporting command takes `--json`, with stable keys, ISO dates and
+decimal strings:
 
 ```bash
 quints vat liability --at 2026-12-31 --json
@@ -143,13 +135,12 @@ quints report bilanz --at 2026-12-31 --json
 quints receivables --json
 quints payables --json
 quints invoice invoicing/invoices/acme-2026-07.yaml --json
+quints digest --output-format json
 ```
 
 The invoice one adds `reference` and `reference_type` (the payment reference
 it printed), `customer_reference`, and the ledger draft when the invoice is
-not booked yet.
-
-Stable keys, ISO dates, decimal strings — made to be parsed, not scraped.
+not booked yet. `quints diff` takes `--output-format json` too.
 
 Each problem in `quints check --json` carries its `code`, `file` and `line`,
 a `help` link to its entry in [Diagnostics](diagnostics.md), and a `fix`
@@ -160,15 +151,14 @@ same entry with no network, for a model that runs offline:
 quints explain vat-mismatch
 ```
 
+JSON Schemas for the invoice, issuer and customers files and for
+`quints.toml` are published with this site under `/quints/schema/`. The
+scaffolded files point at them, so an agent or an editor validates a file
+before quints reads it. This writes the same schemas locally:
+
 ```bash
 quints schema
 ```
-
-writes JSON Schemas for the invoice/issuer/customers files, so agents (and
-editors) validate invoice YAML before rendering. The same schemas are
-published with this site under `/quints/schema/`, and scaffolded YAMLs point
-their `$schema` modelines there — validation works before anyone runs the
-command.
 
 ## These docs, as Markdown
 
@@ -179,16 +169,14 @@ command.
 - Every page has its copy at `index.md` under its own URL, and a *Copy as
   Markdown* button.
 
-The copies are generated from these pages on every deploy, so they cannot
-lag behind them.
+The copies are generated from these pages on every deploy.
 
 ## Determinism as a guarantee
 
-Scaffolding (`quints init`) is deterministic too: the same answers produce
-byte-identical projects. The repo's example project is regenerated from an
-answer file and byte-checked in CI — the same mechanism that runs every
-command in these docs against a real ledger. What you read here is executed,
-not asserted.
+`quints init` is deterministic too: the same answers produce a
+byte-identical project. CI regenerates the repo's example project from an
+answer file and byte-checks it, then runs every command in these docs
+against it.
 
 [^agentsmd]: [agents.md](https://agents.md) lists the agents that read the file.
 [^skills]: [Agent Skills](https://agentskills.io) lists the agents that load skills, and where each looks for them.

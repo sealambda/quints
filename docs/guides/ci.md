@@ -1,20 +1,18 @@
 # Check the books in CI
 
-Every change to the books runs `quints check`. Each problem is annotated
-at its file and line in the runner you already use, and the build fails
-until the books are consistent. The same runner can build the statements,
-show what a change does to the figures, and post a weekly digest.
+Run `quints check` on every change. The runner annotates each problem at
+its file and line, and the build fails until the books are consistent. The
+same runner builds the statements, shows what a change does to the figures,
+and posts a weekly digest.
 
 !!! abstract "Applies if"
-    - **Legal form:** Einzelfirma, GmbH or AG. Nothing on this page differs
-      between them.
+    - **Legal form, VAT method, filing period:** any. Nothing here differs.
     - **VAT status:** any. Registered, `check` also runs every VAT return
       not settled yet. Not registered, it checks the ledger and the
       statements only.
-    - **VAT method and filing period:** any. Nothing on this page differs.
     - **Where the books live:** a git repository on GitHub, GitLab or
       Azure DevOps, or one a Jenkins job checks out. Other runners read the
-      plain text or the SARIF output.
+      text or the SARIF output.
     - **Not covered:** GitHub code scanning (see
       [below](#what-quints-doesnt-do-here)).
 
@@ -26,17 +24,16 @@ quints check --output-format github
 ```
 
 `quints check` exits 1 on an error, and on a warning too with `--strict`.
-`--output-format` picks what the runner reads: `github`, `gitlab`, `azure`
-or `sarif`, or `json` for a script. CI never guesses the format, so a run
-on your machine with the same flag prints exactly what CI prints. The
-`QUINTS_OUTPUT_FORMAT` variable sets it for every `quints check` in a job.
-[Diagnostics](../reference/diagnostics.md) lists every problem `check`
-reports and how to fix it.
+`--output-format` picks what the runner reads: `github`, `gitlab`, `azure`,
+`sarif`, or `json` for a script. quints never detects the runner, so the
+same flag on your machine prints what CI prints. `QUINTS_OUTPUT_FORMAT`
+sets it for every `quints check` in a job.
+[Diagnostics](../reference/diagnostics.md) lists every problem and its fix.
 
 ## 2. GitHub
 
-`quints init` writes this workflow as `.github/workflows/books.yml` (the
-default `--ci github`). For books scaffolded earlier, add it by hand:
+`quints init` writes `.github/workflows/books.yml` (`--ci github`, the
+default). For books scaffolded earlier, add it by hand:
 
 ```yaml
 name: books
@@ -71,18 +68,18 @@ jobs:
     uses: sealambda/quints/.github/workflows/statements.yml@v0.25.0
 ```
 
-1. **Pin both lines to the same quints release**, by tag or by commit SHA.
-   The action is not on the Marketplace; it lives in the quints repository.
-2. **Pick what it installs.** By default the action runs the quints your
-   `uv.lock` pins (`uv sync --frozen`), so commit `uv.lock`. To run another
-   one, set `quints:` to a requirement, a path, a wheel or a git URL
-   (`quints: quints==0.25.0`).
-3. **Books in a subdirectory?** Set `working-directory:` to it, and `file:`
-   if the main file isn't `main.bean`. Paths in the annotations stay
-   relative to the repository root.
+1. **Pin both `uses:` lines to the same quints release**, by tag or by
+   commit SHA. The action lives in the quints repository, not on the
+   Marketplace.
+2. **Commit `uv.lock`.** The action runs the quints it pins
+   (`uv sync --frozen`). To run another, set `quints:` to a requirement, a
+   path, a wheel or a git URL (`quints: quints==0.25.0`).
+3. **Books in a subdirectory?** Set `working-directory:`, and `file:` if
+   the main file isn't `main.bean`. Annotation paths stay relative to the
+   repository root.
 4. **Open a pull request.** Each problem shows on the diff at its line,
-   and the job fails. GitHub shows only about ten annotations of each kind
-   per step,[^annotations] so the job summary also lists every problem in a
+   and the job fails. GitHub shows about ten annotations of each kind per
+   step,[^annotations] so the job summary lists every problem in a
    table.[^summary]
 
 The action's inputs: `quints`, `file`, `working-directory`, `args` (more
@@ -91,11 +88,11 @@ The action's inputs: `quints`, `file`, `working-directory`, `args` (more
 ### Build the statements every month
 
 The `statements` job above calls a reusable workflow. It checks the books,
-writes every statutory file with `quints report bundle`, shows the
+writes every statutory file with `quints report bundle`, puts the
 Erfolgsrechnung in the job summary, and uploads the files as an artifact.
-Its inputs are `year` (default: the current year), or `from` and `to` for
-an extended first year, and `langs`, `file`, `quints`, `python-version`
-and `release`.
+Its inputs: `year` (default: the current year), or `from` and `to` for an
+extended fiscal year, and `langs`, `file`, `quints`, `python-version` and
+`release`.
 
 At the year-end close, publish the files as a GitHub Release. This job
 runs only when you start the workflow by hand (*Run workflow*):
@@ -138,7 +135,7 @@ runs only when you start the workflow by hand (*Run workflow*):
 its place and whether it links a document, and how the result, EBIT, total
 assets and the current VAT period move. It reads the base with
 `git archive`, without a worktree. A base that doesn't load counts as empty,
-so a pull request that fixes broken books still gets its comment.
+so a pull request that fixes broken books still gets its summary.
 
 ### A weekly digest
 
@@ -159,8 +156,8 @@ so a pull request that fixes broken books still gets its comment.
 ```
 
 Run it on a weekly `schedule`. The digest lists VAT periods to settle or
-pay, open invoices by age, the inbox, and undocumented bookings. It never
-fails the job.
+pay, open invoices by age, the inbox, and undocumented bookings. It always
+exits 0.
 
 ## 3. GitLab
 
@@ -196,8 +193,8 @@ statements:
 1. **Commit `uv.lock`**: both jobs run the quints it pins.
 2. **Open a merge request.** The Code Quality widget lists each problem
    with its file and line.[^codequality] An error fails the job; the report
-   is uploaded either way (`when: always`). Each finding's fingerprint
-   leaves the line out, so moving a transaction doesn't make it new.
+   uploads either way. A finding's fingerprint leaves the line out, so
+   moving a transaction doesn't make it new.
 3. **Schedule the statements** under *Build › Pipeline schedules*, or run
    the pipeline by hand.
 
@@ -212,13 +209,13 @@ steps:
 ```
 
 Each problem becomes a `task.logissue` error or warning with its file and
-line.[^azure] Azure Pipelines doesn't fail a step on logged errors alone;
-`quints check` exits 1 on an error, and that fails the step.
+line.[^azure] Logged errors alone don't fail an Azure step: the exit code 1
+of `quints check` does.
 
 ## 5. Jenkins
 
 The Warnings Next Generation plugin reads SARIF.[^warnings-ng] Record the
-issues before the build fails, so they are recorded on a red build too:
+issues before you fail the build, so a red build has them too:
 
 ```groovy
 stage('quints check') {
@@ -243,7 +240,7 @@ to its entry under [Diagnostics](../reference/diagnostics.md).
 
 ## 6. reviewdog, and any other runner
 
-The text output starts each line with `path:line:`, the format editors and
+The text output starts each line with `path:line:`, which editors and
 error parsers read. reviewdog turns it into review comments:[^reviewdog]
 
 ```sh
@@ -254,12 +251,11 @@ quints check 2>&1 | reviewdog -efm="%f:%l: %m" -name=quints -reporter=github-pr-
 
 - **GitHub code scanning.** SARIF upload works, but code scanning on a
   private repository needs a GitHub Advanced Security licence,[^ghas] and
-  books repositories are private. The `github` format's annotations need
-  no licence.
+  books repositories are private. The `github` annotations need none.
 - **Detect the runner.** Pass `--output-format`, or set
-  `QUINTS_OUTPUT_FORMAT`. A local run then prints what CI prints.
-- **Bitbucket Pipelines.** There is no dedicated format yet: use the text
-  output or SARIF.
+  `QUINTS_OUTPUT_FORMAT`.
+- **Bitbucket Pipelines.** No dedicated format: use the text output or
+  SARIF.
 
 [^annotations]: GitHub Docs, *Workflow commands for GitHub Actions*, "Setting an error message":
     <https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#setting-an-error-message>.
