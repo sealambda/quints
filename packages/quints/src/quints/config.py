@@ -493,7 +493,7 @@ _SCHEMA: dict[str, dict[str, str]] = {
     "payables": {"default_terms_days": "int"},
     "prices": {"source": "str", "currencies": "strs", "tickers": "map"},
     "report": {"language": "str"},
-    "vat": {"period": "str", "saldo": "entries", "change": "entries"},
+    "vat": {"period": "str", "saldo": "entries", "change": "entries", "accounting_basis": "str"},
     "close": {
         "depreciation_account": "str",
         "method": "str",
@@ -701,6 +701,14 @@ def _from_mapping(raw: dict[str, object]) -> Config:
         updates["prices_tickers"] = tuple(sorted((str(k), str(v)) for k, v in tickers.items()))
     take(report, "language", "report_language")
     vat = section("vat")
+    # Named only to refuse with the reason: a user who skipped the docs must not
+    # get returns on the wrong basis.
+    if vat.get("accounting_basis", "agreed") != "agreed":
+        raise ConfigError(
+            f"[vat] accounting_basis = {vat['accounting_basis']!r} is not supported: quints "
+            "computes on agreed Entgelte (vereinbarte Entgelte) by transaction date, not on "
+            'collected revenue (vereinnahmte Entgelte) — supported: "agreed"'
+        )
     take(vat, "period", "vat_period")
     if "saldo" in vat:
         updates["saldo"] = _saldo_rates(vat["saldo"])

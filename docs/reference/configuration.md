@@ -106,6 +106,7 @@ and every later change.
 ```toml
 [vat]
 period = "half-year"    # quarter | half-year | year
+accounting_basis = "agreed"  # the only basis quints computes on; optional
 
 # The Saldosteuersätze the ESTV granted you. The first entry without a
 # marker is the default; `marker` sends an income sub-account to another
@@ -126,6 +127,11 @@ annually on request.[^periods] A `rate` the ESTV can't grant is rejected at
 load: the permitted list is law,[^sss-rates] so it ships in quints, dated.
 An optional `label` renames a rate for the `mwst: "sss=<label>"` tag; the
 default is the rate in per cent (`6.2`).
+
+`accounting_basis` can only be `agreed`: quints computes on agreed
+Entgelte by transaction date. Set it to `received` and quints refuses to
+load, rather than file returns on the wrong basis. Collected-revenue
+accounting (vereinnahmte Entgelte) is not supported.
 
 ### `[[vat.change]]`
 

@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from quints import ledger, mwst, settlement
+from quints import config, ledger, mwst, settlement
 from quints.mwst import MwstReport, RateRow
 
 
@@ -244,3 +244,40 @@ def test_settlement_clears_rounding_to_the_declared_tax(tmp_path: Path) -> None:
     led.write_text(books + "\n" + text + "\n")
     _entries, errors = ledger.load_entries(led)
     assert not errors, errors
+
+
+def test_annual_instalments_are_netted_by_the_year_settlement(tmp_path: Path) -> None:
+    # Annual filing: the ESTV bills instalments during the year (Art. 86a MWSTG).
+    # Booked against PayableVAT under the year's ^VAT-2026 link, the settlement
+    # leaves only the rest owed, and `vat status` shows that rest, not the year.
+    instalments = "".join(
+        f"""
+2026-{day} * "ESTV" "VAT instalment" ^VAT-2026
+  Liabilities:CH:GmbH:Tax:PayableVAT                20.00 CHF
+  Assets:CH:GmbH:Current:UBS:CHF                   -20.00 CHF
+"""
+        for day in ("05-30", "08-28", "11-26")  # days 150, 240 and 330
+    )
+    books = _REAL_QUARTER + instalments
+    led = tmp_path / "m.bean"
+    led.write_text(books)
+    cfg = config.Config(vat_period="year")
+    report = mwst.compute(led, "2026-01-01", "2026-12-31", cfg)
+    assert not report.violations and report.z500 == Decimal("63.18")
+    # An instalment carries the link but flushes no VAT: the year stays open to `check`.
+    entries, _ = ledger.load_entries(led)
+    assert mwst.unsettled_periods(entries, cfg, date(2026, 12, 31)) == ["VAT-2026"]
+
+    s = settlement.build_settlement(led, report, mwst.period_label("2026"))
+    assert s.link == "VAT-2026" and s.due == "2027-03-01"
+    assert s.payable_after == Decimal("-3.18")  # 63.18 owed − 60.00 paid on account
+
+    led.write_text(books + "\n" + settlement.settlement_text(s) + "\n")
+    entries, errors = ledger.load_entries(led)
+    assert not errors, errors
+    assert mwst.settled_periods(entries, cfg) == {"VAT-2026"}
+    libs, unlinked, total, _today = settlement.outstanding(led, today=date(2027, 1, 15))
+    assert [(lib.period, lib.owed, lib.due) for lib in libs] == [
+        ("VAT-2026", Decimal("3.18"), "2027-03-01")
+    ]
+    assert unlinked == 0 and total == Decimal("3.18")

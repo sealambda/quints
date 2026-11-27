@@ -45,6 +45,9 @@ from . import config, kmu, ledger, mwst, ui
 THRESHOLD = Decimal("100000")  # Art. 10 Abs. 2 Bst. a MWSTG
 REGISTER_WITHIN_DAYS = 30  # Art. 66 Abs. 1 MWSTG
 DEREGISTER_WITHIN_DAYS = 60  # Art. 14 Abs. 5 MWSTG; MWST-Info 02 Ziff. 6.2
+SALDO_TURNOVER = Decimal("5024000")  # Art. 37 Abs. 1 MWSTG
+SALDO_TAX = Decimal("108000")  # Art. 37 Abs. 1 MWSTG; Art. 78 Abs. 2 MWSTV
+ANNUAL_TURNOVER = Decimal("5005000")  # Art. 35 Abs. 1bis Bst. b MWSTG
 # Buckets that do not count towards the threshold: supplies exempt under
 # Art. 21 without option, and Nicht-Entgelte (Art. 18 Abs. 2).
 _NOT_COUNTED = frozenset({"exempt", "subvention", "donation"})
@@ -167,7 +170,57 @@ def compute(ledger_path: Path, at: Date, cfg: config.Config | None = None) -> Li
             )
         )
     _conclude(result)
+    _check_limits(ledger_path, (entries, problems), cfg, at, result)
     return result
+
+
+def _check_limits(
+    ledger_path: Path, loaded: ledger.Loaded, cfg: config.Config, at: Date, result: Liability
+) -> None:
+    """Warn for a year whose turnover passed a limit of the method or period it filed under.
+
+    Measured on the year's own return: Ziffer 299 plus the exports of 220, which
+    count (MWST-Info 12 Ziff. 1.3.1), incl. MWST under the Saldosteuersatz as in
+    the ESTV's example (Ziff. 1.3.3). The tax limit is the Saldosteuersatz rows'.
+    """
+    for y in result.years:
+        if not y.registered:
+            continue
+        d0, d1 = Date(y.year, 1, 1), min(Date(y.year, 12, 31), at)
+        try:
+            phase, _, _ = cfg.for_period(d0, d1)
+        except config.NotLiable:
+            continue
+        report = mwst.compute(ledger_path, str(d0), str(d1), cfg, loaded=loaded)
+        turnover = report.z299 + report.z220
+        tax = report.z322_tax + report.z323_tax
+        if phase.vat_method == "saldo" and (turnover > SALDO_TURNOVER or tax > SALDO_TAX):
+            result.violations.append(
+                ledger.Violation(
+                    str(d1),
+                    "",
+                    "",
+                    f"{y.year}: turnover {ui.money(turnover)} CHF, Saldosteuersatz tax "
+                    f"{ui.money(tax)} CHF — the method allows up to CHF 5'024'000 and "
+                    "CHF 108'000 a year (Art. 37 Abs. 1 MWSTG); ask the ESTV or your "
+                    "Treuhänder what follows",
+                    code="vat-saldo-limit",
+                    severity="warning",
+                )
+            )
+        if phase.period_kind == "year" and turnover > ANNUAL_TURNOVER:
+            result.violations.append(
+                ledger.Violation(
+                    str(d1),
+                    "",
+                    "",
+                    f"{y.year}: turnover {ui.money(turnover)} CHF — annual filing allows up to "
+                    "CHF 5'005'000 a year (Art. 35 Abs. 1bis Bst. b MWSTG); ask the ESTV or "
+                    "your Treuhänder what follows",
+                    code="vat-annual-limit",
+                    severity="warning",
+                )
+            )
 
 
 def _conclude(result: Liability) -> None:

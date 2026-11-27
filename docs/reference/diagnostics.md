@@ -6,14 +6,16 @@ it. The SARIF output links each code here.
 
 !!! abstract "Applies if"
     - **Legal form:** any. Nothing here differs.
-    - **VAT status:** any. The `vat-…` codes appear only for a period you
-      were registered for and have not settled yet. Not registered, you see
-      none of them.
-    - **VAT method:** effective or Saldosteuersatz. Two codes appear only
-      under the Saldosteuersatz: `vat-saldo-input` and
-      `vat-output-no-turnover`.
-    - **Filing period:** quarter, half-year or year. It only decides which
-      VAT returns `check` runs: every one not settled yet.
+    - **VAT status:** any. The `vat-…` codes of `check` appear only for a
+      period you were registered for and have not settled yet. The two limit
+      codes come from `quints vat liability`, for any year you were
+      registered in. Not registered, you see none of them.
+    - **VAT method:** effective or Saldosteuersatz. Three codes appear only
+      under the Saldosteuersatz: `vat-saldo-input`,
+      `vat-output-no-turnover` and `vat-saldo-limit`.
+    - **Filing period:** quarter, half-year or year. It decides which VAT
+      returns `check` runs: every one not settled yet. `vat-annual-limit`
+      appears only for annual filing.
 
 ## How to read a diagnostic
 
@@ -174,6 +176,22 @@ rate quints expected.
 Error. Ziffer 299 differs from the total of the turnover rows: turnover
 landed in no row of the return. Look for income on an account the VAT
 markers in `quints.toml` don't classify.
+
+## vat-saldo-limit
+
+Warning, from `quints vat liability`. A year under the Saldosteuersatz
+method passed one of its limits: CHF 5'024'000 turnover or CHF 108'000 tax
+at the granted rates (Art. 37 Abs. 1 MWSTG). The turnover is Ziffer 299
+plus the exports of Ziffer 220, including VAT. Ask the ESTV or your
+Treuhänder whether you can keep the method. The sources are in
+[Register, switch method, deregister](../guides/vat-registration.md#3-choose-the-method).
+
+## vat-annual-limit
+
+Warning, from `quints vat liability`. A year filed annually passed
+CHF 5'005'000 turnover (Ziffer 299 plus 220), the limit for annual filing
+(Art. 35 Abs. 1bis Bst. b MWSTG). Ask the ESTV or your Treuhänder whether
+you can keep filing once a year.
 
 ## due-unreadable
 

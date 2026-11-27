@@ -407,6 +407,48 @@ def test_a_registered_business_below_the_threshold_may_deregister(tmp_path: Path
     assert any("2027-03-01" in a for a in result.advice)
 
 
+_SINCE_2020 = Date(2020, 1, 1)
+
+
+@pytest.mark.parametrize(
+    ("cfg", "net", "codes"),
+    [
+        # 6.2 % of 6'486'000 incl. MWST is 402'132 CHF: past both limits.
+        (
+            config.Config(vat_registered_since=_SINCE_2020, vat_method="saldo", saldo=SSS),
+            6,
+            {"vat-saldo-limit"},
+        ),
+        # 1'081'000 x 6.2 % is 67'022 CHF: inside both.
+        (config.Config(vat_registered_since=_SINCE_2020, vat_method="saldo", saldo=SSS), 1, set()),
+        (
+            config.Config(vat_registered_since=_SINCE_2020, vat_period="year"),
+            6,
+            {"vat-annual-limit"},
+        ),
+        # Quarterly on the effective method: no limit to pass.
+        (config.Config(vat_registered_since=_SINCE_2020), 6, set()),
+    ],
+)
+def test_a_year_past_the_limit_of_its_method_or_period_warns(
+    tmp_path: Path, cfg: config.Config, net: int, codes: set[str]
+) -> None:
+    # Art. 37 Abs. 1 MWSTG (Saldosteuersatz) and Art. 35 Abs. 1bis Bst. b (annual filing).
+    books = tmp_path / "main.bean"
+    books.write_text(
+        _CHART.split("\n2025-05-02")[0]
+        + f"""
+2026-05-02 * "Kunde" "a big year"
+  Assets:CH:GmbH:Receivable:Trade                {net * 1081000}.00 CHF
+  Income:CH:GmbH:Consulting:External:Domestic   -{net * 1000000}.00 CHF
+  Liabilities:CH:GmbH:Tax:OutputVAT               -{net * 81000}.00 CHF
+"""
+    )
+    result = liability.compute(books, Date(2026, 12, 31), cfg)
+    assert {v.code for v in result.violations} == codes
+    assert all(v.severity == "warning" and v.date == "2026-12-31" for v in result.violations)
+
+
 def test_cli_vat_liability_json(tmp_path: Path) -> None:
     toml = tmp_path / "quints.toml"
     toml.write_text("[entity]\nvat_registered = false\n")

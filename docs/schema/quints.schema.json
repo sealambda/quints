@@ -264,6 +264,9 @@
               }
             }
           }
+        },
+        "accounting_basis": {
+          "type": "string"
         }
       }
     },

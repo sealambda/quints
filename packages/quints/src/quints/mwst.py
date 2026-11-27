@@ -255,15 +255,19 @@ def vat_periods(year: int, cfg: config.Config) -> list[str]:
 def settled_periods(entries: data.Directives, cfg: config.Config) -> set[str]:
     """The ``VAT-<period>`` links of the settlement transactions: filed periods.
 
-    A settlement links its period and posts to the payable VAT account. A
-    filed period is corrected only by a counter-entry in a later one.
+    A settlement links its period and flushes the VAT accounts into the payable
+    one. A payment or an annual-filing instalment under the same link only
+    moves money into PayableVAT, so it settles nothing. A filed period is
+    corrected only by a counter-entry in a later one.
     """
+    flushed = {cfg.output_vat, cfg.input_vat, cfg.bezugsteuer}
     settled: set[str] = set()
     for e in entries:
         if not isinstance(e, data.Transaction):
             continue
         links = [lk for lk in (e.links or ()) if lk.startswith("VAT-")]
-        if links and any(p.account == cfg.payable_vat for p in e.postings):
+        accounts = {p.account for p in e.postings}
+        if links and cfg.payable_vat in accounts and accounts & flushed:
             settled.update(links)
     return settled
 
@@ -730,6 +734,7 @@ class _Detail:
     domestic: list[RevenueLine] = field(default_factory=list)
     export: list[RevenueLine] = field(default_factory=list)
     other_revenue: list[RevenueLine] = field(default_factory=list)
+    notices: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -777,7 +782,7 @@ def compute(
         _transaction(e, cfg, codes, price_map, t, detail)
     report = _assemble(date_from, date_to, d0, d1, t, detail, cfg)
     report.liable_from, report.liable_to = str(d0), str(d1)
-    report.notices = lifecycle_notices(base, cfg, d0, d1)
+    report.notices = lifecycle_notices(base, cfg, d0, d1) + detail.notices
     return report
 
 
@@ -1178,6 +1183,15 @@ def _check(
         t.gross += net
         ziffer = _vintage_ziffer("standard", state.current)
         detail.domestic.append(RevenueLine(str(e.date), e.payee or "", net, "CHF", net, ziffer))
+        # Reached only by a supply booked off income, or a misbooking: say which.
+        file, line = ledger.location(e.meta)
+        detail.notices.append(
+            f"{f'{file}:{line} ' if file else ''}{e.date} {e.payee or e.narration}: output VAT "
+            f"{ui.money(state.posted_tax)} CHF with no income leg is declared as "
+            f"{ui.money(net)} CHF turnover at the standard rate. Confirm it is a supply (an "
+            'asset sale), or rebook it on InputVAT tagged mwst: "vorsteuerkorrektur" '
+            "(Ziffer 415)."
+        )
 
 
 def _original(p: data.Posting, chf: Decimal) -> tuple[Decimal, str, Decimal]:
