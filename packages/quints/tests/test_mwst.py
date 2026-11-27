@@ -406,6 +406,10 @@ def test_output_vat_without_income_declares_the_turnover_it_implies(tmp_path: Pa
     assert not r.violations
     assert r.z200 == r.z299 == r.z303_net == Decimal("1000.00")
     assert r.z303_tax == r.z399 == Decimal("81.00")
+    # Legitimate here, a misbooking elsewhere: the return says which transaction.
+    (notice,) = r.notices
+    assert "Occasion AG: output VAT 81.00 CHF with no income leg" in notice
+    assert "1,000.00 CHF turnover" in notice and "vorsteuerkorrektur" in notice
 
 
 def test_credit_period_reports_510(tmp_path: Path) -> None:

@@ -37,6 +37,7 @@ def _load(tmp_path: Path, text: str) -> config.Config:
         ("[[vat.saldo]]\nrate = 6.2\nlabl = 'x'\n", r"\[\[vat\.saldo\]\] labl.*label"),
         ('[prices]\ncurrencies = "EUR"\n', "currencies.*list"),
         ('export_marker = ":X"\n', r"export_marker belongs under \[accounts\]"),
+        ('[vat]\naccounting_basis = "received"\n', "accounting_basis.*agreed Entgelte"),
     ],
 )
 def test_typos_and_wrong_types_are_errors(tmp_path: Path, toml: str, message: str) -> None:

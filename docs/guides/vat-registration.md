@@ -156,6 +156,31 @@ from = 2027-01-01
 period = "year"
 ```
 
+The ESTV bills the instalments: on days 150, 240 and 330 of the year under
+the effective method, and on day 240 under the Saldosteuersatz.[^instalments]
+Book each payment against `PayableVAT`, with the link the year's settlement
+will carry:
+
+```beancount
+2027-05-30 * "ESTV" "VAT instalment 1 of 3" ^VAT-2027
+    Liabilities:CH:Einzelfirma:Tax:PayableVAT      1200.00 CHF
+    Assets:CH:Einzelfirma:Current:UBS:CHF         -1200.00 CHF
+```
+
+`quints vat settle -p 2027` then credits the year's tax to the same account,
+so `quints vat status` shows what is still owed after the instalments, or a
+credit if they paid more. Until the settlement, the instalments show as a
+credit. The statement importers link an ESTV payment only when it clears
+exactly one open period, so an instalment usually arrives unlinked: add
+`^VAT-2027` yourself. If the importer did link it, check that the link is
+`^VAT-2027` and not an earlier period that happened to owe the same amount.
+
+`quints vat liability` warns when a year passes a limit of the method or
+period it filed under: `vat-saldo-limit` for the Saldosteuersatz and
+`vat-annual-limit` for annual filing. It measures turnover as Ziffer 299
+plus the exports of Ziffer 220. Under the Saldosteuersatz the figure
+includes VAT.[^sss-limits]
+
 ## 5. Deregister
 
 Liability ends when the business stops trading. It can also end with a tax
@@ -210,7 +235,8 @@ rates.[^sss-end] From the day after, invoices carry no VAT again.
 [^art27]: Art. 27 Abs. 1 MWSTG: "Wer nicht im Register der steuerpflichtigen Personen eingetragen ist …, darf in Rechnungen nicht auf die Steuer hinweisen." Abs. 2: who shows a tax without being entitled to "schuldet die ausgewiesene Steuer". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_27).
 [^bezug]: Art. 45 Abs. 2 Bst. b MWSTG. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_45).
 [^einlage]: Art. 32 MWSTG ("Treten die Voraussetzungen des Vorsteuerabzugs nachträglich ein (Einlageentsteuerung) …"); Art. 72–74 MWSTV, including the services presumed already consumed. [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_32). Under the Saldosteuersatz there is none: Art. 78 Abs. 5 MWSTV.
-[^sss-limits]: Art. 37 Abs. 1 MWSTG: "nicht mehr als 5 024 000 Franken Umsatz aus steuerbaren Leistungen … und … nicht mehr als 108 000 Franken Steuern". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_37); [MWST-Info 12 *Saldosteuersätze*](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/tableOfContent.xhtml?publicationId=1004992), Ziff. 1.3.
+[^sss-limits]: Art. 37 Abs. 1 MWSTG: "nicht mehr als 5 024 000 Franken Umsatz aus steuerbaren Leistungen … und … nicht mehr als 108 000 Franken Steuern". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/615/de#art_37); [MWST-Info 12 *Saldosteuersätze*](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/tableOfContent.xhtml?publicationId=1004992), Ziff. 1.3. What counts: "Steuerbare Lieferungen im Inland (einschliesslich steuerbefreite Lieferungen wie z. B. Exporte)" (Ziff. 1.3.1). The tax is "die mit dem oder den massgebenden SSS berechnete Steuerschuld" (Art. 78 Abs. 2 MWSTV), and the example in Ziff. 1.3.3 counts the turnover "inkl. MWST".
+[^instalments]: Art. 86a MWSTG. quints doesn't compute the amounts: the ESTV bills them.
 [^sss-apply]: Art. 78 Abs. 1 and 3 MWSTV: notice "innert 60 Tagen nach Zustellung der Mehrwertsteuernummer", otherwise "mindestens drei ganze Steuerperioden nach der effektiven Abrechnungsmethode". [fedlex](https://www.fedlex.admin.ch/eli/cc/2009/828/de#art_78).
 [^switch]: Art. 37 Abs. 4 MWSTG: the Saldosteuersatz "muss während mindestens einer Steuerperiode beibehalten werden. Entscheidet sich die steuerpflichtige Person für die effektive Abrechnungsmethode, so kann sie frühestens nach drei Jahren zur Saldosteuersatzmethode wechseln. Wechsel sind jeweils auf Beginn einer Steuerperiode möglich." The tax period is the calendar year (Art. 34 Abs. 2). Notice within 60 days of the period's start: Art. 79 Abs. 1 and 81 Abs. 1 MWSTV.
 [^to-sss]: Art. 79 Abs. 3 MWSTV: the input VAT "an die ESTV zurückzuerstatten. Die Deklaration hat in der letzten Abrechnungsperiode vor dem Wechsel zu erfolgen." [MWST-Info 12, Ziff. 2.2.3](https://www.gate.estv.admin.ch/mwst-webpublikationen/public/pages/taxInfos/cipherDisplay.xhtml?publicationId=1004992&componentId=1005207) puts it under Ziffer 415.

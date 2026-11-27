@@ -36,6 +36,14 @@ the KMU codes in use. If nothing fits, open a new account with the KMU
 code it rolls up to (`AGENTS.md`, *Extending the chart of accounts*)
 rather than force-fitting an existing one.
 
+**Einzelfirma: the owner's own pension and AHV** are the owner's, not the
+business's. A Säule 3a payment is private: book it to the private account
+(KMU 2850), never to an expense (Art. 33 Abs. 1 Bst. e DBG). An
+Ausgleichskasse invoice for the owner's own AHV/IV/EO is a deduction on the
+owner's tax return (Art. 33 Abs. 1 Bst. d DBG). Look for an earlier one in
+the books and book it the same way. If there is none, ask the user whether
+it goes to 2850 or to an expense.
+
 ## 4. Decide the VAT legs
 
 **Not VAT-registered:** book gross, no VAT legs at all. One exception to

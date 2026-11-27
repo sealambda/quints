@@ -41,6 +41,12 @@ quints scaffolds the official variant:
     through 2850. The owner is not an employee of the business, so what you
     take out is not a salary expense: the profit is your income.[^owner]
 
+    Your own Säule 3a contributions are private: book them to 2850, never
+    to an expense.[^3a] Your own AHV/IV/EO contributions are a deduction on
+    your personal tax return.[^ahv] Whether the Ausgleichskasse invoice goes
+    to 2850 or to an expense is for you and your Treuhänder to decide. Pick
+    one and book every invoice the same way.
+
 === "GmbH / AG"
 
     The GmbH and AG variant:
@@ -73,3 +79,5 @@ the target form's variant. `quints check` tells you when you're done.
 [^forms]: GmbH: Art. 772 ff. OR; AG: Art. 620 ff. OR; Kollektiv- and Kommanditgesellschaft: Art. 552 ff. and 594 ff. OR. An Einzelunternehmen with at least CHF 100'000 turnover must be entered in the commercial register (Art. 931 Abs. 1 OR). [SR 220](https://www.fedlex.admin.ch/eli/cc/27/317_321_377/de#art_931).
 [^kmu]: The Schweizer Kontenrahmen KMU, edition 2023, published by [SwissAccounting (formerly veb.ch)](https://swissaccounting.org/kontenrahmen). Klasse 28 is the equity class, with one variant per legal-form family.
 [^owner]: The profit of an Einzelunternehmen is the owner's income from self-employment, taxed as such: Art. 18 Abs. 1 DBG, [SR 642.11](https://www.fedlex.admin.ch/eli/cc/1991/1184_1184_1184/de#art_18).
+[^3a]: Art. 33 Abs. 1 Bst. e DBG: the contributions to the gebundene Selbstvorsorge are deducted from the owner's income, not from the business's profit. [SR 642.11](https://www.fedlex.admin.ch/eli/cc/1991/1184_1184_1184/de#art_33).
+[^ahv]: Art. 33 Abs. 1 Bst. d DBG, [SR 642.11](https://www.fedlex.admin.ch/eli/cc/1991/1184_1184_1184/de#art_33).
